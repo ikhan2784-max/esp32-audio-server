@@ -1,47 +1,50 @@
-import { WebSocketServer } from 'ws';
-import http from 'http';
+const http = require("http");
+const WebSocket = require("ws");
 
-const server = http.createServer();
-const wss = new WebSocketServer({ server });
+const server = http.createServer((req, res) => {
+  res.writeHead(200);
+  res.end("ESP32 Audio Server Running");
+});
 
-let listeners = [];
+const wss = new WebSocket.Server({ server });
 
-wss.on('connection', (ws, request) => {
+let espSocket = null;
+let listenerSocket = null;
+
+wss.on("connection", (ws, request) => {
   const url = new URL(request.url, `http://${request.headers.host}`);
-  const type = url.searchParams.get('type');
+  const type = url.searchParams.get("type");
 
   console.log("New connection:", type);
 
-  if (type === 'esp') {
-
+  if (type === "esp") {
+    espSocket = ws;
     console.log("ESP connected");
 
-    ws.on('message', (data) => {
-      // Broadcast audio to all listeners
-      for (const client of listeners) {
-        if (client.readyState === 1) {
-          client.send(data);
-        }
+    ws.on("message", (data) => {
+      if (listenerSocket && listenerSocket.readyState === WebSocket.OPEN) {
+        listenerSocket.send(data, { binary: true });
       }
     });
 
-  } else if (type === 'listen') {
-
-    console.log("Listener connected");
-    listeners.push(ws);
-
-    ws.on('close', () => {
-      console.log("Listener disconnected");
-      listeners = listeners.filter(c => c !== ws);
+    ws.on("close", () => {
+      console.log("ESP disconnected");
+      espSocket = null;
     });
+  }
 
-  } else {
-    ws.close();
+  if (type === "listen") {
+    listenerSocket = ws;
+    console.log("Listener connected");
+
+    ws.on("close", () => {
+      console.log("Listener disconnected");
+      listenerSocket = null;
+    });
   }
 });
 
-const PORT = process.env.PORT || 8080;
-
+const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log("Server running on port", PORT);
 });
