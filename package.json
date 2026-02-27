@@ -1,0 +1,13 @@
+{
+  "name": "esp32-audio-server",
+  "version": "1.0.0",
+  "description": "ESP32 Live Audio Relay",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.15.0"
+  }
+}
