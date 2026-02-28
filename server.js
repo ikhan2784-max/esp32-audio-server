@@ -9,7 +9,7 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocket.Server({ server });
 
 let espSocket = null;
-let listeners = [];
+let listeners = new Set();
 
 wss.on("connection", (ws, request) => {
   const url = new URL(request.url, `http://${request.headers.host}`);
@@ -18,14 +18,15 @@ wss.on("connection", (ws, request) => {
   console.log("New connection:", type);
 
   if (type === "esp") {
-    console.log("ESP connected");
 
-    // Replace old ESP safely
+    // Close old ESP if exists
     if (espSocket && espSocket.readyState === WebSocket.OPEN) {
+      console.log("Closing old ESP connection");
       espSocket.close();
     }
 
     espSocket = ws;
+    console.log("ESP connected");
 
     ws.on("message", (data) => {
       // Broadcast to ALL listeners
@@ -38,24 +39,24 @@ wss.on("connection", (ws, request) => {
 
     ws.on("close", () => {
       console.log("ESP disconnected");
-      if (espSocket === ws) {
-        espSocket = null;
-      }
+      espSocket = null;
     });
   }
 
   if (type === "listen") {
+
+    listeners.add(ws);
     console.log("Listener connected");
-    listeners.push(ws);
 
     ws.on("close", () => {
       console.log("Listener disconnected");
-      listeners = listeners.filter((l) => l !== ws);
+      listeners.delete(ws);
     });
   }
 });
 
 const PORT = process.env.PORT || 10000;
+
 server.listen(PORT, () => {
   console.log("Server running on port", PORT);
 });
