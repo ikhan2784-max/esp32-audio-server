@@ -1,12 +1,12 @@
-import http from "http";
-import { WebSocketServer } from "ws";
+const http = require("http");
+const WebSocket = require("ws");
 
 const server = http.createServer((req, res) => {
   res.writeHead(200);
   res.end("ESP32 Audio Server Running");
 });
 
-const wss = new WebSocketServer({ server });
+const wss = new WebSocket.Server({ server });
 
 let espSocket = null;
 let listenerSocket = null;
@@ -22,8 +22,8 @@ wss.on("connection", (ws, request) => {
     console.log("ESP connected");
 
     ws.on("message", (data) => {
-      if (listenerSocket && listenerSocket.readyState === 1) {
-        listenerSocket.send(data);
+      if (listenerSocket && listenerSocket.readyState === WebSocket.OPEN) {
+        listenerSocket.send(data, { binary: true });
       }
     });
 
