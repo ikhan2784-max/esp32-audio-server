@@ -1,49 +1,47 @@
-<!DOCTYPE html>
-<html>
-<body>
-<h2>ESP32 Audio Listener</h2>
-
-<button onclick="start()">Start</button>
-
 <script>
+
 let ws;
 let ctx;
-let processor;
 
 function start() {
 
-  ctx = new AudioContext({sampleRate:16000});
+ctx =
+new AudioContext({sampleRate:16000});
 
-  ws = new WebSocket(
-    "wss://esp32-audio-server-1.onrender.com/ws",
-    "listener"
-  );
+ws = new WebSocket(
+"wss://esp32-audio-server-1.onrender.com/ws",
+"listener");
 
-  ws.binaryType = "arraybuffer";
+ws.binaryType="arraybuffer";
 
-  ws.onmessage = e => {
+ws.onmessage = e => {
 
-    let data = new Int32Array(e.data);
+let data =
+new Int16Array(e.data);
 
-    let f32 = new Float32Array(data.length);
+let f32 =
+new Float32Array(data.length);
 
-    for (let i=0;i<data.length;i++)
-      f32[i] = data[i] / 2147483648;
+for(let i=0;i<data.length;i++)
+f32[i]=data[i]/32768;
 
-    let buf = ctx.createBuffer(1, f32.length, 16000);
+let buf =
+ctx.createBuffer(
+1,
+f32.length,
+16000);
 
-    buf.copyToChannel(f32,0);
+buf.copyToChannel(f32,0);
 
-    let src = ctx.createBufferSource();
+let src=
+ctx.createBufferSource();
 
-    src.buffer = buf;
+src.buffer=buf;
+src.connect(ctx.destination);
+src.start();
 
-    src.connect(ctx.destination);
+};
 
-    src.start();
-  }
 }
-</script>
 
-</body>
-</html>
+</script>
