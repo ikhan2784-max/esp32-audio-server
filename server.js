@@ -4,40 +4,40 @@ import { WebSocketServer } from "ws";
 const PORT = process.env.PORT || 10000;
 
 const server = http.createServer((req, res) => {
-  if (req.url === "/") {
-    res.writeHead(200);
-    res.end("ESP32 Audio Server Running");
-    return;
-  }
-
-  res.writeHead(404);
-  res.end();
+  res.writeHead(200);
+  res.end("ESP32 Audio Server Running");
 });
 
 const wss = new WebSocketServer({
-  noServer: true,
+  server,
+  path: "/ws",
 });
 
-server.on("upgrade", (req, socket, head) => {
-  if (req.url === "/ws") {
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      wss.emit("connection", ws, req);
-    });
-  } else {
-    socket.destroy();
-  }
-});
+let listeners = [];
 
-wss.on("connection", (ws) => {
-  console.log("WS client connected");
+wss.on("connection", (ws, req) => {
+  console.log("WS connected");
 
   ws.on("message", (data) => {
-    console.log("Audio bytes:", data.length);
+
+    // if audio from ESP, send to listeners
+    for (let l of listeners) {
+      if (l.readyState === 1) {
+        l.send(data);
+      }
+    }
+
   });
 
   ws.on("close", () => {
-    console.log("WS disconnected");
+    listeners = listeners.filter(l => l !== ws);
   });
+
+  // mark browser listeners
+  if (req.headers["sec-websocket-protocol"] === "listener") {
+    listeners.push(ws);
+    console.log("Listener added");
+  }
 });
 
 server.listen(PORT, () => {
