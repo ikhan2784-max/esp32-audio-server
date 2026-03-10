@@ -4,16 +4,31 @@ import { WebSocketServer } from "ws";
 const PORT = process.env.PORT || 10000;
 
 const server = http.createServer((req, res) => {
-  res.writeHead(200);
-  res.end("ESP32 Audio Server Running");
+  if (req.url === "/") {
+    res.writeHead(200);
+    res.end("ESP32 Audio Server Running");
+    return;
+  }
+
+  res.writeHead(404);
+  res.end();
 });
 
 const wss = new WebSocketServer({
-  server,
-  path: "/ws",
+  noServer: true,
 });
 
-wss.on("connection", (ws, req) => {
+server.on("upgrade", (req, socket, head) => {
+  if (req.url === "/ws") {
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      wss.emit("connection", ws, req);
+    });
+  } else {
+    socket.destroy();
+  }
+});
+
+wss.on("connection", (ws) => {
   console.log("WS client connected");
 
   ws.on("message", (data) => {
