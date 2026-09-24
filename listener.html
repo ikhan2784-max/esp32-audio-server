@@ -1,229 +1,313 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ESP32 ICS43434 Live Audio</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ESP32 ICS43434 Live Audio</title>
 
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      max-width: 700px;
-      margin: 40px auto;
-      padding: 20px;
-      background: #111;
-      color: #eee;
-    }
+<style>
+body {
+  font-family: Arial, sans-serif;
+  max-width: 700px;
+  margin: 40px auto;
+  padding: 20px;
+  background: #111;
+  color: #eee;
+}
 
-    button {
-      font-size: 18px;
-      padding: 12px 20px;
-      margin-right: 10px;
-      cursor: pointer;
-    }
+button {
+  font-size: 18px;
+  padding: 12px 20px;
+  margin-right: 10px;
+  cursor: pointer;
+}
 
-    #status {
-      margin: 20px 0;
-      padding: 12px;
-      background: #222;
-      border-radius: 8px;
-    }
+#status {
+  margin: 20px 0;
+  padding: 12px;
+  background: #222;
+  border-radius: 8px;
+}
 
-    #meter {
-      width: 100%;
-      height: 24px;
-      background: #333;
-      border-radius: 12px;
-      overflow: hidden;
-    }
+.control {
+  margin: 25px 0;
+  padding: 18px;
+  background: #222;
+  border-radius: 8px;
+}
 
-    #level {
-      width: 0%;
-      height: 100%;
-      background: #4caf50;
-      transition: width 0.05s;
-    }
-  </style>
+input[type="range"] {
+  width: 100%;
+}
+
+#meter {
+  width: 100%;
+  height: 24px;
+  background: #333;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+#level {
+  width: 0%;
+  height: 100%;
+  background: #4caf50;
+  transition: width 0.05s;
+}
+</style>
 </head>
 
 <body>
-  <h1>ESP32 ICS43434 Live Audio</h1>
 
-  <button id="start">Start Listening</button>
-  <button id="stop" disabled>Stop</button>
+<h1>ESP32 ICS43434 Live Audio</h1>
 
-  <div id="status">Disconnected</div>
+<button id="start">Start Listening</button>
+<button id="stop" disabled>Stop</button>
 
-  <p>Audio level</p>
+<div id="status">Disconnected</div>
 
-  <div id="meter">
-    <div id="level"></div>
-  </div>
+<div class="control">
+  <strong>Browser Volume</strong>
+  <br><br>
 
-  <script>
-    let ws = null;
-    let audioContext = null;
-    let nextTime = 0;
+  <input
+    id="volume"
+    type="range"
+    min="0"
+    max="3"
+    step="0.01"
+    value="1.5"
+  >
 
-    const status = document.getElementById("status");
-    const level = document.getElementById("level");
-    const start = document.getElementById("start");
-    const stop = document.getElementById("stop");
+  <p>
+    Volume:
+    <span id="volumeValue">150%</span>
+  </p>
+</div>
 
-    function setStatus(text) {
-      status.textContent = text;
+<p>Audio level</p>
+
+<div id="meter">
+  <div id="level"></div>
+</div>
+
+<script>
+let ws = null;
+let audioContext = null;
+let gainNode = null;
+let nextTime = 0;
+
+const status = document.getElementById("status");
+const level = document.getElementById("level");
+const start = document.getElementById("start");
+const stop = document.getElementById("stop");
+const volume = document.getElementById("volume");
+const volumeValue = document.getElementById("volumeValue");
+
+function setStatus(text) {
+  status.textContent = text;
+}
+
+function updateVolume() {
+  const value = Number(volume.value);
+
+  volumeValue.textContent =
+    Math.round(value * 100) + "%";
+
+  if (gainNode) {
+    gainNode.gain.value = value;
+  }
+}
+
+volume.addEventListener("input", updateVolume);
+
+function playPCM16(arrayBuffer) {
+
+  if (!audioContext || !gainNode) {
+    return;
+  }
+
+  const input =
+    new Int16Array(arrayBuffer);
+
+  const buffer =
+    audioContext.createBuffer(
+      1,
+      input.length,
+      16000
+    );
+
+  const output =
+    buffer.getChannelData(0);
+
+  let sum = 0;
+  let peak = 0;
+
+  for (let i = 0; i < input.length; i++) {
+
+    const value =
+      input[i] / 32768;
+
+    output[i] = value;
+
+    const abs =
+      Math.abs(value);
+
+    sum += value * value;
+
+    if (abs > peak) {
+      peak = abs;
+    }
+  }
+
+  const rms =
+    Math.sqrt(sum / input.length);
+
+  level.style.width =
+    Math.min(100, rms * 300) + "%";
+
+  const source =
+    audioContext.createBufferSource();
+
+  source.buffer = buffer;
+
+  source.connect(gainNode);
+
+  const now =
+    audioContext.currentTime;
+
+  if (nextTime < now + 0.03) {
+    nextTime = now + 0.03;
+  }
+
+  source.start(nextTime);
+
+  nextTime += buffer.duration;
+}
+
+start.onclick = async () => {
+
+  audioContext =
+    new (
+      window.AudioContext ||
+      window.webkitAudioContext
+    )({
+      sampleRate: 16000
+    });
+
+  gainNode =
+    audioContext.createGain();
+
+  gainNode.gain.value =
+    Number(volume.value);
+
+  gainNode.connect(
+    audioContext.destination
+  );
+
+  await audioContext.resume();
+
+  const protocol =
+    location.protocol === "https:"
+      ? "wss:"
+      : "ws:";
+
+  ws =
+    new WebSocket(
+      protocol +
+      "//" +
+      location.host +
+      "/ws"
+    );
+
+  ws.binaryType =
+    "arraybuffer";
+
+  ws.onopen = () => {
+
+    setStatus(
+      "Connected — registering listener..."
+    );
+
+    ws.send(
+      JSON.stringify({
+        type: "listener"
+      })
+    );
+
+    start.disabled = true;
+    stop.disabled = false;
+  };
+
+  ws.onmessage = (event) => {
+
+    if (typeof event.data === "string") {
+
+      try {
+
+        const message =
+          JSON.parse(event.data);
+
+        if (
+          message.type ===
+          "listener_ready"
+        ) {
+
+          setStatus(
+            "Listening — " +
+            message.sample_rate +
+            " Hz " +
+            message.format
+          );
+        }
+
+      } catch {
+
+        setStatus(event.data);
+      }
+
+      return;
     }
 
-    function playPCM16(arrayBuffer) {
-      if (!audioContext) return;
+    playPCM16(event.data);
+  };
 
-      const input = new Int16Array(arrayBuffer);
+  ws.onerror = () => {
+    setStatus("WebSocket error");
+  };
 
-      const buffer = audioContext.createBuffer(
-        1,
-        input.length,
-        16000
-      );
+  ws.onclose = () => {
 
-      const output = buffer.getChannelData(0);
+    setStatus("Disconnected");
 
-      let sum = 0;
-      let peak = 0;
+    start.disabled = false;
+    stop.disabled = true;
+  };
+};
 
-      for (let i = 0; i < input.length; i++) {
-        const value = input[i] / 32768;
+stop.onclick = () => {
 
-        output[i] = value;
+  if (ws) {
+    ws.close();
+    ws = null;
+  }
 
-        const abs = Math.abs(value);
+  if (audioContext) {
+    audioContext.close();
+    audioContext = null;
+  }
 
-        sum += value * value;
+  gainNode = null;
+  nextTime = 0;
 
-        if (abs > peak) {
-          peak = abs;
-        }
-      }
+  level.style.width = "0%";
 
-      const rms = Math.sqrt(sum / input.length);
+  setStatus("Stopped");
 
-      level.style.width =
-        Math.min(100, rms * 500) + "%";
+  start.disabled = false;
+  stop.disabled = true;
+};
+</script>
 
-      const source =
-        audioContext.createBufferSource();
-
-      source.buffer = buffer;
-
-      source.connect(audioContext.destination);
-
-      const now = audioContext.currentTime;
-
-      if (nextTime < now + 0.03) {
-        nextTime = now + 0.03;
-      }
-
-      source.start(nextTime);
-
-      nextTime += buffer.duration;
-    }
-
-    start.onclick = async () => {
-      audioContext =
-        new (window.AudioContext ||
-          window.webkitAudioContext)({
-            sampleRate: 16000
-          });
-
-      await audioContext.resume();
-
-      const protocol =
-        location.protocol === "https:"
-          ? "wss:"
-          : "ws:";
-
-      ws = new WebSocket(
-        protocol +
-        "//" +
-        location.host +
-        "/ws"
-      );
-
-      ws.binaryType = "arraybuffer";
-
-      ws.onopen = () => {
-        setStatus(
-          "Connected — registering listener..."
-        );
-
-        ws.send(
-          JSON.stringify({
-            type: "listener"
-          })
-        );
-
-        start.disabled = true;
-        stop.disabled = false;
-      };
-
-      ws.onmessage = (event) => {
-        if (typeof event.data === "string") {
-          try {
-            const message =
-              JSON.parse(event.data);
-
-            if (
-              message.type ===
-              "listener_ready"
-            ) {
-              setStatus(
-                "Listening — " +
-                message.sample_rate +
-                " Hz " +
-                message.format
-              );
-            }
-          } catch {
-            setStatus(event.data);
-          }
-
-          return;
-        }
-
-        playPCM16(event.data);
-      };
-
-      ws.onerror = () => {
-        setStatus("WebSocket error");
-      };
-
-      ws.onclose = () => {
-        setStatus("Disconnected");
-
-        start.disabled = false;
-        stop.disabled = true;
-      };
-    };
-
-    stop.onclick = () => {
-      if (ws) {
-        ws.close();
-        ws = null;
-      }
-
-      if (audioContext) {
-        audioContext.close();
-        audioContext = null;
-      }
-
-      nextTime = 0;
-
-      level.style.width = "0%";
-
-      setStatus("Stopped");
-
-      start.disabled = false;
-      stop.disabled = true;
-    };
-  </script>
 </body>
 </html>
