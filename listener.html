@@ -14,26 +14,32 @@ body {
   background: #111;
   color: #eee;
 }
+
 button {
   font-size: 18px;
   padding: 12px 20px;
-  margin: 5px 8px 5px 0;
+  margin-right: 10px;
   cursor: pointer;
 }
-button:disabled { opacity: 0.5; cursor: not-allowed; }
+
 #status {
   margin: 20px 0;
   padding: 12px;
   background: #222;
   border-radius: 8px;
 }
+
 .control {
   margin: 25px 0;
   padding: 18px;
   background: #222;
   border-radius: 8px;
 }
-input[type="range"] { width: 100%; }
+
+input[type="range"] {
+  width: 100%;
+}
+
 #meter {
   width: 100%;
   height: 24px;
@@ -41,17 +47,18 @@ input[type="range"] { width: 100%; }
   border-radius: 12px;
   overflow: hidden;
 }
+
 #level {
   width: 0%;
   height: 100%;
   background: #4caf50;
   transition: width 0.05s;
 }
-#recordStatus {
-  margin-top: 12px;
-  font-weight: bold;
+
+.small {
+  color: #aaa;
+  font-size: 14px;
 }
-.small { color: #aaa; font-size: 14px; }
 </style>
 </head>
 
@@ -62,23 +69,20 @@ input[type="range"] { width: 100%; }
 <button id="start">Start Listening</button>
 <button id="stop" disabled>Stop</button>
 
-<div class="control">
-  <strong>Recording</strong><br><br>
-
-  <button id="record" disabled>🔴 Start Recording</button>
-  <button id="stopRecord" disabled>⏹ Stop Recording</button>
-
-  <div id="recordStatus">Not recording</div>
-  <div id="duration">00:00</div>
-</div>
-
 <div id="status">Disconnected</div>
 
 <div class="control">
-  <strong>Browser Volume</strong><br><br>
+  <strong>Browser Volume</strong>
+  <br><br>
 
-  <input id="volume" type="range"
-         min="0" max="3" step="0.01" value="1.5">
+  <input
+    id="volume"
+    type="range"
+    min="0"
+    max="3"
+    step="0.01"
+    value="1.5"
+  >
 
   <p>
     Volume:
@@ -93,36 +97,26 @@ input[type="range"] { width: 100%; }
 </div>
 
 <p class="small">
-16 kHz mono PCM16 • Continuous playback • WAV recording
+  16 kHz mono PCM16 • Continuous queued playback
 </p>
 
 <script>
 const SAMPLE_RATE = 16000;
-const CHANNELS = 1;
-const BYTES_PER_SAMPLE = 2;
+
+// Keep a small amount of audio queued.
+// Too little can cause gaps; too much increases latency.
 const TARGET_BUFFER_SECONDS = 0.12;
 
 let ws = null;
 let audioContext = null;
 let gainNode = null;
 let nextPlayTime = 0;
-
-let recording = false;
-let recordedChunks = [];
-let recordedSamples = 0;
-let recordStartTime = 0;
-let timerHandle = null;
+let queuedSeconds = 0;
 
 const status = document.getElementById("status");
 const level = document.getElementById("level");
 const start = document.getElementById("start");
 const stop = document.getElementById("stop");
-
-const record = document.getElementById("record");
-const stopRecord = document.getElementById("stopRecord");
-const recordStatus = document.getElementById("recordStatus");
-const duration = document.getElementById("duration");
-
 const volume = document.getElementById("volume");
 const volumeValue = document.getElementById("volumeValue");
 
@@ -132,7 +126,9 @@ function setStatus(text) {
 
 function updateVolume() {
   const value = Number(volume.value);
-  volumeValue.textContent = Math.round(value * 100) + "%";
+
+  volumeValue.textContent =
+    Math.round(value * 100) + "%";
 
   if (gainNode) {
     gainNode.gain.value = value;
@@ -141,27 +137,10 @@ function updateVolume() {
 
 volume.addEventListener("input", updateVolume);
 
-function updateDuration() {
-  if (!recording) return;
-
-  const seconds =
-    Math.floor((Date.now() - recordStartTime) / 1000);
-
-  const minutes =
-    Math.floor(seconds / 60);
-
-  const remaining =
-    seconds % 60;
-
-  duration.textContent =
-    String(minutes).padStart(2, "0") + ":" +
-    String(remaining).padStart(2, "0");
-
-  timerHandle = setTimeout(updateDuration, 500);
-}
-
 function playPCM16(arrayBuffer) {
-  if (!audioContext || !gainNode) return;
+  if (!audioContext || !gainNode) {
+    return;
+  }
 
   if (arrayBuffer.byteLength === 0 ||
       arrayBuffer.byteLength % 2 !== 0) {
@@ -170,18 +149,9 @@ function playPCM16(arrayBuffer) {
 
   const input = new Int16Array(arrayBuffer);
 
-  // Save the original PCM16 received from ESP32.
-  // Recording is independent of browser volume.
-  if (recording) {
-    const copy = new Int16Array(input.length);
-    copy.set(input);
-    recordedChunks.push(copy);
-    recordedSamples += input.length;
-  }
-
   const buffer =
     audioContext.createBuffer(
-      CHANNELS,
+      1,
       input.length,
       SAMPLE_RATE
     );
@@ -190,24 +160,34 @@ function playPCM16(arrayBuffer) {
     buffer.getChannelData(0);
 
   let sum = 0;
+  let peak = 0;
 
   for (let i = 0; i < input.length; i++) {
     const value = input[i] / 32768.0;
 
     output[i] = value;
 
+    const abs = Math.abs(value);
+
     sum += value * value;
+
+    if (abs > peak) {
+      peak = abs;
+    }
   }
 
   const rms =
     Math.sqrt(sum / input.length);
 
+  // Display level without changing the actual audio.
   level.style.width =
     Math.min(100, rms * 220) + "%";
 
   const now =
     audioContext.currentTime;
 
+  // If playback has fallen behind, restart with
+  // a small safety buffer.
   if (nextPlayTime < now + 0.03) {
     nextPlayTime =
       now + TARGET_BUFFER_SECONDS;
@@ -218,140 +198,13 @@ function playPCM16(arrayBuffer) {
 
   source.buffer = buffer;
   source.connect(gainNode);
+
   source.start(nextPlayTime);
 
   nextPlayTime += buffer.duration;
-}
 
-function startRecording() {
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    return;
-  }
-
-  recordedChunks = [];
-  recordedSamples = 0;
-
-  recording = true;
-  recordStartTime = Date.now();
-
-  record.disabled = true;
-  stopRecord.disabled = false;
-
-  recordStatus.textContent =
-    "🔴 Recording...";
-
-  duration.textContent = "00:00";
-
-  updateDuration();
-}
-
-function stopRecording() {
-  if (!recording) return;
-
-  recording = false;
-
-  if (timerHandle) {
-    clearTimeout(timerHandle);
-    timerHandle = null;
-  }
-
-  record.disabled = false;
-  stopRecord.disabled = true;
-
-  recordStatus.textContent =
-    "Processing WAV...";
-
-  const wavBlob =
-    createWavBlob(recordedChunks, recordedSamples);
-
-  const url =
-    URL.createObjectURL(wavBlob);
-
-  const link =
-    document.createElement("a");
-
-  const stamp =
-    new Date()
-      .toISOString()
-      .replace(/[:.]/g, "-");
-
-  link.href = url;
-  link.download =
-    "ESP32_ICS43434_" + stamp + ".wav";
-
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-
-  setTimeout(() => {
-    URL.revokeObjectURL(url);
-  }, 1000);
-
-  recordStatus.textContent =
-    "Recording saved as WAV";
-}
-
-function createWavBlob(chunks, sampleCount) {
-  const dataSize =
-    sampleCount * BYTES_PER_SAMPLE;
-
-  const buffer =
-    new ArrayBuffer(44 + dataSize);
-
-  const view =
-    new DataView(buffer);
-
-  function writeString(offset, text) {
-    for (let i = 0; i < text.length; i++) {
-      view.setUint8(
-        offset + i,
-        text.charCodeAt(i)
-      );
-    }
-  }
-
-  writeString(0, "RIFF");
-  view.setUint32(4, 36 + dataSize, true);
-  writeString(8, "WAVE");
-
-  writeString(12, "fmt ");
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);              // PCM
-  view.setUint16(22, CHANNELS, true);
-  view.setUint32(24, SAMPLE_RATE, true);
-  view.setUint32(
-    28,
-    SAMPLE_RATE * CHANNELS * BYTES_PER_SAMPLE,
-    true
-  );
-  view.setUint16(
-    32,
-    CHANNELS * BYTES_PER_SAMPLE,
-    true
-  );
-  view.setUint16(34, 16, true);
-
-  writeString(36, "data");
-  view.setUint32(40, dataSize, true);
-
-  let offset = 44;
-
-  for (const chunk of chunks) {
-    for (let i = 0; i < chunk.length; i++) {
-      view.setInt16(
-        offset,
-        chunk[i],
-        true
-      );
-
-      offset += 2;
-    }
-  }
-
-  return new Blob(
-    [buffer],
-    { type: "audio/wav" }
-  );
+  queuedSeconds =
+    Math.max(0, nextPlayTime - now);
 }
 
 start.onclick = async () => {
@@ -410,7 +263,6 @@ start.onclick = async () => {
 
       start.disabled = true;
       stop.disabled = false;
-      record.disabled = false;
     };
 
     ws.onmessage = (event) => {
@@ -445,16 +297,10 @@ start.onclick = async () => {
     };
 
     ws.onclose = () => {
-      if (recording) {
-        stopRecording();
-      }
-
       setStatus("Disconnected");
 
       start.disabled = false;
       stop.disabled = true;
-      record.disabled = true;
-      stopRecord.disabled = true;
     };
 
   } catch (error) {
@@ -466,10 +312,6 @@ start.onclick = async () => {
 };
 
 stop.onclick = () => {
-  if (recording) {
-    stopRecording();
-  }
-
   if (ws) {
     ws.close();
     ws = null;
@@ -482,6 +324,7 @@ stop.onclick = () => {
 
   gainNode = null;
   nextPlayTime = 0;
+  queuedSeconds = 0;
 
   level.style.width = "0%";
 
@@ -489,14 +332,7 @@ stop.onclick = () => {
 
   start.disabled = false;
   stop.disabled = true;
-  record.disabled = true;
-  stopRecord.disabled = true;
 };
-
-record.onclick = startRecording;
-stopRecord.onclick = stopRecording;
-
-updateVolume();
 </script>
 
 </body>
