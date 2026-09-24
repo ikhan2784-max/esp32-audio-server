@@ -1,12 +1,17 @@
 {
-  "name": "esp32-audio-server",
+  "name": "esp32-audio-render-relay",
   "version": "1.0.0",
-  "type": "module",
+  "private": true,
+  "description": "WebSocket relay for ESP32-S3 audio streaming",
   "main": "server.js",
-  "dependencies": {
-    "ws": "^8.14.2"
-  },
   "scripts": {
     "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20 <25"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "ws": "^8.18.3"
   }
 }
