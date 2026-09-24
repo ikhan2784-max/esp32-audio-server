@@ -54,6 +54,11 @@ input[type="range"] {
   background: #4caf50;
   transition: width 0.05s;
 }
+
+.small {
+  color: #aaa;
+  font-size: 14px;
+}
 </style>
 </head>
 
@@ -91,11 +96,22 @@ input[type="range"] {
   <div id="level"></div>
 </div>
 
+<p class="small">
+  16 kHz mono PCM16 • Continuous queued playback
+</p>
+
 <script>
+const SAMPLE_RATE = 16000;
+
+// Keep a small amount of audio queued.
+// Too little can cause gaps; too much increases latency.
+const TARGET_BUFFER_SECONDS = 0.12;
+
 let ws = null;
 let audioContext = null;
 let gainNode = null;
-let nextTime = 0;
+let nextPlayTime = 0;
+let queuedSeconds = 0;
 
 const status = document.getElementById("status");
 const level = document.getElementById("level");
@@ -122,19 +138,22 @@ function updateVolume() {
 volume.addEventListener("input", updateVolume);
 
 function playPCM16(arrayBuffer) {
-
   if (!audioContext || !gainNode) {
     return;
   }
 
-  const input =
-    new Int16Array(arrayBuffer);
+  if (arrayBuffer.byteLength === 0 ||
+      arrayBuffer.byteLength % 2 !== 0) {
+    return;
+  }
+
+  const input = new Int16Array(arrayBuffer);
 
   const buffer =
     audioContext.createBuffer(
       1,
       input.length,
-      16000
+      SAMPLE_RATE
     );
 
   const output =
@@ -144,14 +163,11 @@ function playPCM16(arrayBuffer) {
   let peak = 0;
 
   for (let i = 0; i < input.length; i++) {
-
-    const value =
-      input[i] / 32768;
+    const value = input[i] / 32768.0;
 
     output[i] = value;
 
-    const abs =
-      Math.abs(value);
+    const abs = Math.abs(value);
 
     sum += value * value;
 
@@ -163,130 +179,139 @@ function playPCM16(arrayBuffer) {
   const rms =
     Math.sqrt(sum / input.length);
 
+  // Display level without changing the actual audio.
   level.style.width =
-    Math.min(100, rms * 300) + "%";
+    Math.min(100, rms * 220) + "%";
+
+  const now =
+    audioContext.currentTime;
+
+  // If playback has fallen behind, restart with
+  // a small safety buffer.
+  if (nextPlayTime < now + 0.03) {
+    nextPlayTime =
+      now + TARGET_BUFFER_SECONDS;
+  }
 
   const source =
     audioContext.createBufferSource();
 
   source.buffer = buffer;
-
   source.connect(gainNode);
 
-  const now =
-    audioContext.currentTime;
+  source.start(nextPlayTime);
 
-  if (nextTime < now + 0.03) {
-    nextTime = now + 0.03;
-  }
+  nextPlayTime += buffer.duration;
 
-  source.start(nextTime);
-
-  nextTime += buffer.duration;
+  queuedSeconds =
+    Math.max(0, nextPlayTime - now);
 }
 
 start.onclick = async () => {
+  try {
+    audioContext =
+      new (
+        window.AudioContext ||
+        window.webkitAudioContext
+      )({
+        sampleRate: SAMPLE_RATE,
+        latencyHint: "interactive"
+      });
 
-  audioContext =
-    new (
-      window.AudioContext ||
-      window.webkitAudioContext
-    )({
-      sampleRate: 16000
-    });
+    gainNode =
+      audioContext.createGain();
 
-  gainNode =
-    audioContext.createGain();
+    gainNode.gain.value =
+      Number(volume.value);
 
-  gainNode.gain.value =
-    Number(volume.value);
-
-  gainNode.connect(
-    audioContext.destination
-  );
-
-  await audioContext.resume();
-
-  const protocol =
-    location.protocol === "https:"
-      ? "wss:"
-      : "ws:";
-
-  ws =
-    new WebSocket(
-      protocol +
-      "//" +
-      location.host +
-      "/ws"
+    gainNode.connect(
+      audioContext.destination
     );
 
-  ws.binaryType =
-    "arraybuffer";
+    await audioContext.resume();
 
-  ws.onopen = () => {
+    nextPlayTime =
+      audioContext.currentTime +
+      TARGET_BUFFER_SECONDS;
 
-    setStatus(
-      "Connected — registering listener..."
-    );
+    const protocol =
+      location.protocol === "https:"
+        ? "wss:"
+        : "ws:";
 
-    ws.send(
-      JSON.stringify({
-        type: "listener"
-      })
-    );
+    ws =
+      new WebSocket(
+        protocol +
+        "//" +
+        location.host +
+        "/ws"
+      );
 
-    start.disabled = true;
-    stop.disabled = false;
-  };
+    ws.binaryType =
+      "arraybuffer";
 
-  ws.onmessage = (event) => {
+    ws.onopen = () => {
+      setStatus(
+        "Connected — registering listener..."
+      );
 
-    if (typeof event.data === "string") {
+      ws.send(
+        JSON.stringify({
+          type: "listener"
+        })
+      );
 
-      try {
+      start.disabled = true;
+      stop.disabled = false;
+    };
 
-        const message =
-          JSON.parse(event.data);
+    ws.onmessage = (event) => {
+      if (typeof event.data === "string") {
+        try {
+          const message =
+            JSON.parse(event.data);
 
-        if (
-          message.type ===
-          "listener_ready"
-        ) {
-
-          setStatus(
-            "Listening — " +
-            message.sample_rate +
-            " Hz " +
-            message.format
-          );
+          if (
+            message.type ===
+            "listener_ready"
+          ) {
+            setStatus(
+              "Listening — " +
+              message.sample_rate +
+              " Hz " +
+              message.format
+            );
+          }
+        } catch {
+          setStatus(event.data);
         }
 
-      } catch {
-
-        setStatus(event.data);
+        return;
       }
 
-      return;
-    }
+      playPCM16(event.data);
+    };
 
-    playPCM16(event.data);
-  };
+    ws.onerror = () => {
+      setStatus("WebSocket error");
+    };
 
-  ws.onerror = () => {
-    setStatus("WebSocket error");
-  };
+    ws.onclose = () => {
+      setStatus("Disconnected");
 
-  ws.onclose = () => {
+      start.disabled = false;
+      stop.disabled = true;
+    };
 
-    setStatus("Disconnected");
-
-    start.disabled = false;
-    stop.disabled = true;
-  };
+  } catch (error) {
+    console.error(error);
+    setStatus(
+      "Audio initialization failed"
+    );
+  }
 };
 
 stop.onclick = () => {
-
   if (ws) {
     ws.close();
     ws = null;
@@ -298,7 +323,8 @@ stop.onclick = () => {
   }
 
   gainNode = null;
-  nextTime = 0;
+  nextPlayTime = 0;
+  queuedSeconds = 0;
 
   level.style.width = "0%";
 
