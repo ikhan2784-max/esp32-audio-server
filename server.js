@@ -8,12 +8,17 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server, path: "/ws" });
 
+const listeners = new Set();
+const sources = new Set();
+
 app.get("/", (req, res) => {
   res.json({
     service: "ESP32 Audio WebSocket Relay",
     status: "ok",
     websocket: "/ws",
-    clients: wss.clients.size
+    listener: "/listener",
+    listeners: listeners.size,
+    sources: sources.size
   });
 });
 
@@ -21,11 +26,17 @@ app.get("/health", (req, res) => {
   res.status(200).send("OK");
 });
 
+app.get("/listener", (req, res) => {
+  res.sendFile(__dirname + "/listener.html");
+});
+
 wss.on("connection", (ws, req) => {
   const ip = req.socket.remoteAddress;
-  console.log(`WebSocket connected: ${ip}`);
 
+  ws.role = "unknown";
   ws.isAlive = true;
+
+  console.log(`WebSocket connected: ${ip}`);
 
   ws.on("pong", () => {
     ws.isAlive = true;
@@ -37,27 +48,80 @@ wss.on("connection", (ws, req) => {
   }));
 
   ws.on("message", (data, isBinary) => {
-    if (isBinary) {
-      console.log(`Audio packet received: ${data.length} bytes`);
+    if (!isBinary) {
+      const text = data.toString();
 
-      // For now, echo binary audio back to the sender.
-      // Later this will be changed to relay audio to other clients.
+      try {
+        const message = JSON.parse(text);
+
+        if (message.type === "listener") {
+          ws.role = "listener";
+          listeners.add(ws);
+
+          console.log(
+            `Listener registered: ${ip} (listeners=${listeners.size})`
+          );
+
+          ws.send(JSON.stringify({
+            type: "listener_ready",
+            sample_rate: 16000,
+            format: "pcm16",
+            channels: 1
+          }));
+          return;
+        }
+
+        if (
+          message.type === "hello" &&
+          message.device === "ESP32-S3-ICS43434"
+        ) {
+          ws.role = "source";
+          sources.add(ws);
+
+          console.log(
+            `ESP32 audio source registered: ${ip} (sources=${sources.size})`
+          );
+          return;
+        }
+      } catch {
+        // Ignore non-JSON text.
+      }
+
+      console.log("Text:", text);
+
       if (ws.readyState === WebSocket.OPEN) {
-        ws.send(data, { binary: true });
+        ws.send(text);
       }
       return;
     }
 
-    const text = data.toString();
-    console.log("Text:", text);
+    if (ws.role !== "source") {
+      console.log(
+        `Binary packet from unregistered client: ${data.length} bytes`
+      );
+      return;
+    }
 
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(text);
+    console.log(
+      `Audio packet received: ${data.length} bytes; ` +
+      `forwarding to ${listeners.size} listener(s)`
+    );
+
+    for (const listener of listeners) {
+      if (listener.readyState === WebSocket.OPEN) {
+        listener.send(data, { binary: true });
+      }
     }
   });
 
   ws.on("close", () => {
-    console.log(`WebSocket disconnected: ${ip}`);
+    listeners.delete(ws);
+    sources.delete(ws);
+
+    console.log(
+      `WebSocket disconnected: ${ip} ` +
+      `(listeners=${listeners.size}, sources=${sources.size})`
+    );
   });
 
   ws.on("error", (err) => {
@@ -65,7 +129,6 @@ wss.on("connection", (ws, req) => {
   });
 });
 
-// Render can replace instances, so heartbeat helps detect stale sockets.
 const heartbeat = setInterval(() => {
   wss.clients.forEach((ws) => {
     if (ws.isAlive === false) {
@@ -82,4 +145,5 @@ server.on("close", () => clearInterval(heartbeat));
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`HTTP/WebSocket server listening on port ${PORT}`);
   console.log("WebSocket endpoint: /ws");
+  console.log("Listener page: /listener");
 });
