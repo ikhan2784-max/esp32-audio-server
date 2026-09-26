@@ -470,16 +470,20 @@ function applyDeviceStatus(data) {
 
   updateUptimeDisplay();
 
-  const controlsDisabled =
-    !deviceOnline ||
-    !ws ||
-    ws.readyState !== WebSocket.OPEN;
+  // Start Listening only depends on ESP32 availability.
+// It is the button that creates the WebSocket connection.
+start.disabled = !deviceOnline;
 
-  // Start Listening is allowed only when the ESP32 is online.
-  // Render/WSS can remain connected even when the ESP32 is offline.
-  start.disabled = controlsDisabled;
-  rebootBtn.disabled = controlsDisabled;
-  forgetWifiBtn.disabled = controlsDisabled;
+// These commands require an active listener WebSocket.
+const wsReady =
+  ws &&
+  ws.readyState === WebSocket.OPEN;
+
+rebootBtn.disabled =
+  !deviceOnline || !wsReady;
+
+forgetWifiBtn.disabled =
+  !deviceOnline || !wsReady;
 }
 
 async function refreshDeviceStatus() {
