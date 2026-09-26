@@ -1,3 +1,6 @@
+const express = require("express");
+const http = require("http");
+const WebSocket = require("ws");
 
 const PORT = process.env.PORT || 10000;
 
@@ -22,7 +25,6 @@ if (!LISTENER_PIN) {
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server, path: "/ws" });
 
 // ============================================================
 // WEBSOCKET SERVER
@@ -38,7 +40,6 @@ const wss = new WebSocket.Server({
 const listeners = new Set();
 const sources = new Set();
 
-app.get("/", (req, res) => {
 // ============================================================
 // HTTPS DETECTION
 // ============================================================
@@ -76,14 +77,14 @@ function requireHttps(req, res, next) {
 // ============================================================
 
 app.get("/", requireHttps, (req, res) => {
-res.json({
-    service: "ESP32 Audio WebSocket Relay",
+  res.json({
     service: "ESP32 INMP441 Audio WebSocket Relay",
-status: "ok",
-websocket: "/ws",
-listener: "/listener",
-@@ -22,128 +87,482 @@ app.get("/", (req, res) => {
-});
+    status: "ok",
+    websocket: "/ws",
+    listener: "/listener",
+    listeners: listeners.size,
+    sources: sources.size
+  });
 });
 
 // ============================================================
@@ -91,16 +92,15 @@ listener: "/listener",
 // ============================================================
 
 app.get("/health", (req, res) => {
-res.status(200).send("OK");
+  res.status(200).send("OK");
 });
 
-app.get("/listener", (req, res) => {
 // ============================================================
 // LISTENER PAGE
 // ============================================================
 
 app.get("/listener", requireHttps, (req, res) => {
-res.sendFile(__dirname + "/listener.html");
+  res.sendFile(__dirname + "/listener.html");
 });
 
 // ============================================================
@@ -154,35 +154,31 @@ function updateStreamState() {
 // ============================================================
 
 wss.on("connection", (ws, req) => {
-  const ip = req.socket.remoteAddress;
   const ip =
     req.headers["x-forwarded-for"] ||
     req.socket.remoteAddress ||
     "unknown";
 
-ws.role = "unknown";
-ws.isAlive = true;
+  ws.role = "unknown";
+  ws.isAlive = true;
   ws.authenticated = false;
 
-console.log(`WebSocket connected: ${ip}`);
+  console.log(`WebSocket connected: ${ip}`);
 
   // ----------------------------------------------------------
   // HEARTBEAT
   // ----------------------------------------------------------
 
-ws.on("pong", () => {
-ws.isAlive = true;
-});
+  ws.on("pong", () => {
+    ws.isAlive = true;
+  });
 
-  ws.send(JSON.stringify({
   // ----------------------------------------------------------
   // WELCOME
   // ----------------------------------------------------------
 
   sendJson(ws, {
-type: "welcome",
-    message: "ESP32 Audio Relay connected"
-  }));
+    type: "welcome",
     message: "ESP32 INMP441 Audio Relay connected"
   });
 
@@ -190,29 +186,7 @@ type: "welcome",
   // MESSAGE HANDLER
   // ----------------------------------------------------------
 
-ws.on("message", (data, isBinary) => {
-    if (!isBinary) {
-      const text = data.toString();
-
-      try {
-        const message = JSON.parse(text);
-
-        if (message.type === "listener") {
-          ws.role = "listener";
-          listeners.add(ws);
-
-          console.log(
-            `Listener registered: ${ip} (listeners=${listeners.size})`
-          );
-
-          ws.send(JSON.stringify({
-            type: "listener_ready",
-            sample_rate: 16000,
-            format: "pcm16",
-            channels: 1
-          }));
-          return;
-        }
+  ws.on("message", (data, isBinary) => {
 
     // ========================================================
     // BINARY AUDIO
@@ -235,20 +209,11 @@ ws.on("message", (data, isBinary) => {
 
       for (const listener of listeners) {
 
-if (
-          message.type === "hello" &&
-          message.device === "ESP32-S3-INMP441"
+        if (
           listener.readyState === WebSocket.OPEN &&
           listener.role === "listener" &&
           listener.authenticated
-) {
-          ws.role = "source";
-          sources.add(ws);
-
-          console.log(
-            `ESP32 audio source registered: ${ip} (sources=${sources.size})`
-          );
-          return;
+        ) {
           try {
             listener.send(data, {
               binary: true
@@ -259,12 +224,9 @@ if (
               err.message
             );
           }
-}
-      } catch {
-        // Ignore non-JSON text.
-}
+        }
+      }
 
-      console.log("Text:", text);
       return;
     }
 
@@ -315,10 +277,8 @@ if (
 
         ws.close(1008, "Unauthorized source");
 
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(text);
         return;
-}
+      }
 
       // ------------------------------------------------------
       // AUTHENTICATED SOURCE
@@ -354,10 +314,9 @@ if (
         );
       }
 
-return;
-}
+      return;
+    }
 
-    if (ws.role !== "source") {
     // ========================================================
     // LISTENER AUTHENTICATION
     // ========================================================
@@ -399,11 +358,10 @@ return;
 
       listeners.add(ws);
 
-console.log(
-        `Binary packet from unregistered client: ${data.length} bytes`
+      console.log(
         `Listener authenticated: ${ip} ` +
         `(listeners=${listeners.size})`
-);
+      );
 
       sendJson(ws, {
         type: "listener_ready",
@@ -424,20 +382,13 @@ console.log(
         );
       }
 
-return;
-}
+      return;
+    }
 
-    console.log(
-      `Audio packet received: ${data.length} bytes; ` +
-      `forwarding to ${listeners.size} listener(s)`
-    );
     // ========================================================
     // LISTENER STOP
     // ========================================================
 
-    for (const listener of listeners) {
-      if (listener.readyState === WebSocket.OPEN) {
-        listener.send(data, { binary: true });
     if (
       message.type === "listener_stop" &&
       ws.role === "listener"
@@ -462,10 +413,10 @@ return;
         console.log(
           "Last listener stopped - ESP32 audio STOP requested"
         );
-}
+      }
 
       return;
-}
+    }
 
     // ========================================================
     // ESP32 CONTROL / STATUS MESSAGE
@@ -491,13 +442,13 @@ return;
     console.log(
       `Ignored message type: ${message.type || "unknown"}`
     );
-});
+  });
 
   // ==========================================================
   // DISCONNECT
   // ==========================================================
 
-ws.on("close", () => {
+  ws.on("close", () => {
 
     const wasListener =
       ws.role === "listener" &&
@@ -507,13 +458,13 @@ ws.on("close", () => {
       ws.role === "source" &&
       ws.authenticated;
 
-listeners.delete(ws);
-sources.delete(ws);
+    listeners.delete(ws);
+    sources.delete(ws);
 
-console.log(
-`WebSocket disconnected: ${ip} ` +
-`(listeners=${listeners.size}, sources=${sources.size})`
-);
+    console.log(
+      `WebSocket disconnected: ${ip} ` +
+      `(listeners=${listeners.size}, sources=${sources.size})`
+    );
 
     // --------------------------------------------------------
     // LAST LISTENER LEFT
@@ -540,19 +491,18 @@ console.log(
         "ESP32 audio source disconnected"
       );
     }
-});
+  });
 
   // ==========================================================
   // WEBSOCKET ERROR
   // ==========================================================
 
-ws.on("error", (err) => {
-    console.error("WebSocket error:", err.message);
+  ws.on("error", (err) => {
     console.error(
       `WebSocket error from ${ip}:`,
       err.message
     );
-});
+  });
 });
 
 // ============================================================
@@ -561,15 +511,14 @@ ws.on("error", (err) => {
 
 const heartbeat = setInterval(() => {
 
-wss.clients.forEach((ws) => {
+  wss.clients.forEach((ws) => {
 
-if (ws.isAlive === false) {
+    if (ws.isAlive === false) {
       console.log("Terminating dead WebSocket connection");
-return ws.terminate();
-}
+      return ws.terminate();
+    }
 
-ws.isAlive = false;
-    ws.ping();
+    ws.isAlive = false;
 
     try {
       ws.ping();
@@ -579,11 +528,10 @@ ws.isAlive = false;
         err.message
       );
     }
-});
+  });
 
 }, 30000);
 
-server.on("close", () => clearInterval(heartbeat));
 // ============================================================
 // SERVER SHUTDOWN
 // ============================================================
@@ -597,9 +545,6 @@ server.on("close", () => {
 // ============================================================
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`HTTP/WebSocket server listening on port ${PORT}`);
-  console.log("WebSocket endpoint: /ws");
-  console.log("Listener page: /listener");
 
   console.log(
     `HTTP/WebSocket server listening on port ${PORT}`
