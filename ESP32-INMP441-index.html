@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14">
+<title>ESP32 INMP441 Audio</title>
+<style>
+:root{
+  font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  color:#eef2f7;background:#0b0f14
+}
+*{box-sizing:border-box}
+body{
+  margin:0;min-height:100vh;
+  background:linear-gradient(160deg,#101722,#070a0e)
+}
+.wrap{max-width:560px;margin:auto;padding:22px 16px 40px}
+.card{
+  background:#121923;border:1px solid #263140;border-radius:18px;
+  padding:18px;margin-bottom:14px;box-shadow:0 8px 30px #0005
+}
+h1{font-size:24px;margin:0 0 5px}
+h2{font-size:18px;margin:0 0 14px}
+.sub{color:#9ba8b8;font-size:14px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stat{
+  background:#0c1219;border:1px solid #202b38;border-radius:13px;padding:13px
+}
+.label{font-size:12px;color:#8995a4}
+.value{font-size:16px;font-weight:750;margin-top:5px}
+.online{color:#8ff0ae}
+.offline{color:#ff9a9a}
+.idle{color:#ffd166}
+input,button{
+  width:100%;border-radius:12px;padding:13px 14px;font-size:16px
+}
+input{
+  background:#0b1016;color:#fff;border:1px solid #334050;
+  outline:none
+}
+button{
+  border:0;background:#e8edf3;color:#0a0d11;
+  font-weight:750;margin-top:12px;cursor:pointer
+}
+button:disabled{opacity:.55;cursor:not-allowed}
+.status{
+  padding:10px 12px;border-radius:10px;background:#0c1219;
+  color:#aeb8c5;font-size:13px;margin-top:12px
+}
+.status.ok{color:#8ff0ae}
+.status.err{color:#ff9a9a}
+.refresh{
+  margin-top:12px;text-align:center;font-size:12px;color:#697586
+}
+.lock{
+  display:inline-block;padding:5px 9px;border-radius:999px;
+  background:#202a36;color:#aeb8c5;font-size:12px;margin-bottom:10px
+}
+@media(max-width:420px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="card">
+    <div class="lock">🔐 Secure ESP32 Audio</div>
+    <h1>ESP32 INMP441</h1>
+    <div class="sub">Device status</div>
+  </div>
+
+  <div class="card">
+    <h2>ESP32 Status</h2>
+
+    <div class="grid">
+      <div class="stat">
+        <div class="label">Device</div>
+        <div id="deviceStatus" class="value offline">🔴 OFFLINE</div>
+      </div>
+
+      <div class="stat">
+        <div class="label">Listeners</div>
+        <div id="listeners" class="value">0</div>
+      </div>
+
+      <div class="stat">
+        <div class="label">Audio</div>
+        <div id="audio" class="value idle">IDLE</div>
+      </div>
+
+      <div class="stat">
+        <div class="label">Render / WSS</div>
+        <div id="render" class="value offline">OFFLINE</div>
+      </div>
+
+      <div class="stat">
+        <div class="label">Last Seen</div>
+        <div id="lastSeen" class="value">—</div>
+      </div>
+
+      <div class="stat">
+        <div class="label">Last Reboot</div>
+        <div id="lastReboot" class="value">—</div>
+      </div>
+
+      <div class="stat">
+        <div class="label">Uptime</div>
+        <div id="uptime" class="value">—</div>
+      </div>
+
+      <div class="stat">
+        <div class="label">Streaming</div>
+        <div id="streaming" class="value idle">IDLE</div>
+      </div>
+    </div>
+
+    <button id="rebootBtn" disabled>ESP32 Reboot</button>
+    <div id="rebootStatus" class="status">Status updates automatically.</div>
+    <div class="refresh">Live status refreshes every 3 seconds.</div>
+  </div>
+
+  <div class="card">
+    <h2>Listener Access</h2>
+    <div class="sub">Enter the listener PIN to open the live audio page.</div>
+
+    <label for="pin" style="display:block;font-size:13px;color:#aeb8c5;margin:14px 0 6px">
+      Listener PIN
+    </label>
+
+    <input
+      id="pin"
+      type="password"
+      inputmode="numeric"
+      autocomplete="one-time-code"
+      maxlength="32"
+      placeholder="Enter listener PIN"
+    >
+
+    <button id="enterBtn">Enter Listener Page</button>
+    <div id="loginStatus" class="status">Your PIN is never placed in the URL.</div>
+  </div>
+
+</div>
+
+<script>
+"use strict";
+
+const $ = id => document.getElementById(id);
+
+let deviceOnline = false;
+let bootTime = 0;
+let lastSeen = 0;
+let lastReboot = 0;
+let rebootPending = false;
+
+function fmtTime(value){
+  if(!value) return "—";
+  return new Date(value).toLocaleString();
+}
+
+function fmtUptime(){
+  if(!deviceOnline || !bootTime){
+    $("uptime").textContent = "—";
+    return;
+  }
+
+  let seconds = Math.max(0, Math.floor((Date.now()-bootTime)/1000));
+  const days = Math.floor(seconds/86400);
+  seconds %= 86400;
+  const hours = Math.floor(seconds/3600);
+  seconds %= 3600;
+  const minutes = Math.floor(seconds/60);
+  seconds %= 60;
+
+  $("uptime").textContent =
+    (days ? days+"d " : "") +
+    (hours ? hours+"h " : "") +
+    (minutes ? minutes+"m " : "") +
+    seconds+"s";
+}
+
+function setDevice(online){
+  deviceOnline = !!online;
+
+  const el = $("deviceStatus");
+  el.textContent = deviceOnline ? "🟢 ONLINE" : "🔴 OFFLINE";
+  el.className = "value " + (deviceOnline ? "online" : "offline");
+
+  $("render").textContent = deviceOnline ? "CONNECTED" : "OFFLINE";
+  $("render").className = "value " + (deviceOnline ? "online" : "offline");
+
+  $("rebootBtn").disabled = !deviceOnline || rebootPending;
+}
+
+async function refreshStatus(){
+  try{
+    const r = await fetch("/api/device-status", {
+      method:"GET",
+      cache:"no-store",
+      credentials:"same-origin"
+    });
+
+    if(!r.ok) throw new Error("status "+r.status);
+
+    const d = await r.json();
+
+    setDevice(!!d.online);
+
+    if(d.listeners !== undefined)
+      $("listeners").textContent = d.listeners;
+
+    if(d.streaming !== undefined){
+      const text = d.streaming ? "STREAMING" : "IDLE";
+      $("audio").textContent = text;
+      $("streaming").textContent = text;
+      $("audio").className = "value " + (d.streaming ? "online" : "idle");
+      $("streaming").className = "value " + (d.streaming ? "online" : "idle");
+    }
+
+    if(d.last_seen){
+      lastSeen = d.last_seen;
+      $("lastSeen").textContent = fmtTime(lastSeen);
+    }
+
+    if(d.last_reboot){
+      lastReboot = d.last_reboot;
+      $("lastReboot").textContent = fmtTime(lastReboot);
+    }
+
+    if(d.boot_time){
+      bootTime = d.boot_time;
+    }
+
+    fmtUptime();
+
+  }catch(e){
+    setDevice(false);
+    $("audio").textContent = "UNKNOWN";
+    $("streaming").textContent = "UNKNOWN";
+  }
+}
+
+$("rebootBtn").onclick = async ()=>{
+  if(!deviceOnline || rebootPending) return;
+
+  if(!window.confirm(
+    "Are you sure you want to reboot the ESP32?\n\n"+
+    "The microphone stream will stop and the ESP32 will restart."
+  )) return;
+
+  rebootPending = true;
+  $("rebootBtn").disabled = true;
+  $("rebootStatus").textContent = "ESP32 reboot requested…";
+  $("rebootStatus").className = "status";
+
+  try{
+    const r = await fetch("/api/esp32/reboot", {
+      method:"POST",
+      credentials:"same-origin",
+      headers:{"Content-Type":"application/json"},
+      body:"{}"
+    });
+
+    const d = await r.json().catch(()=>({}));
+
+    if(!r.ok){
+      throw new Error(d.error || "Reboot request failed");
+    }
+
+    $("rebootStatus").textContent =
+      "Reboot command sent. Waiting for ESP32 to reconnect…";
+    $("rebootStatus").className = "status ok";
+
+  }catch(e){
+    rebootPending = false;
+    $("rebootBtn").disabled = !deviceOnline;
+    $("rebootStatus").textContent = e.message || "Reboot request failed.";
+    $("rebootStatus").className = "status err";
+  }
+};
+
+$("enterBtn").onclick = async ()=>{
+  const pin = $("pin").value.trim();
+
+  if(!pin){
+    $("loginStatus").textContent = "Please enter the listener PIN.";
+    $("loginStatus").className = "status err";
+    return;
+  }
+
+  $("enterBtn").disabled = true;
+  $("loginStatus").textContent = "Authenticating…";
+  $("loginStatus").className = "status";
+
+  try{
+    const r = await fetch("/api/auth", {
+      method:"POST",
+      credentials:"same-origin",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({pin})
+    });
+
+    const d = await r.json().catch(()=>({}));
+
+    if(!r.ok || !d.ok){
+      throw new Error(d.error || "Invalid PIN");
+    }
+
+    // Do not put the PIN in the URL.
+    window.location.href = "/listener";
+
+  }catch(e){
+    $("loginStatus").textContent = e.message || "Authentication failed.";
+    $("loginStatus").className = "status err";
+    $("enterBtn").disabled = false;
+  }
+};
+
+$("pin").addEventListener("keydown", e=>{
+  if(e.key === "Enter") $("enterBtn").click();
+});
+
+setInterval(refreshStatus, 3000);
+setInterval(fmtUptime, 1000);
+refreshStatus();
+</script>
+</body>
+</html>
