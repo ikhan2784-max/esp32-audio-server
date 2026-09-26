@@ -52,6 +52,9 @@ let deviceConnectedAt = null;
 let deviceLastRebooted = null;
 let deviceRebootPending = false;
 
+// The currently active ESP32 WebSocket connection
+let activeSource = null;
+
 function buildDeviceStatus() {
   return {
     type: "device_status",
@@ -203,6 +206,8 @@ app.post("/api/esp32/reboot", requireHttps, (req, res) => {
   deviceRebootPending = true;
   deviceLastRebooted = new Date().toISOString();
 
+  let forwarded = false;
+  
   for (const source of sources) {
     if (
       source.readyState === WebSocket.OPEN &&
@@ -404,21 +409,32 @@ wss.on("connection", (ws, req) => {
       // AUTHENTICATED SOURCE
       // ------------------------------------------------------
 
-      ws.role = "source";
-      ws.authenticated = true;
+     ws.role = "source";
+ws.authenticated = true;
 
-      sources.add(ws);
+// If an older ESP32 connection still exists,
+// this new connection becomes the active one.
+if (activeSource && activeSource !== ws) {
+  try {
+    activeSource.close(1000, "Replaced by newer ESP32 connection");
+  } catch (err) {
+    console.error("Error closing old ESP32 connection:", err.message);
+  }
+}
 
-      const connectedNow = new Date().toISOString();
+activeSource = ws;
+sources.add(ws);
 
-      deviceOnline = true;
-      deviceLastSeen = connectedNow;
-      deviceConnectedAt = connectedNow;
+const connectedNow = new Date().toISOString();
 
-      if (deviceRebootPending) {
-        deviceLastRebooted = connectedNow;
-        deviceRebootPending = false;
-      }
+deviceOnline = true;
+deviceLastSeen = connectedNow;
+deviceConnectedAt = connectedNow;
+
+if (deviceRebootPending) {
+  deviceLastRebooted = connectedNow;
+  deviceRebootPending = false;
+}
 
       console.log(
         `ESP32 audio source authenticated: ${ip} ` +
@@ -661,18 +677,31 @@ wss.on("connection", (ws, req) => {
     // SOURCE DISCONNECTED
     // --------------------------------------------------------
 
-    if (wasSource) {
+   if (wasSource) {
 
-      deviceOnline = false;
-      deviceLastSeen = new Date().toISOString();
+  // Only mark the ESP32 offline if THIS was
+  // the currently active ESP32 connection.
+  if (ws === activeSource) {
 
-      broadcastDeviceStatus();
+    activeSource = null;
 
-      console.log(
-        "ESP32 audio source disconnected"
-      );
-    }
-  });
+    deviceOnline = false;
+    deviceLastSeen = new Date().toISOString();
+
+    broadcastDeviceStatus();
+
+    console.log(
+      "ESP32 active audio source disconnected"
+    );
+
+  } else {
+
+    console.log(
+      "Old ESP32 source connection disconnected"
+    );
+
+  }
+}
 
   // ==========================================================
   // WEBSOCKET ERROR
