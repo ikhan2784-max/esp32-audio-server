@@ -2,522 +2,57 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0b0f14">
-<title>ESP32 INMP441 Listener</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ESP32 INMP441 Secure Live Audio</title>
 <style>
-:root{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#eef2f7;background:#0b0f14}
-*{box-sizing:border-box}body{margin:0;min-height:100vh;background:linear-gradient(160deg,#101722,#070a0e)}
-.wrap{max-width:560px;margin:auto;padding:22px 16px 40px}
-.card{background:#121923;border:1px solid #263140;border-radius:18px;padding:18px;margin-bottom:14px;box-shadow:0 8px 30px #0005}
-h1{font-size:23px;margin:0 0 6px}.sub{color:#9ba8b8;font-size:14px}
-label{display:block;font-size:13px;color:#aeb8c5;margin:14px 0 6px}
-input,button{width:100%;border-radius:12px;padding:13px 14px;font-size:16px}
-input{background:#0b1016;color:#fff;border:1px solid #334050;outline:none}
-button{border:0;background:#e8edf3;color:#0a0d11;font-weight:700;margin-top:12px;cursor:pointer}
-button.secondary{background:#273241;color:#fff}.row{display:flex;gap:10px}.row button{flex:1}
-.status{padding:10px 12px;border-radius:10px;background:#0c1219;color:#aeb8c5;font-size:13px;margin-top:12px}
-.status.ok{color:#8ff0ae}.status.err{color:#ff9a9a}
-.hidden{display:none}.meter{height:12px;background:#080c11;border-radius:99px;overflow:hidden;border:1px solid #273140;margin-top:10px}
-.meter>div{height:100%;width:0%;background:#63e6be;transition:width .06s linear}
-.range{width:100%}.big{font-size:30px;font-weight:800;margin:5px 0}
-.small{font-size:12px;color:#8995a4;margin-top:7px}
-.badge{display:inline-block;padding:5px 8px;border-radius:999px;background:#202a36;color:#aeb8c5;font-size:12px}
+body{font-family:Arial,sans-serif;max-width:700px;margin:30px auto;padding:20px;background:#111;color:#eee}
+button{font-size:17px;padding:11px 18px;margin:5px 8px 5px 0;cursor:pointer}button:disabled{opacity:.5;cursor:not-allowed}
+#status{margin:18px 0;padding:12px;background:#222;border-radius:8px}.control{margin:18px 0;padding:18px;background:#222;border-radius:8px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.card{background:#181818;border-radius:8px;padding:14px}.label{color:#aaa;font-size:13px}.value{font-weight:bold;margin-top:5px}.online{color:#55d66b}.offline{color:#ff6b6b}.warn{color:#ffd166}
+input[type=range]{width:100%}#meter{width:100%;height:24px;background:#333;border-radius:12px;overflow:hidden}#level{width:0;height:100%;background:#4caf50;transition:width .05s}
+.small{color:#aaa;font-size:13px}.danger{background:#6b2020;color:#fff;border:1px solid #a33}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="card">
-    <h1>ESP32 INMP441 Listener</h1>
-    <div class="sub">Low-latency continuous PCM playback</div>
-    <label for="pin">Listener PIN</label>
-    <input id="pin" type="password" inputmode="numeric" autocomplete="one-time-code" placeholder="Enter PIN">
-    <button id="connectBtn">Start Listening</button>
-    <div id="status" class="status">Disconnected</div>
-  </div>
-
-  <div id="playerCard" class="card hidden">
-    <div class="badge" id="connectionBadge">Connected</div>
-    <div class="big" id="stateText">Waiting for audio…</div>
-    <div class="sub">Live audio level</div>
-    <div class="meter"><div id="meterBar"></div></div>
-    <div class="small" id="bufferText">Buffer: 0 ms</div>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px">
-      <label for="volume" style="margin:0">Volume</label>
-      <strong id="volumeValue">150%</strong>
-    </div>
-    <input id="volume" class="range" type="range" min="0" max="300" value="150">
-    <div class="row">
-      <button id="stopBtn" class="secondary">Stop</button>
-      <button id="recordBtn" class="secondary">Start Recording</button>
-    </div>
-    <button id="rebootBtn" class="secondary">ESP32 Reboot</button>
-    <div class="small" id="recordText">Recording: off</div>
-  </div>
+<h1>ESP32 INMP441 Live Audio</h1>
+<div class="control">
+<strong>ESP32 Device</strong><br><br>
+<div class="grid">
+<div class="card"><div class="label">Status</div><div id="deviceStatus" class="value offline">🔴 OFFLINE</div></div>
+<div class="card"><div class="label">Listeners</div><div id="listenerCount" class="value">0</div></div>
+<div class="card"><div class="label">Last Seen</div><div id="lastSeen" class="value">Never</div></div>
+<div class="card"><div class="label">Last Rebooted</div><div id="lastReboot" class="value">Never</div></div>
+<div class="card"><div class="label">Uptime</div><div id="uptime" class="value">—</div></div>
+<div class="card"><div class="label">Audio</div><div id="audioState" class="value">IDLE</div></div>
 </div>
-
+</div>
+<div class="control"><strong>Listener PIN</strong><br><br><input id="pin" type="password" inputmode="numeric" autocomplete="one-time-code" maxlength="32" placeholder="Enter listener PIN"></div>
+<button id="start">Start Listening</button><button id="stop" disabled>Stop</button><button id="rebootBtn" class="danger" disabled>ESP32 Reboot</button>
+<div class="control"><strong>Recording</strong><br><br><button id="record" disabled>🔴 Start Recording</button><button id="stopRecord" disabled>⏹ Stop Recording</button><div id="recordStatus">Not recording</div><div id="duration">00:00</div></div>
+<div id="status">Disconnected</div>
+<div class="control"><strong>Browser Volume</strong><br><br><input id="volume" type="range" min="0" max="3" step="0.01" value="1.5"><p>Volume: <span id="volumeValue">150%</span></p></div>
+<p>Audio level</p><div id="meter"><div id="level"></div></div>
+<p class="small">16 kHz mono PCM16 • Secure PIN • Multi-listener • WAV recording • Device monitoring</p>
 <script>
-"use strict";
-
-const SOURCE_SAMPLE_RATE = 16000;
-const TARGET_BUFFER_MS = 80;
-const MAX_BUFFER_MS = 450;
-const MIN_BUFFER_MS = 25;
-
-let ws = null;
-let audioContext = null;
-let workletNode = null;
-let gainNode = null;
-let analyser = null;
-let connected = false;
-let recording = false;
-let recordedChunks = [];
-let workletReady = false;
-let inputSampleCarry = new Float32Array(0);
-
-const $ = id => document.getElementById(id);
-const statusEl = $("status");
-const playerCard = $("playerCard");
-const stateText = $("stateText");
-const meterBar = $("meterBar");
-const bufferText = $("bufferText");
-const connectionBadge = $("connectionBadge");
-const recordText = $("recordText");
-
-function setStatus(text, cls=""){
-  statusEl.textContent = text;
-  statusEl.className = "status " + cls;
-}
-
-function wsUrl(){
-  return location.origin.replace(/^http/i,"ws") + "/ws";
-}
-
-function pcm16ToFloat32(data){
-  const view = new DataView(data);
-  const out = new Float32Array(view.byteLength / 2);
-  for(let i=0;i<out.length;i++) out[i] = view.getInt16(i*2,true) / 32768;
-  return out;
-}
-
-function rmsOfPCM(data){
-  const view = new DataView(data);
-  let sum=0, n=view.byteLength/2;
-  for(let i=0;i<n;i++){
-    const x=view.getInt16(i*2,true)/32768;
-    sum += x*x;
-  }
-  return n ? Math.sqrt(sum/n) : 0;
-}
-
-/*
-  Resample 16 kHz microphone PCM to the actual browser AudioContext
-  sample rate. This avoids wrong pitch/speed on phones whose native
-  audio output is 48 kHz.
-*/
-function resample16k(input, outRate){
-  if(outRate === SOURCE_SAMPLE_RATE) return input;
-
-  const ratio = SOURCE_SAMPLE_RATE / outRate;
-  const combined = new Float32Array(inputSampleCarry.length + input.length);
-  combined.set(inputSampleCarry,0);
-  combined.set(input,inputSampleCarry.length);
-
-  if(combined.length < 2){
-    inputSampleCarry = combined;
-    return new Float32Array(0);
-  }
-
-  const outLen = Math.max(0, Math.floor((combined.length - 1) / ratio));
-  const out = new Float32Array(outLen);
-
-  let pos = 0;
-  for(let i=0;i<outLen;i++){
-    const idx = Math.floor(pos);
-    const frac = pos - idx;
-    const a = combined[idx];
-    const b = combined[Math.min(idx+1,combined.length-1)];
-    out[i] = a + (b-a)*frac;
-    pos += ratio;
-  }
-
-  const consumed = Math.floor(pos);
-  inputSampleCarry = combined.slice(Math.min(consumed, combined.length-1));
-  return out;
-}
-
-function createWorkletURL(){
-  const code = `
-class PCMPlayerProcessor extends AudioWorkletProcessor {
-  constructor(){
-    super();
-    this.capacity = Math.max(sampleRate, 16000);
-    this.buffer = new Float32Array(this.capacity);
-    this.readIndex = 0;
-    this.writeIndex = 0;
-    this.available = 0;
-    this.target = Math.max(1, Math.floor(sampleRate * ${TARGET_BUFFER_MS}/1000));
-    this.maxBuffer = Math.max(this.target + 1, Math.floor(sampleRate * ${MAX_BUFFER_MS}/1000));
-    this.started = false;
-    this.underruns = 0;
-    this.lastReport = 0;
-
-    this.port.onmessage = e => {
-      const m = e.data;
-      if(!m) return;
-
-      if(m.type === "reset"){
-        this.readIndex=0;
-        this.writeIndex=0;
-        this.available=0;
-        this.started=false;
-        this.underruns=0;
-        return;
-      }
-
-      if(m.type === "target"){
-        this.target = Math.max(1, Math.floor(sampleRate*m.ms/1000));
-        return;
-      }
-
-      if(m.type === "data" && m.samples){
-        const src = m.samples;
-        let n = src.length;
-
-        // If a burst is larger than the ring, keep the newest part.
-        if(n > this.capacity){
-          src = src.subarray(src.length-this.capacity);
-          n = src.length;
-        }
-
-        // Keep the newest audio if the network temporarily bursts.
-        const room = this.capacity - this.available;
-        if(n > room){
-          const drop = n-room;
-          this.readIndex = (this.readIndex + drop) % this.capacity;
-          this.available -= drop;
-        }
-
-        for(let i=0;i<n;i++){
-          this.buffer[this.writeIndex] = src[i];
-          this.writeIndex = (this.writeIndex+1) % this.capacity;
-        }
-        this.available += n;
-
-        if(this.available > this.maxBuffer){
-          const extra = this.available - this.maxBuffer;
-          this.readIndex = (this.readIndex + extra) % this.capacity;
-          this.available -= extra;
-        }
-      }
-    };
-  }
-
-  process(inputs, outputs){
-    const out = outputs[0][0];
-    const now = currentTime;
-
-    if(!this.started){
-      if(this.available >= this.target) this.started=true;
-      else {
-        out.fill(0);
-        return true;
-      }
-    }
-
-    for(let i=0;i<out.length;i++){
-      if(this.available > 0){
-        out[i]=this.buffer[this.readIndex];
-        this.readIndex=(this.readIndex+1)%this.capacity;
-        this.available--;
-      }else{
-        out[i]=0;
-        this.started=false;
-        this.underruns++;
-      }
-    }
-
-    if(now-this.lastReport > 0.10){
-      this.port.postMessage({
-        type:"stats",
-        buffered:this.available,
-        underruns:this.underruns,
-        sampleRate:sampleRate
-      });
-      this.lastReport=now;
-    }
-    return true;
-  }
-}
-registerProcessor("pcm-player",PCMPlayerProcessor);
-`;
-  return URL.createObjectURL(new Blob([code],{type:"application/javascript"}));
-}
-
-async function initAudio(){
-  if(audioContext && workletReady) {
-    await audioContext.resume();
-    return;
-  }
-
-  audioContext = new (window.AudioContext || window.webkitAudioContext)({
-    latencyHint:"interactive"
-  });
-
-  gainNode = audioContext.createGain();
-  gainNode.gain.value = Number($("volume").value)/100;
-
-  analyser = audioContext.createAnalyser();
-  analyser.fftSize = 256;
-  analyser.smoothingTimeConstant = 0.15;
-
-  const url = createWorkletURL();
-  try{
-    await audioContext.audioWorklet.addModule(url);
-  }finally{
-    URL.revokeObjectURL(url);
-  }
-
-  workletNode = new AudioWorkletNode(audioContext,"pcm-player",{
-    numberOfInputs:0,
-    numberOfOutputs:1,
-    outputChannelCount:[1]
-  });
-
-  workletNode.connect(gainNode);
-  gainNode.connect(analyser);
-  analyser.connect(audioContext.destination);
-
-  workletNode.port.onmessage = e => {
-    if(e.data?.type === "stats"){
-      const ms = Math.round(e.data.buffered / e.data.sampleRate * 1000);
-      bufferText.textContent = "Buffer: " + ms + " ms";
-      if(e.data.underruns > 0){
-        stateText.textContent = "Audio stream recovered";
-      }else if(ms > 0){
-        stateText.textContent = "Live";
-      }
-    }
-  };
-
-  workletReady = true;
-  await audioContext.resume();
-  startMeter();
-}
-
-function startMeter(){
-  const data = new Uint8Array(analyser.fftSize);
-  function tick(){
-    if(!analyser) return;
-    analyser.getByteTimeDomainData(data);
-    let sum=0;
-    for(let i=0;i<data.length;i++){
-      const x=(data[i]-128)/128;
-      sum += x*x;
-    }
-    const rms=Math.sqrt(sum/data.length);
-    const pct=Math.min(100,Math.max(0,rms*260));
-    meterBar.style.width=pct.toFixed(1)+"%";
-    requestAnimationFrame(tick);
-  }
-  requestAnimationFrame(tick);
-}
-
-function resetPlayback(){
-  inputSampleCarry = new Float32Array(0);
-  if(workletNode){
-    workletNode.port.postMessage({type:"reset"});
-  }
-  stateText.textContent = "Waiting for audio…";
-  bufferText.textContent = "Buffer: 0 ms";
-  meterBar.style.width="0%";
-}
-
-function handleAudioPacket(data){
-  if(!(data instanceof ArrayBuffer)) return;
-
-  const rms=rmsOfPCM(data);
-  if(recording) recordedChunks.push(new Uint8Array(data.slice(0)));
-
-  const pcm=pcm16ToFloat32(data);
-  const resampled=resample16k(pcm,audioContext.sampleRate);
-  if(resampled.length){
-    workletNode.port.postMessage({type:"data",samples:resampled},[resampled.buffer]);
-  }
-
-  if(rms > 0.00001 && stateText.textContent !== "Live"){
-    stateText.textContent="Live";
-  }
-}
-
-async function connect(){
-  const pin=$("pin").value.trim();
-  if(!pin){ setStatus("Enter the listener PIN.","err"); return; }
-
-  try{
-    await initAudio();
-  }catch(e){
-    setStatus("Audio initialization failed: "+e.message,"err");
-    return;
-  }
-
-  if(ws) try{ws.close();}catch(_){}
-
-  setStatus("Connecting…");
-  $("connectBtn").disabled=true;
-  playerCard.classList.remove("hidden");
-  resetPlayback();
-
-  ws=new WebSocket(wsUrl());
-  ws.binaryType="arraybuffer";
-
-  ws.onopen=()=>{
-    connected=true;
-    connectionBadge.textContent="Connected";
-    setStatus("Connected. Authenticating…","ok");
-    ws.send(JSON.stringify({type:"listener",pin}));
-  };
-
-  ws.onmessage=event=>{
-    if(typeof event.data === "string"){
-      let msg;
-      try{msg=JSON.parse(event.data);}catch(_){return;}
-
-      if(msg.type==="auth_ok"){
-        setStatus("Authenticated — waiting for live audio.","ok");
-        stateText.textContent="Waiting for audio…";
-        return;
-      }
-
-      if(msg.type==="auth_failed"){
-        setStatus("Authentication failed.","err");
-        return;
-      }
-
-      if(msg.type==="stream_start"){
-        stateText.textContent="Starting audio…";
-        return;
-      }
-
-      if(msg.type==="stream_stop"){
-        stateText.textContent="Stream stopped";
-        resetPlayback();
-        return;
-      }
-
-      if(msg.type==="error"){
-        setStatus(msg.message || "Server error","err");
-      }
-      return;
-    }
-
-    handleAudioPacket(event.data);
-  };
-
-  ws.onerror=()=>{
-    setStatus("WebSocket connection error.","err");
-    connectionBadge.textContent="Error";
-  };
-
-  ws.onclose=()=>{
-    connected=false;
-    $("connectBtn").disabled=false;
-    connectionBadge.textContent="Disconnected";
-    if(statusEl.className.includes("ok")) setStatus("Disconnected.");
-    resetPlayback();
-  };
-}
-
-function stop(){
-  if(ws){try{ws.close();}catch(_){}}
-  ws=null;
-  connected=false;
-  $("connectBtn").disabled=false;
-  resetPlayback();
-  playerCard.classList.add("hidden");
-  setStatus("Disconnected");
-}
-
-function startRecording(){
-  if(!connected){setStatus("Connect first.","err");return;}
-  recording=true;
-  recordedChunks=[];
-  $("recordBtn").textContent="Stop Recording";
-  recordText.textContent="Recording: on";
-}
-
-function stopRecording(){
-  recording=false;
-  $("recordBtn").textContent="Start Recording";
-  recordText.textContent="Recording: off";
-
-  if(!recordedChunks.length){
-    setStatus("No audio was recorded.","err");
-    return;
-  }
-
-  let total=0;
-  for(const c of recordedChunks) total+=c.length;
-  const pcm=new Uint8Array(total);
-  let pos=0;
-  for(const c of recordedChunks){pcm.set(c,pos);pos+=c.length;}
-
-  const wav=new ArrayBuffer(44+pcm.length);
-  const view=new DataView(wav);
-
-  function u32(o,v){view.setUint32(o,v,true)}
-  function u16(o,v){view.setUint16(o,v,true)}
-  function str(o,s){for(let i=0;i<s.length;i++)view.setUint8(o+i,s.charCodeAt(i));}
-
-  str(0,"RIFF");u32(4,36+pcm.length);str(8,"WAVE");
-  str(12,"fmt ");u32(16,16);u16(20,1);u16(22,1);
-  u32(24,SOURCE_SAMPLE_RATE);u32(28,SOURCE_SAMPLE_RATE*2);
-  u16(32,2);u16(34,16);str(36,"data");u32(40,pcm.length);
-
-  new Uint8Array(wav,44).set(pcm);
-  const blob=new Blob([wav],{type:"audio/wav"});
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);
-  a.download="ESP32_INMP441_"+new Date().toISOString().replace(/[:.]/g,"-")+".wav";
-  document.body.appendChild(a);a.click();a.remove();
-  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
-
-  recordedChunks=[];
-  setStatus("WAV recording saved.","ok");
-}
-
-$("connectBtn").onclick=connect;
-$("stopBtn").onclick=stop;
-$("recordBtn").onclick=()=>recording?stopRecording():startRecording();
-
-$("rebootBtn").onclick=()=>{
-  if(!ws || ws.readyState !== WebSocket.OPEN || !connected){
-    setStatus("Connect to the ESP32 first.","err");
-    return;
-  }
-
-  const confirmed = window.confirm(
-    "Are you sure you want to reboot the ESP32?\\n\\n" +
-    "The microphone stream will stop and the ESP32 will restart."
-  );
-
-  if(!confirmed) return;
-
-  try{
-    ws.send(JSON.stringify({type:"esp32_reboot"}));
-    stateText.textContent="ESP32 reboot requested…";
-    setStatus("ESP32 reboot command sent.","ok");
-  }catch(e){
-    setStatus("Could not send reboot command.","err");
-  }
-};
-$("volume").oninput=e=>{
-  const pct=Number(e.target.value);
-  $("volumeValue").textContent=pct+"%";
-  if(gainNode) gainNode.gain.value=pct/100;
-};
-$("pin").addEventListener("keydown",e=>{if(e.key==="Enter")connect();});
-window.addEventListener("pagehide",()=>{try{if(ws)ws.close();}catch(_){}});
+const SAMPLE_RATE=16000,CHANNELS=1,BYTES_PER_SAMPLE=2,TARGET_BUFFER_SECONDS=.12;
+let ws=null,audioContext=null,gainNode=null,nextPlayTime=0,recording=false,recordedChunks=[],recordedSamples=0,recordStartTime=0,timerHandle=null;
+let deviceOnline=false,lastSeenMs=0,lastRebootMs=0,bootSeenAtMs=0,uptimeTimer=null,rebootPending=false;
+const $=id=>document.getElementById(id),status=$("status"),level=$("level"),start=$("start"),stop=$("stop"),record=$("record"),stopRecord=$("stopRecord"),recordStatus=$("recordStatus"),duration=$("duration"),volume=$("volume"),volumeValue=$("volumeValue"),pinInput=$("pin"),rebootBtn=$("rebootBtn");
+function setStatus(t){status.textContent=t}
+function fmtTime(ms){if(!ms)return"Never";return new Date(ms).toLocaleString()}
+function setDeviceOnline(online,seen){deviceOnline=online;if(seen)lastSeenMs=seen;$("deviceStatus").textContent=online?"🟢 ONLINE":"🔴 OFFLINE";$("deviceStatus").className="value "+(online?"online":"offline");$("lastSeen").textContent=fmtTime(lastSeenMs);rebootBtn.disabled=!deviceOnline||!ws||ws.readyState!==WebSocket.OPEN}
+function updateUptime(){if(!bootSeenAtMs||!deviceOnline){$("uptime").textContent="—";return}let s=Math.max(0,Math.floor((Date.now()-bootSeenAtMs)/1000)),d=Math.floor(s/86400);s%=86400;let h=Math.floor(s/3600);s%=3600;let m=Math.floor(s/60);s%=60;$("uptime").textContent=(d?d+"d ":"")+(h?h+"h ":"")+(m?m+"m ":"")+s+"s"}
+setInterval(updateUptime,1000);
+function updateVolume(){let v=Number(volume.value);volumeValue.textContent=Math.round(v*100)+"%";if(gainNode)gainNode.gain.value=v}volume.addEventListener("input",updateVolume);
+function updateDuration(){if(!recording)return;let s=Math.floor((Date.now()-recordStartTime)/1000),m=Math.floor(s/60);duration.textContent=String(m).padStart(2,"0")+":"+String(s%60).padStart(2,"0");timerHandle=setTimeout(updateDuration,500)}
+function playPCM16(ab){if(!audioContext||!gainNode||ab.byteLength%2)return;const input=new Int16Array(ab);if(recording){const c=new Int16Array(input.length);c.set(input);recordedChunks.push(c);recordedSamples+=input.length}const b=audioContext.createBuffer(1,input.length,SAMPLE_RATE),o=b.getChannelData(0);let sum=0;for(let i=0;i<input.length;i++){let v=input[i]/32768;o[i]=v;sum+=v*v}level.style.width=Math.min(100,Math.sqrt(sum/input.length)*220)+"%";let now=audioContext.currentTime;if(nextPlayTime<now+.03)nextPlayTime=now+TARGET_BUFFER_SECONDS;const src=audioContext.createBufferSource();src.buffer=b;src.connect(gainNode);src.start(nextPlayTime);nextPlayTime+=b.duration;$("audioState").textContent="STREAMING"}
+function startRecording(){if(!ws||ws.readyState!==WebSocket.OPEN)return;recordedChunks=[];recordedSamples=0;recording=true;recordStartTime=Date.now();record.disabled=true;stopRecord.disabled=false;recordStatus.textContent="🔴 Recording...";duration.textContent="00:00";updateDuration()}
+function stopRecording(){if(!recording)return;recording=false;if(timerHandle)clearTimeout(timerHandle);timerHandle=null;record.disabled=false;stopRecord.disabled=true;const blob=createWavBlob(recordedChunks,recordedSamples),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="ESP32_INMP441_"+new Date().toISOString().replace(/[:.]/g,"-")+".wav";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);recordStatus.textContent="Recording saved as WAV"}
+function createWavBlob(chunks,count){const size=count*2,buf=new ArrayBuffer(44+size),v=new DataView(buf),wsx=(o,t)=>{for(let i=0;i<t.length;i++)v.setUint8(o+i,t.charCodeAt(i))};wsx(0,"RIFF");v.setUint32(4,36+size,true);wsx(8,"WAVE");wsx(12,"fmt ");v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,16000,true);v.setUint32(28,32000,true);v.setUint16(32,2,true);v.setUint16(34,16,true);wsx(36,"data");v.setUint32(40,size,true);let off=44;for(const c of chunks)for(const x of c){v.setInt16(off,x,true);off+=2}return new Blob([buf],{type:"audio/wav"})}
+start.onclick=async()=>{try{audioContext=new(window.AudioContext||window.webkitAudioContext)({sampleRate:SAMPLE_RATE,latencyHint:"interactive"});gainNode=audioContext.createGain();gainNode.gain.value=Number(volume.value);gainNode.connect(audioContext.destination);await audioContext.resume();nextPlayTime=audioContext.currentTime+TARGET_BUFFER_SECONDS;const protocol=location.protocol==="https:"?"wss:":"ws:";ws=new WebSocket(protocol+"//"+location.host+"/ws");ws.binaryType="arraybuffer";ws.onopen=()=>{const pin=pinInput.value.trim();if(!pin){ws.close();setStatus("Listener PIN required");return}ws.send(JSON.stringify({type:"listener",pin}));start.disabled=true;stop.disabled=false;record.disabled=false;rebootBtn.disabled=!deviceOnline};ws.onmessage=e=>{if(typeof e.data!=="string"){playPCM16(e.data);return}try{const m=JSON.parse(e.data);if(m.type==="auth_failed"){setStatus("Access denied — incorrect PIN");return}if(m.type==="listener_ready"){setStatus("Connected — listener authenticated")}if(m.type==="device_status"){setDeviceOnline(!!m.online,m.last_seen);if(m.boot_time)bootSeenAtMs=m.boot_time;if(m.last_reboot)lastRebootMs=m.last_reboot;$("lastReboot").textContent=fmtTime(lastRebootMs);$("listenerCount").textContent=m.listeners??"0";$("audioState").textContent=m.streaming?"STREAMING":"IDLE"}if(m.type==="device_online"){setDeviceOnline(true,m.last_seen);bootSeenAtMs=m.boot_time||Date.now();$("audioState").textContent=m.streaming?"STREAMING":"IDLE"}if(m.type==="device_offline"){setDeviceOnline(false,m.last_seen);$("audioState").textContent="OFFLINE"}if(m.type==="listener_count")$("listenerCount").textContent=m.count??"0";if(m.type==="stream_start")$("audioState").textContent="STREAMING";if(m.type==="stream_stop")$("audioState").textContent="IDLE";if(m.type==="reboot_requested"){if(m.source_connected){rebootPending=true;setStatus("ESP32 reboot requested — waiting for reconnect...");}else setStatus("ESP32 is offline")}if(m.type==="source_rebooted"){lastRebootMs=m.time||Date.now();$("lastReboot").textContent=fmtTime(lastRebootMs);rebootPending=false}}catch{setStatus(e.data)}};ws.onerror=()=>setStatus("WebSocket error");ws.onclose=()=>{if(recording)stopRecording();setDeviceOnline(false,lastSeenMs||Date.now());setStatus("Disconnected");start.disabled=false;stop.disabled=true;record.disabled=true;stopRecord.disabled=true;rebootBtn.disabled=true;$("audioState").textContent="OFFLINE"}}catch(e){console.error(e);setStatus("Audio initialization failed")}};
+stop.onclick=()=>{if(recording)stopRecording();if(ws){if(ws.readyState===WebSocket.OPEN)try{ws.send(JSON.stringify({type:"listener_stop"}))}catch{}ws.close();ws=null}if(audioContext){audioContext.close();audioContext=null}gainNode=null;nextPlayTime=0;level.style.width="0%";$("audioState").textContent="IDLE";setStatus("Stopped");start.disabled=false;stop.disabled=true;record.disabled=true;stopRecord.disabled=true;rebootBtn.disabled=true};
+rebootBtn.onclick=()=>{if(!ws||ws.readyState!==WebSocket.OPEN||!deviceOnline){setStatus("ESP32 is offline");return}if(!confirm("Are you sure you want to reboot the ESP32?\n\nThe microphone stream will stop and the ESP32 will restart."))return;ws.send(JSON.stringify({type:"esp32_reboot"}));rebootBtn.disabled=true;setStatus("ESP32 reboot command sent...")};
+record.onclick=startRecording;stopRecord.onclick=stopRecording;updateVolume();
 </script>
 </body>
 </html>
