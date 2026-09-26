@@ -251,15 +251,235 @@ function broadcastDeviceStatus() {
 // ROOT / HOMEPAGE
 // ============================================================
 
-app.get(
-  "/",
-  requireHttps,
-  (req, res) => {
-    res.sendFile(
-      __dirname + "/index.html"
-    );
+app.get("/", requireHttps, (req, res) => {
+  res.send(`
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ESP32 INMP441</title>
+
+<style>
+*{box-sizing:border-box}
+
+body{
+  margin:0;
+  min-height:100vh;
+  background:#0b0f14;
+  color:#f1f5f9;
+  font-family:Arial,sans-serif;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:20px;
+}
+
+.card{
+  width:100%;
+  max-width:420px;
+  background:#151b23;
+  border:1px solid #293241;
+  border-radius:16px;
+  padding:28px;
+  box-shadow:0 15px 40px rgba(0,0,0,.35);
+}
+
+h1{
+  margin:0 0 8px;
+  font-size:27px;
+}
+
+.sub{
+  color:#9aa7b5;
+  margin-bottom:28px;
+}
+
+label{
+  display:block;
+  margin-bottom:8px;
+  color:#cbd5e1;
+}
+
+input{
+  width:100%;
+  padding:15px;
+  border-radius:10px;
+  border:1px solid #344052;
+  background:#0d131a;
+  color:white;
+  font-size:20px;
+  text-align:center;
+  letter-spacing:4px;
+  outline:none;
+}
+
+button{
+  width:100%;
+  margin-top:15px;
+  padding:15px;
+  border:0;
+  border-radius:10px;
+  background:#2f81f7;
+  color:white;
+  font-size:17px;
+  font-weight:bold;
+  cursor:pointer;
+}
+
+button:disabled{
+  opacity:.6;
+  cursor:not-allowed;
+}
+
+.error{
+  color:#ff6b6b;
+  margin-top:15px;
+  text-align:center;
+}
+
+.status{
+  color:#7f8c9d;
+  text-align:center;
+  margin-top:20px;
+  font-size:13px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="card">
+
+<h1>ESP32 INMP441</h1>
+
+<div class="sub">
+Secure Listener
+</div>
+
+<form id="login">
+
+<label for="pin">
+Listener PIN
+</label>
+
+<input
+  id="pin"
+  type="password"
+  inputmode="numeric"
+  autocomplete="current-password"
+  placeholder="Enter PIN"
+  required
+>
+
+<button id="button" type="submit">
+Enter Listener
+</button>
+
+<div id="error" class="error"></div>
+
+<div class="status">
+Secure HTTPS / WSS connection
+</div>
+
+</form>
+
+</div>
+
+<script>
+
+const form =
+  document.getElementById("login");
+
+const pin =
+  document.getElementById("pin");
+
+const button =
+  document.getElementById("button");
+
+const error =
+  document.getElementById("error");
+
+form.addEventListener(
+  "submit",
+  async (e) => {
+
+    e.preventDefault();
+
+    error.textContent = "";
+
+    const value =
+      pin.value.trim();
+
+    if(!value){
+      error.textContent =
+        "Please enter the Listener PIN.";
+      return;
+    }
+
+    button.disabled = true;
+    button.textContent =
+      "Checking PIN...";
+
+    try{
+
+      const response =
+        await fetch(
+          "/api/auth",
+          {
+            method:"POST",
+            headers:{
+              "Content-Type":
+                "application/json"
+            },
+            credentials:"same-origin",
+            cache:"no-store",
+            body:JSON.stringify({
+              pin:value
+            })
+          }
+        );
+
+      const data =
+        await response.json();
+
+      if(
+        !response.ok ||
+        !data.ok
+      ){
+        throw new Error(
+          data.error ||
+          "Invalid PIN"
+        );
+      }
+
+      // Session cookie has now been
+      // created by the server.
+      window.location.href =
+        "/listener";
+
+    }catch(err){
+
+      error.textContent =
+        err.message ||
+        "Authentication failed.";
+
+      button.disabled = false;
+      button.textContent =
+        "Enter Listener";
+    }
+
   }
 );
+
+pin.focus();
+
+</script>
+
+</body>
+</html>
+  `);
+});
 
 // ============================================================
 // HEALTH
