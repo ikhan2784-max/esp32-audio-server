@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>ESP32 INMP441 - Secure Access</title>
+
+<style>
+:root{
+  --bg:#0b0f14;
+  --card:#151b23;
+  --border:#28313d;
+  --text:#f2f5f8;
+  --muted:#9aa7b5;
+  --blue:#5aa7ff;
+  --red:#ff5d67;
+  --green:#35d07f;
+}
+
+*{
+  box-sizing:border-box;
+}
+
+body{
+  margin:0;
+  min-height:100vh;
+
+  display:flex;
+  align-items:center;
+  justify-content:center;
+
+  padding:20px;
+
+  font-family:
+    Arial,
+    Helvetica,
+    sans-serif;
+
+  background:var(--bg);
+  color:var(--text);
+}
+
+.login-container{
+  width:min(430px,100%);
+}
+
+.card{
+  background:var(--card);
+
+  border:1px solid var(--border);
+
+  border-radius:16px;
+
+  padding:30px;
+
+  box-shadow:
+    0 12px 40px rgba(0,0,0,.30);
+}
+
+.logo{
+  width:64px;
+  height:64px;
+
+  margin:0 auto 20px;
+
+  border-radius:16px;
+
+  display:flex;
+  align-items:center;
+  justify-content:center;
+
+  background:#202a36;
+
+  font-size:30px;
+}
+
+h1{
+  margin:0;
+
+  text-align:center;
+
+  font-size:27px;
+}
+
+.subtitle{
+  margin-top:8px;
+
+  text-align:center;
+
+  color:var(--muted);
+
+  font-size:15px;
+}
+
+.form{
+  margin-top:28px;
+}
+
+label{
+  display:block;
+
+  margin-bottom:8px;
+
+  color:var(--muted);
+
+  font-size:14px;
+}
+
+input{
+  width:100%;
+
+  padding:14px;
+
+  border-radius:10px;
+
+  border:1px solid var(--border);
+
+  outline:none;
+
+  background:#0c1117;
+
+  color:white;
+
+  font-size:18px;
+
+  text-align:center;
+
+  letter-spacing:4px;
+}
+
+input:focus{
+  border-color:var(--blue);
+}
+
+button{
+  width:100%;
+
+  margin-top:16px;
+
+  padding:14px;
+
+  border:0;
+
+  border-radius:10px;
+
+  background:var(--blue);
+
+  color:white;
+
+  font-size:17px;
+
+  font-weight:700;
+
+  cursor:pointer;
+}
+
+button:hover{
+  filter:brightness(1.08);
+}
+
+button:disabled{
+  opacity:.5;
+
+  cursor:not-allowed;
+}
+
+.message{
+  min-height:22px;
+
+  margin-top:15px;
+
+  text-align:center;
+
+  font-size:14px;
+}
+
+.message.error{
+  color:var(--red);
+}
+
+.message.success{
+  color:var(--green);
+}
+
+.security{
+  margin-top:25px;
+
+  padding-top:18px;
+
+  border-top:1px solid var(--border);
+
+  text-align:center;
+
+  color:var(--muted);
+
+  font-size:12px;
+
+  line-height:1.6;
+}
+
+@media(max-width:500px){
+
+  .card{
+    padding:24px;
+  }
+
+  h1{
+    font-size:24px;
+  }
+}
+</style>
+</head>
+
+<body>
+
+<div class="login-container">
+
+  <div class="card">
+
+    <div class="logo">
+      🎙️
+    </div>
+
+    <h1>
+      ESP32 INMP441
+    </h1>
+
+    <div class="subtitle">
+      Secure Live Audio Listener
+    </div>
+
+    <form
+      id="loginForm"
+      class="form"
+      autocomplete="off"
+    >
+
+      <label for="pin">
+        Listener PIN
+      </label>
+
+      <input
+        id="pin"
+        name="pin"
+        type="password"
+        inputmode="numeric"
+        autocomplete="off"
+        maxlength="32"
+        placeholder="Enter PIN"
+        required
+      >
+
+      <button
+        id="loginButton"
+        type="submit"
+      >
+        🔐 Access Listener
+      </button>
+
+      <div
+        id="message"
+        class="message"
+      ></div>
+
+    </form>
+
+    <div class="security">
+      🔒 Secure HTTPS/WSS connection<br>
+      Authorized listeners only
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+
+const form =
+  document.getElementById("loginForm");
+
+const pinInput =
+  document.getElementById("pin");
+
+const loginButton =
+  document.getElementById("loginButton");
+
+const message =
+  document.getElementById("message");
+
+function showMessage(
+  text,
+  type
+){
+
+  message.textContent =
+    text;
+
+  message.className =
+    "message " +
+    (type || "");
+}
+
+form.addEventListener(
+  "submit",
+  async function(event){
+
+    event.preventDefault();
+
+    const pin =
+      pinInput.value.trim();
+
+    if(!pin){
+
+      showMessage(
+        "Please enter your PIN.",
+        "error"
+      );
+
+      pinInput.focus();
+
+      return;
+    }
+
+    loginButton.disabled =
+      true;
+
+    loginButton.textContent =
+      "Authenticating...";
+
+    showMessage(
+      "",
+      ""
+    );
+
+    try{
+
+      const response =
+        await fetch(
+          "/api/auth",
+          {
+            method:"POST",
+
+            headers:{
+              "Content-Type":
+                "application/json"
+            },
+
+            credentials:"same-origin",
+
+            body:JSON.stringify({
+              pin:pin
+            })
+          }
+        );
+
+      let data = null;
+
+      try{
+        data =
+          await response.json();
+      }catch{
+        data = null;
+      }
+
+      if(
+        response.ok &&
+        data &&
+        data.ok
+      ){
+
+        showMessage(
+          "Access granted. Opening listener...",
+          "success"
+        );
+
+        window.location.href =
+          "/listener";
+
+        return;
+      }
+
+      if(
+        response.status === 401
+      ){
+
+        showMessage(
+          "Incorrect PIN.",
+          "error"
+        );
+
+      }else{
+
+        showMessage(
+          "Authentication failed. Please try again.",
+          "error"
+        );
+      }
+
+    }catch(error){
+
+      console.error(error);
+
+      showMessage(
+        "Connection error. Please try again.",
+        "error"
+      );
+
+    }finally{
+
+      loginButton.disabled =
+        false;
+
+      loginButton.textContent =
+        "🔐 Access Listener";
+    }
+
+  }
+);
+
+pinInput.focus();
+
+</script>
+
+</body>
+</html>
