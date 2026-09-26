@@ -1,58 +1,96 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ESP32 INMP441 Secure Live Audio</title>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ESP32 INMP441 Listener</title>
 <style>
-body{font-family:Arial,sans-serif;max-width:700px;margin:30px auto;padding:20px;background:#111;color:#eee}
-button{font-size:17px;padding:11px 18px;margin:5px 8px 5px 0;cursor:pointer}button:disabled{opacity:.5;cursor:not-allowed}
-#status{margin:18px 0;padding:12px;background:#222;border-radius:8px}.control{margin:18px 0;padding:18px;background:#222;border-radius:8px}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.card{background:#181818;border-radius:8px;padding:14px}.label{color:#aaa;font-size:13px}.value{font-weight:bold;margin-top:5px}.online{color:#55d66b}.offline{color:#ff6b6b}.warn{color:#ffd166}
-input[type=range]{width:100%}#meter{width:100%;height:24px;background:#333;border-radius:12px;overflow:hidden}#level{width:0;height:100%;background:#4caf50;transition:width .05s}
-.small{color:#aaa;font-size:13px}.danger{background:#6b2020;color:#fff;border:1px solid #a33}
+*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#0b0f14;color:#eef2f7}
+.wrap{max-width:900px;margin:24px auto;padding:0 16px 50px}.section{background:#151b23;border:1px solid #28313d;border-radius:15px;padding:20px;margin-bottom:16px}
+h1{margin:0 0 5px;font-size:29px}h2{margin:0 0 16px;font-size:19px}.sub,.small,.label{color:#9aa7b5}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:11px}.stat{background:#10161d;border:1px solid #28313d;border-radius:10px;padding:13px}
+.label{font-size:12px}.value{font-size:17px;font-weight:700;margin-top:6px}.online,.ok{color:#35d07f}.offline{color:#ff5d67}.idle{color:#9aa7b5}
+button{border:0;border-radius:9px;padding:12px 18px;margin:6px 8px 0 0;font-size:16px;font-weight:700;cursor:pointer;background:#5aa7ff;color:#fff}
+button.secondary{background:#303b49}button.danger{background:#b8323c}button:disabled{opacity:.45;cursor:not-allowed}
+input[type=range]{width:100%;accent-color:#5aa7ff}.status{padding:12px;background:#10161d;border:1px solid #28313d;border-radius:9px;margin-top:12px;color:#9aa7b5}
+#meter{height:22px;background:#29313b;border-radius:11px;overflow:hidden;margin-top:10px}#level{width:0;height:100%;background:#35d07f;transition:width .05s}
+.row{display:flex;justify-content:space-between;align-items:center}.volume{font-size:20px;font-weight:700}.record-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-top:12px}
+.record{background:#10161d;border:1px solid #28313d;border-radius:10px;padding:13px}.record strong{display:block;margin-top:7px}
+@media(max-width:650px){.grid,.record-grid{grid-template-columns:1fr}.wrap{margin-top:14px}button{width:100%;margin-right:0}}
 </style>
 </head>
-<body>
-<h1>ESP32 INMP441 Live Audio</h1>
-<div class="control">
-<strong>ESP32 Device</strong><br><br>
-<div class="grid">
-<div class="card"><div class="label">Status</div><div id="deviceStatus" class="value offline">🔴 OFFLINE</div></div>
-<div class="card"><div class="label">Listeners</div><div id="listenerCount" class="value">0</div></div>
-<div class="card"><div class="label">Last Seen</div><div id="lastSeen" class="value">Never</div></div>
-<div class="card"><div class="label">Last Rebooted</div><div id="lastReboot" class="value">Never</div></div>
-<div class="card"><div class="label">Uptime</div><div id="uptime" class="value">—</div></div>
-<div class="card"><div class="label">Audio</div><div id="audioState" class="value">IDLE</div></div>
+<body><div class="wrap">
+<div class="section"><h1>ESP32 INMP441</h1><div class="sub">Secure Live Audio Listener</div></div>
+
+<div class="section"><h2>ESP32 Status</h2><div class="grid">
+<div class="stat"><div class="label">Device</div><div id="device" class="value offline">🔴 OFFLINE</div></div>
+<div class="stat"><div class="label">Audio</div><div id="audio" class="value idle">IDLE</div></div>
+<div class="stat"><div class="label">Streaming</div><div id="streaming" class="value idle">IDLE</div></div>
+<div class="stat"><div class="label">Listeners</div><div id="listeners" class="value">0</div></div>
+<div class="stat"><div class="label">Render / WSS</div><div id="render" class="value idle">CHECKING</div></div>
+<div class="stat"><div class="label">Last Seen</div><div id="lastSeen" class="value">Never</div></div>
+<div class="stat"><div class="label">Last Reboot</div><div id="lastReboot" class="value">Never</div></div>
+<div class="stat"><div class="label">ESP32 Uptime</div><div id="uptime" class="value">—</div></div>
+<div class="stat"><div class="label">Connection Since</div><div id="connectedAt" class="value">—</div></div>
+</div><div id="status" class="status">Connecting…</div></div>
+
+<div class="section"><h2>Live Audio</h2>
+<div class="row"><span>Browser Volume</span><span id="volumeValue" class="volume">150%</span></div>
+<input id="volume" type="range" min="0" max="3" step=".01" value="1.5">
+<div class="label" style="margin-top:20px">Audio Level</div><div id="meter"><div id="level"></div></div>
+<button id="start">▶ Start Listening</button><button id="stop" class="secondary" disabled>⏹ Stop Listening</button>
+<button id="reboot" class="danger" disabled>ESP32 Reboot</button>
+<div class="small" style="margin-top:12px">16 kHz mono PCM16 • Session authenticated • Multi-listener • Low-latency playback</div>
 </div>
+
+<div class="section"><h2>Recording</h2>
+<button id="record" disabled>🔴 Start Recording</button><button id="stopRecord" class="secondary" disabled>⏹ Stop Recording</button>
+<div class="record-grid"><div class="record"><div class="label">Recording Status</div><strong id="recordStatus">Not recording</strong></div>
+<div class="record"><div class="label">Duration</div><strong id="duration">00:00</strong></div></div></div>
 </div>
-<div class="control"><strong>Listener PIN</strong><br><br><input id="pin" type="password" inputmode="numeric" autocomplete="one-time-code" maxlength="32" placeholder="Enter listener PIN"></div>
-<button id="start">Start Listening</button><button id="stop" disabled>Stop</button><button id="rebootBtn" class="danger" disabled>ESP32 Reboot</button>
-<div class="control"><strong>Recording</strong><br><br><button id="record" disabled>🔴 Start Recording</button><button id="stopRecord" disabled>⏹ Stop Recording</button><div id="recordStatus">Not recording</div><div id="duration">00:00</div></div>
-<div id="status">Disconnected</div>
-<div class="control"><strong>Browser Volume</strong><br><br><input id="volume" type="range" min="0" max="3" step="0.01" value="1.5"><p>Volume: <span id="volumeValue">150%</span></p></div>
-<p>Audio level</p><div id="meter"><div id="level"></div></div>
-<p class="small">16 kHz mono PCM16 • Secure PIN • Multi-listener • WAV recording • Device monitoring</p>
+
 <script>
-const SAMPLE_RATE=16000,CHANNELS=1,BYTES_PER_SAMPLE=2,TARGET_BUFFER_SECONDS=.12;
-let ws=null,audioContext=null,gainNode=null,nextPlayTime=0,recording=false,recordedChunks=[],recordedSamples=0,recordStartTime=0,timerHandle=null;
-let deviceOnline=false,lastSeenMs=0,lastRebootMs=0,bootSeenAtMs=0,uptimeTimer=null,rebootPending=false;
-const $=id=>document.getElementById(id),status=$("status"),level=$("level"),start=$("start"),stop=$("stop"),record=$("record"),stopRecord=$("stopRecord"),recordStatus=$("recordStatus"),duration=$("duration"),volume=$("volume"),volumeValue=$("volumeValue"),pinInput=$("pin"),rebootBtn=$("rebootBtn");
-function setStatus(t){status.textContent=t}
-function fmtTime(ms){if(!ms)return"Never";return new Date(ms).toLocaleString()}
-function setDeviceOnline(online,seen){deviceOnline=online;if(seen)lastSeenMs=seen;$("deviceStatus").textContent=online?"🟢 ONLINE":"🔴 OFFLINE";$("deviceStatus").className="value "+(online?"online":"offline");$("lastSeen").textContent=fmtTime(lastSeenMs);rebootBtn.disabled=!deviceOnline||!ws||ws.readyState!==WebSocket.OPEN}
-function updateUptime(){if(!bootSeenAtMs||!deviceOnline){$("uptime").textContent="—";return}let s=Math.max(0,Math.floor((Date.now()-bootSeenAtMs)/1000)),d=Math.floor(s/86400);s%=86400;let h=Math.floor(s/3600);s%=3600;let m=Math.floor(s/60);s%=60;$("uptime").textContent=(d?d+"d ":"")+(h?h+"h ":"")+(m?m+"m ":"")+s+"s"}
-setInterval(updateUptime,1000);
-function updateVolume(){let v=Number(volume.value);volumeValue.textContent=Math.round(v*100)+"%";if(gainNode)gainNode.gain.value=v}volume.addEventListener("input",updateVolume);
-function updateDuration(){if(!recording)return;let s=Math.floor((Date.now()-recordStartTime)/1000),m=Math.floor(s/60);duration.textContent=String(m).padStart(2,"0")+":"+String(s%60).padStart(2,"0");timerHandle=setTimeout(updateDuration,500)}
-function playPCM16(ab){if(!audioContext||!gainNode||ab.byteLength%2)return;const input=new Int16Array(ab);if(recording){const c=new Int16Array(input.length);c.set(input);recordedChunks.push(c);recordedSamples+=input.length}const b=audioContext.createBuffer(1,input.length,SAMPLE_RATE),o=b.getChannelData(0);let sum=0;for(let i=0;i<input.length;i++){let v=input[i]/32768;o[i]=v;sum+=v*v}level.style.width=Math.min(100,Math.sqrt(sum/input.length)*220)+"%";let now=audioContext.currentTime;if(nextPlayTime<now+.03)nextPlayTime=now+TARGET_BUFFER_SECONDS;const src=audioContext.createBufferSource();src.buffer=b;src.connect(gainNode);src.start(nextPlayTime);nextPlayTime+=b.duration;$("audioState").textContent="STREAMING"}
-function startRecording(){if(!ws||ws.readyState!==WebSocket.OPEN)return;recordedChunks=[];recordedSamples=0;recording=true;recordStartTime=Date.now();record.disabled=true;stopRecord.disabled=false;recordStatus.textContent="🔴 Recording...";duration.textContent="00:00";updateDuration()}
-function stopRecording(){if(!recording)return;recording=false;if(timerHandle)clearTimeout(timerHandle);timerHandle=null;record.disabled=false;stopRecord.disabled=true;const blob=createWavBlob(recordedChunks,recordedSamples),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="ESP32_INMP441_"+new Date().toISOString().replace(/[:.]/g,"-")+".wav";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);recordStatus.textContent="Recording saved as WAV"}
-function createWavBlob(chunks,count){const size=count*2,buf=new ArrayBuffer(44+size),v=new DataView(buf),wsx=(o,t)=>{for(let i=0;i<t.length;i++)v.setUint8(o+i,t.charCodeAt(i))};wsx(0,"RIFF");v.setUint32(4,36+size,true);wsx(8,"WAVE");wsx(12,"fmt ");v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,16000,true);v.setUint32(28,32000,true);v.setUint16(32,2,true);v.setUint16(34,16,true);wsx(36,"data");v.setUint32(40,size,true);let off=44;for(const c of chunks)for(const x of c){v.setInt16(off,x,true);off+=2}return new Blob([buf],{type:"audio/wav"})}
-start.onclick=async()=>{try{audioContext=new(window.AudioContext||window.webkitAudioContext)({sampleRate:SAMPLE_RATE,latencyHint:"interactive"});gainNode=audioContext.createGain();gainNode.gain.value=Number(volume.value);gainNode.connect(audioContext.destination);await audioContext.resume();nextPlayTime=audioContext.currentTime+TARGET_BUFFER_SECONDS;const protocol=location.protocol==="https:"?"wss:":"ws:";ws=new WebSocket(protocol+"//"+location.host+"/ws");ws.binaryType="arraybuffer";ws.onopen=()=>{const pin=pinInput.value.trim();if(!pin){ws.close();setStatus("Listener PIN required");return}ws.send(JSON.stringify({type:"listener",pin}));start.disabled=true;stop.disabled=false;record.disabled=false;rebootBtn.disabled=!deviceOnline};ws.onmessage=e=>{if(typeof e.data!=="string"){playPCM16(e.data);return}try{const m=JSON.parse(e.data);if(m.type==="auth_failed"){setStatus("Access denied — incorrect PIN");return}if(m.type==="listener_ready"){setStatus("Connected — listener authenticated")}if(m.type==="device_status"){setDeviceOnline(!!m.online,m.last_seen);if(m.boot_time)bootSeenAtMs=m.boot_time;if(m.last_reboot)lastRebootMs=m.last_reboot;$("lastReboot").textContent=fmtTime(lastRebootMs);$("listenerCount").textContent=m.listeners??"0";$("audioState").textContent=m.streaming?"STREAMING":"IDLE"}if(m.type==="device_online"){setDeviceOnline(true,m.last_seen);bootSeenAtMs=m.boot_time||Date.now();$("audioState").textContent=m.streaming?"STREAMING":"IDLE"}if(m.type==="device_offline"){setDeviceOnline(false,m.last_seen);$("audioState").textContent="OFFLINE"}if(m.type==="listener_count")$("listenerCount").textContent=m.count??"0";if(m.type==="stream_start")$("audioState").textContent="STREAMING";if(m.type==="stream_stop")$("audioState").textContent="IDLE";if(m.type==="reboot_requested"){if(m.source_connected){rebootPending=true;setStatus("ESP32 reboot requested — waiting for reconnect...");}else setStatus("ESP32 is offline")}if(m.type==="source_rebooted"){lastRebootMs=m.time||Date.now();$("lastReboot").textContent=fmtTime(lastRebootMs);rebootPending=false}}catch{setStatus(e.data)}};ws.onerror=()=>setStatus("WebSocket error");ws.onclose=()=>{if(recording)stopRecording();setDeviceOnline(false,lastSeenMs||Date.now());setStatus("Disconnected");start.disabled=false;stop.disabled=true;record.disabled=true;stopRecord.disabled=true;rebootBtn.disabled=true;$("audioState").textContent="OFFLINE"}}catch(e){console.error(e);setStatus("Audio initialization failed")}};
-stop.onclick=()=>{if(recording)stopRecording();if(ws){if(ws.readyState===WebSocket.OPEN)try{ws.send(JSON.stringify({type:"listener_stop"}))}catch{}ws.close();ws=null}if(audioContext){audioContext.close();audioContext=null}gainNode=null;nextPlayTime=0;level.style.width="0%";$("audioState").textContent="IDLE";setStatus("Stopped");start.disabled=false;stop.disabled=true;record.disabled=true;stopRecord.disabled=true;rebootBtn.disabled=true};
-rebootBtn.onclick=()=>{if(!ws||ws.readyState!==WebSocket.OPEN||!deviceOnline){setStatus("ESP32 is offline");return}if(!confirm("Are you sure you want to reboot the ESP32?\n\nThe microphone stream will stop and the ESP32 will restart."))return;ws.send(JSON.stringify({type:"esp32_reboot"}));rebootBtn.disabled=true;setStatus("ESP32 reboot command sent...")};
-record.onclick=startRecording;stopRecord.onclick=stopRecording;updateVolume();
+const RATE=16000,MAX_AHEAD=.18,TARGET=.05,MIN=.025,$=id=>document.getElementById(id);
+let ws=null,ctx=null,gain=null,next=0,recording=false,chunks=[],samples=0,started=0,timer=null,online=false,up=null,upAt=0;
+function fmt(v){if(!v)return"Never";const d=new Date(v);return isNaN(d)?"—":d.toLocaleString()}
+function uptime(){if(!online||up===null){$("uptime").textContent="—";return}let s=Math.max(0,Math.floor(up+(Date.now()-upAt)/1000)),d=Math.floor(s/86400);s%=86400;let h=Math.floor(s/3600);s%=3600;let m=Math.floor(s/60);s%=60;$("uptime").textContent=(d?d+"d ":"")+String(h).padStart(2,"0")+":"+String(m).padStart(2,"0")+":"+String(s).padStart(2,"0")}
+function status(d){online=!!d.online;$("device").textContent=online?"🟢 ONLINE":"🔴 OFFLINE";$("device").className="value "+(online?"online":"offline");$("audio").textContent=d.audio||"IDLE";$("audio").className="value "+(d.audio==="OK"?"ok":"idle");$("streaming").textContent=d.streaming?"STREAMING":"IDLE";$("streaming").className="value "+(d.streaming?"ok":"idle");$("listeners").textContent=d.listeners??0;$("render").textContent=online?"CONNECTED":"WAITING";$("render").className="value "+(online?"ok":"idle");$("lastSeen").textContent=fmt(d.last_seen);$("lastReboot").textContent=d.last_rebooted?fmt(d.last_rebooted):"Never";$("connectedAt").textContent=fmt(d.connected_at);if(online&&Number.isFinite(Number(d.uptime_seconds))){up=Number(d.uptime_seconds);upAt=Date.now()}else up=null;uptime();$("reboot").disabled=!online||!ws||ws.readyState!==1}
+async function poll(){try{const r=await fetch("/api/device-status?_="+Date.now(),{cache:"no-store"});if(!r.ok)throw 0;status(await r.json())}catch{}}
+setInterval(poll,3000);setInterval(uptime,1000);poll();
+
+const vol=$("volume");function setVol(){const v=Number(vol.value);$("volumeValue").textContent=Math.round(v*100)+"%";if(gain)gain.gain.value=v}vol.oninput=setVol;
+
+function wav(cs,n){const size=n*2,b=new ArrayBuffer(44+size),v=new DataView(b),s=(o,t)=>{for(let i=0;i<t.length;i++)v.setUint8(o+i,t.charCodeAt(i))};s(0,"RIFF");v.setUint32(4,36+size,true);s(8,"WAVE");s(12,"fmt ");v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,RATE,true);v.setUint32(28,RATE*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);s(36,"data");v.setUint32(40,size,true);let o=44;for(const c of cs)for(const x of c){v.setInt16(o,x,true);o+=2}return new Blob([b],{type:"audio/wav"})}
+function recTime(){if(!recording)return;let s=Math.floor((Date.now()-started)/1000);$("duration").textContent=String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0");timer=setTimeout(recTime,500)}
+$("record").onclick=()=>{if(!ws||ws.readyState!==1)return;chunks=[];samples=0;recording=true;started=Date.now();$("record").disabled=true;$("stopRecord").disabled=false;$("recordStatus").textContent="🔴 Recording...";recTime()};
+$("stopRecord").onclick=()=>{if(!recording)return;recording=false;clearTimeout(timer);$("record").disabled=false;$("stopRecord").disabled=true;const u=URL.createObjectURL(wav(chunks,samples)),a=document.createElement("a");a.href=u;a.download="ESP32_INMP441_"+new Date().toISOString().replace(/[:.]/g,"-")+".wav";a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);$("recordStatus").textContent="Recording saved as WAV"};
+
+function play(ab){if(!ctx||!gain||ab.byteLength%2)return;const x=new Int16Array(ab);if(recording){const c=new Int16Array(x.length);c.set(x);chunks.push(c);samples+=x.length}const b=ctx.createBuffer(1,x.length,RATE),o=b.getChannelData(0);let sum=0;for(let i=0;i<x.length;i++){const v=x[i]/32768;o[i]=v;sum+=v*v}$("level").style.width=Math.min(100,Math.sqrt(sum/x.length)*220)+"%";const now=ctx.currentTime;if(next-now>MAX_AHEAD||next-now<MIN)next=now+TARGET;const src=ctx.createBufferSource();src.buffer=b;src.connect(gain);src.start(Math.max(next,now+MIN));next+=b.duration}
+
+$("start").onclick=async()=>{
+ try{
+  ctx=new(window.AudioContext||window.webkitAudioContext)({sampleRate:RATE,latencyHint:"interactive"});gain=ctx.createGain();gain.gain.value=Number(vol.value);gain.connect(ctx.destination);await ctx.resume();next=ctx.currentTime+TARGET;
+  const p=location.protocol==="https:"?"wss:":"ws:";ws=new WebSocket(p+"//"+location.host+"/ws");ws.binaryType="arraybuffer";
+  ws.onopen=()=>{ $("status").textContent="Connected — secure session authenticating…"; ws.send(JSON.stringify({type:"listener"}));$("start").disabled=true;$("stop").disabled=false;$("record").disabled=false };
+  ws.onmessage=e=>{
+   if(typeof e.data!=="string"){play(e.data);return}
+   try{const m=JSON.parse(e.data);
+    if(m.type==="auth_failed"){ $("status").textContent="Session expired — return to homepage and enter PIN again"; $("start").disabled=false;$("stop").disabled=true;$("record").disabled=true;return}
+    if(m.type==="listener_ready"){$("status").textContent="Listening — 16 kHz PCM16"}
+    if(m.type==="device_status")status(m);
+    if(m.type==="stream_start")$("streaming").textContent="STREAMING";
+    if(m.type==="stream_stop")$("streaming").textContent="IDLE";
+    if(m.type==="reboot_requested")$("status").textContent=m.source_connected?"ESP32 reboot command sent — waiting for reconnect":"ESP32 is offline";
+   }catch{}
+  };
+  ws.onerror=()=>{$("status").textContent="WebSocket error"};
+  ws.onclose=()=>{if(recording)$("stopRecord").click();$("status").textContent="Disconnected";$("start").disabled=false;$("stop").disabled=true;$("record").disabled=true;$("stopRecord").disabled=true;$("reboot").disabled=true};
+ }catch(e){console.error(e);$("status").textContent="Audio initialization failed"}
+};
+
+$("stop").onclick=()=>{if(recording)$("stopRecord").click();if(ws){if(ws.readyState===1)try{ws.send(JSON.stringify({type:"listener_stop"}))}catch{}ws.close();ws=null}if(ctx){ctx.close();ctx=null}gain=null;next=0;$("level").style.width="0";$("status").textContent="Stopped";$("start").disabled=false;$("stop").disabled=true;$("record").disabled=true;$("stopRecord").disabled=true;$("reboot").disabled=true};
+
+$("reboot").onclick=async()=>{if(!online)return;if(!confirm("Are you sure you want to reboot the ESP32?\n\nThe microphone stream will stop and the ESP32 will completely restart."))return;try{ws.send(JSON.stringify({type:"esp32_reboot"}));$("reboot").disabled=true;$("status").textContent="ESP32 reboot command sent…"}catch{$("status").textContent="Could not send reboot command"}};
+setVol();
 </script>
 </body>
 </html>
