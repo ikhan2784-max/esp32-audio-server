@@ -42,8 +42,11 @@ button.secondary{background:#273241;color:#fff}.row{display:flex;gap:10px}.row b
     <div class="sub">Live audio level</div>
     <div class="meter"><div id="meterBar"></div></div>
     <div class="small" id="bufferText">Buffer: 0 ms</div>
-    <label for="volume">Volume</label>
-    <input id="volume" class="range" type="range" min="0" max="100" value="100">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px">
+      <label for="volume" style="margin:0">Volume</label>
+      <strong id="volumeValue">150%</strong>
+    </div>
+    <input id="volume" class="range" type="range" min="0" max="300" value="150">
     <div class="row">
       <button id="stopBtn" class="secondary">Stop</button>
       <button id="recordBtn" class="secondary">Start Recording</button>
@@ -486,7 +489,9 @@ $("connectBtn").onclick=connect;
 $("stopBtn").onclick=stop;
 $("recordBtn").onclick=()=>recording?stopRecording():startRecording();
 $("volume").oninput=e=>{
-  if(gainNode) gainNode.gain.value=Number(e.target.value)/100;
+  const pct=Number(e.target.value);
+  $("volumeValue").textContent=pct+"%";
+  if(gainNode) gainNode.gain.value=pct/100;
 };
 $("pin").addEventListener("keydown",e=>{if(e.key==="Enter")connect();});
 window.addEventListener("pagehide",()=>{try{if(ws)ws.close();}catch(_){}});
