@@ -475,6 +475,1086 @@ function applyDeviceStatus(data) {
     !ws ||
     ws.readyState !== WebSocket.OPEN;
 
+  // Start Listening is allowed only when the ESP32 is online.
+  // Render/WSS can remain connected even when the ESP32 is offline.
+  start.disabled = controlsDisabled;
+  rebootBtn.disabled = controlsDisabled;
+  forgetWifiBtn.disabled = controlsDisabled;
+}
+
+async function refreshDeviceStatus() {
+  try {
+    const response = await fetch(
+      "/api/device-status?_=" + Date.now(),
+      {
+        cache: "no-store",
+        headers: {
+          "Cache-Control": "no-cache"
+        }
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error("HTTP " + response.status);
+    }
+
+    const data = await response.json();
+
+    applyDeviceStatus(data);
+
+    $("renderState").textContent = "CONNECTED";
+    $("renderState").className = "value ok";
+
+  } catch (error) {
+    $("renderState").textContent = "UNAVAILABLE";
+    $("renderState").className = "value offline";
+  }
+}
+
+setInterval(refreshDeviceStatus, 3000);
+setInterval(updateUptimeDisplay, 1000);
+
+function updateVolume() {
+  const value = Number(volume.value);
+
+  volumeValue.textContent =
+    Math.round(value * 100) + "%";
+
+  if (gainNode) {
+    gainNode.gain.value = value;
+  }
+}
+
+volume.addEventListener("input", updateVolume);
+
+function updateDuration() {
+  if (!recording) return;
+
+  const seconds =
+    Math.floor((Date.now() - recordStartTime) / 1000);
+
+  const minutes =
+    Math.floor(seconds / 60);
+
+  const remaining =
+    seconds % 60;
+
+  duration.textContent =
+    String(minutes).padStart(2, "0") + ":" +
+    String(remaining).padStart(2, "0");
+
+  timerHandle = setTimeout(updateDuration, 500);
+}
+
+function playPCM16(arrayBuffer) {
+  if (!audioContext || !gainNode) return;
+
+  if (
+    arrayBuffer.byteLength === 0 ||
+    arrayBuffer.byteLength % 2 !== 0
+  ) {
+    return;
+  }
+
+  const input = new Int16Array(arrayBuffer);
+
+  // Recording stores the original PCM16 received from the ESP32.
+  // Browser volume does not affect the WAV file.
+  if (recording) {
+    const copy = new Int16Array(input.length);
+    copy.set(input);
+
+    recordedChunks.push(copy);
+    recordedSamples += input.length;
+  }
+
+  const buffer =
+    audioContext.createBuffer(
+      CHANNELS,
+      input.length,
+      SAMPLE_RATE
+    );
+
+  const output =
+    buffer.getChannelData(0);
+
+  let sum = 0;
+
+  for (let i = 0; i < input.length; i++) {
+    const value = input[i] / 32768.0;
+
+    output[i] = value;
+    sum += value * value;
+  }
+
+  const rms =
+    Math.sqrt(sum / input.length);
+
+  level.style.width =
+    Math.min(100, rms * 220) + "%";
+
+  const now =
+    audioContext.currentTime;
+
+  const queued =
+    nextPlayTime - now;
+
+  if (
+    queued > MAX_BUFFER_SECONDS ||
+    queued < MIN_BUFFER_SECONDS
+  ) {
+    nextPlayTime =
+      now + TARGET_BUFFER_SECONDS;
+  }
+
+  const source =
+    audioContext.createBufferSource();
+
+  source.buffer = buffer;
+
+  source.connect(gainNode);
+
+  source.start(
+    Math.max(
+      nextPlayTime,
+      now + MIN_BUFFER_SECONDS
+    )
+  );
+
+  nextPlayTime += buffer.duration;
+}
+
+function startRecording() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    return;
+  }
+
+  recordedChunks = [];
+  recordedSamples = 0;
+
+  recording = true;
+  recordStartTime = Date.now();
+
+  record.disabled = true;
+  stopRecord.disabled = false;
+
+  recordStatus.textContent =
+    "🔴 Recording...";
+
+  duration.textContent = "00:00";
+
+  updateDuration();
+}
+
+function stopRecording() {
+  if (!recording) return;
+
+  recording = false;
+
+  if (timerHandle) {
+    clearTimeout(timerHandle);
+    timerHandle = null;
+  }
+
+  record.disabled = false;
+  stopRecord.disabled = true;
+
+  recordStatus.textContent =
+    "Processing WAV...";
+
+  const wavBlob =
+    createWavBlob(
+      recordedChunks,
+      recordedSamples
+    );
+
+  const url =
+    URL.createObjectURL(wavBlob);
+
+  const link =
+    document.createElement("a");
+
+  const stamp =
+    new Date()
+      .toISOString()
+      .replace(/[:.]/g, "-");
+
+  link.href = url;
+  link.download =
+    "ESP32_INMP441_" +
+    stamp +
+    ".wav";
+
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+  }, 1000);
+
+  recordStatus.textContent =
+    "Recording saved as WAV";
+}
+
+function createWavBlob(chunks, sampleCount) {
+  const dataSize =
+    sampleCount * BYTES_PER_SAMPLE;
+
+  const buffer =
+    new ArrayBuffer(44 + dataSize);
+
+  const view =
+    new DataView(buffer);
+
+  function writeString(offset, text) {
+    for (let i = 0; i < text.length; i++) {
+      view.setUint8(
+        offset + i,
+        text.charCodeAt(i)
+      );
+    }
+  }
+
+  writeString(0, "RIFF");
+  view.setUint32(
+    4,
+    36 + dataSize,
+    true
+  );
+
+  writeString(8, "WAVE");
+
+  writeString(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, CHANNELS, true);
+  view.setUint32(24, SAMPLE_RATE, true);
+
+  view.setUint32(
+    28,
+    SAMPLE_RATE *
+    CHANNELS *
+    BYTES_PER_SAMPLE,
+    true
+  );
+
+  view.setUint16(
+    32,
+    CHANNELS *
+    BYTES_PER_SAMPLE,
+    true
+  );
+
+  view.setUint16(34, 16, true);
+
+  writeString(36, "data");
+  view.setUint32(
+    40,
+    dataSize,
+    true
+  );
+
+  let offset = 44;
+
+  for (const chunk of chunks) {
+    for (let i = 0; i < chunk.length; i++) {
+      view.setInt16(
+        offset,
+        chunk[i],
+        true
+      );
+
+      offset += 2;
+    }
+  }
+
+  return new Blob(
+    [buffer],
+    { type: "audio/wav" }
+  );
+}
+
+start.onclick = async () => {
+  try {
+    audioContext =
+      new (
+        window.AudioContext ||
+        window.webkitAudioContext
+      )({
+        sampleRate: SAMPLE_RATE,
+        latencyHint: "interactive"
+      });
+
+    gainNode =
+      audioContext.createGain();
+
+    gainNode.gain.value =
+      Number(volume.value);
+
+    gainNode.connect(
+      audioContext.destination
+    );
+
+    await audioContext.resume();
+
+    nextPlayTime =
+      audioContext.currentTime +
+      TARGET_BUFFER_SECONDS;
+
+    const protocol =
+      location.protocol === "https:"
+        ? "wss:"
+        : "ws:";
+
+    ws =
+      new WebSocket(
+        protocol +
+        "//" +
+        location.host +
+        "/ws"
+      );
+
+    ws.binaryType =
+      "arraybuffer";
+
+    ws.onopen = () => {
+      setStatus(
+        "Connected — authenticating listener..."
+      );
+
+      ws.send(
+        JSON.stringify({
+          type: "listener"
+        })
+      );
+
+      start.disabled = true;
+      stop.disabled = false;
+      record.disabled = false;
+      rebootBtn.disabled = true;
+      forgetWifiBtn.disabled = true;
+
+      $("renderState").textContent =
+        "CONNECTED";
+
+      $("renderState").className =
+        "value ok";
+    };
+
+    ws.onmessage = (event) => {
+      if (typeof event.data === "string") {
+        try {
+          const message =
+            JSON.parse(event.data);
+
+          if (message.type === "auth_failed") {
+            setStatus(
+              "Access denied — incorrect PIN"
+            );
+
+            start.disabled = false;
+            stop.disabled = true;
+            record.disabled = true;
+            rebootBtn.disabled = true;
+            forgetWifiBtn.disabled = true;
+
+            return;
+          }
+
+          if (message.type === "listener_ready") {
+            setStatus(
+              "Listening — " +
+              message.sample_rate +
+              " Hz " +
+              message.format
+            );
+
+            rebootBtn.disabled = !deviceOnline;
+            forgetWifiBtn.disabled = !deviceOnline;
+          }
+
+          if (message.type === "device_status") {
+            applyDeviceStatus(message);
+          }
+
+          if (message.type === "stream_start") {
+            $("streamingState").textContent = "ON";
+            $("streamingState").className = "value ok";
+          }
+
+          if (message.type === "stream_stop") {
+            $("streamingState").textContent = "OFF";
+            $("streamingState").className = "value idle";
+          }
+
+          if (message.type === "reboot_requested") {
+            setStatus(
+              message.source_connected
+                ? "ESP32 reboot command sent..."
+                : "ESP32 is not currently connected"
+            );
+          }
+
+          if (message.type === "forget_wifi_requested") {
+            setStatus(
+              message.source_connected
+                ? "Forget Wi-Fi command sent. ESP32 is restarting into setup mode..."
+                : "ESP32 is not currently connected"
+            );
+
+            forgetWifiBtn.disabled = true;
+            rebootBtn.disabled = true;
+          }
+
+        } catch {
+          setStatus(event.data);
+        }
+
+        return;
+      }
+
+      playPCM16(event.data);
+    };
+
+    ws.onerror = () => {
+      setStatus("WebSocket error");
+      $("renderState").textContent = "ERROR";
+      $("renderState").className = "value offline";
+    };
+
+    ws.onclose = () => {
+      if (recording) {
+        stopRecording();
+      }
+
+      setStatus("Disconnected");
+
+      start.disabled = !deviceOnline;
+      stop.disabled = true;
+      record.disabled = true;
+      stopRecord.disabled = true;
+      rebootBtn.disabled = true;
+      forgetWifiBtn.disabled = true;
+
+      $("renderState").textContent = "DISCONNECTED";
+      $("renderState").className = "value idle";
+    };
+
+  } catch (error) {
+    console.error(error);
+
+    setStatus(
+      "Audio initialization failed"
+    );
+  }
+};
+
+stop.onclick = () => {
+  if (recording) {
+    stopRecording();
+  }
+
+  if (ws) {
+    if (ws.readyState === WebSocket.OPEN) {
+      try {
+        ws.send(
+          JSON.stringify({
+            type: "listener_stop"
+          })
+        );
+      } catch {}
+    }
+
+    ws.close();
+    ws = null;
+  }
+
+  if (audioContext) {
+    audioContext.close();
+    audioContext = null;
+  }
+
+  gainNode = null;
+  nextPlayTime = 0;
+
+  level.style.width = "0%";
+
+  setStatus("Stopped");
+
+  start.disabled = false;
+  stop.disabled = true;
+  record.disabled = true;
+  stopRecord.disabled = true;
+  rebootBtn.disabled = true;
+  forgetWifiBtn.disabled = true;
+};
+
+rebootBtn.onclick = async () => {
+  if (!deviceOnline) {
+    setStatus("ESP32 is offline");
+    return;
+  }
+
+  const confirmed =
+    window.confirm(
+      "Are you sure you want to reboot the ESP32?\n\n" +
+      "The microphone stream will stop and the ESP32 will restart."
+    );
+
+  if (!confirmed) return;
+
+  setStatus("Sending ESP32 reboot command...");
+
+  try {
+    const response =
+      await fetch(
+        "/api/esp32/reboot",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: "{}"
+        }
+      );
+
+    const data =
+      await response.json();
+
+    if (!response.ok || !data.ok) {
+      throw new Error(
+        data.error || "Reboot request failed"
+      );
+    }
+
+    setStatus(
+      data.source_connected
+        ? "ESP32 reboot command sent."
+        : "ESP32 is not currently connected."
+    );
+
+  } catch (error) {
+    console.error(error);
+
+    setStatus(
+      "Could not send reboot command."
+    );
+  }
+};
+
+forgetWifiBtn.onclick = () => {
+  if (!deviceOnline || !ws || ws.readyState !== WebSocket.OPEN) {
+    setStatus("ESP32 is offline");
+    return;
+  }
+
+  const confirmed = window.confirm(
+    "Are you sure you want to forget the ESP32 Wi-Fi settings?\n\n" +
+    "The ESP32 will erase its saved Wi-Fi credentials and restart into setup mode.\n\n" +
+    "You will need to connect to the ESP32 setup hotspot to configure Wi-Fi again."
+  );
+
+  if (!confirmed) return;
+
+  try {
+    ws.send(JSON.stringify({ type: "forget_wifi" }));
+    forgetWifiBtn.disabled = true;
+    rebootBtn.disabled = true;
+    setStatus("Forget Wi-Fi command sent. ESP32 is restarting into setup mode...");
+  } catch (error) {
+    console.error(error);
+    setStatus("Could not send Forget Wi-Fi command.");
+  }
+};
+
+record.onclick =
+  startRecording;
+
+stopRecord.onclick =
+  stopRecording;
+
+updateVolume();
+refreshDeviceStatus();
+</script>
+</body>
+</html><!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ESP32 INMP441 Listener</title>
+
+<style>
+:root{
+  --bg:#0b0f14;
+  --card:#151b23;
+  --card2:#10161d;
+  --border:#28313d;
+  --text:#f2f5f8;
+  --muted:#9aa7b5;
+  --green:#35d07f;
+  --red:#ff5d67;
+  --yellow:#f5c451;
+  --blue:#5aa7ff;
+}
+
+*{box-sizing:border-box}
+
+body{
+  margin:0;
+  font-family:Arial,Helvetica,sans-serif;
+  background:var(--bg);
+  color:var(--text);
+}
+
+.container{
+  width:min(900px,calc(100% - 28px));
+  margin:24px auto 50px;
+}
+
+h1{
+  margin:0 0 5px;
+  font-size:30px;
+}
+
+.subtitle{
+  color:var(--muted);
+  margin-bottom:22px;
+}
+
+.section{
+  margin-top:18px;
+  padding:20px;
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:14px;
+  box-shadow:0 8px 30px rgba(0,0,0,.18);
+}
+
+.section-title{
+  font-size:18px;
+  font-weight:700;
+  margin-bottom:16px;
+}
+
+.grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px;
+}
+
+.card{
+  background:var(--card2);
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:14px;
+  min-height:76px;
+}
+
+.label{
+  color:var(--muted);
+  font-size:13px;
+  margin-bottom:8px;
+}
+
+.value{
+  font-size:18px;
+  font-weight:700;
+  word-break:break-word;
+}
+
+.online{color:var(--green)}
+.offline{color:var(--red)}
+.ok{color:var(--green)}
+.idle{color:var(--muted)}
+
+.statusbar{
+  margin-top:12px;
+  padding:13px 15px;
+  border-radius:10px;
+  background:var(--card2);
+  border:1px solid var(--border);
+  color:var(--muted);
+}
+
+button{
+  border:0;
+  border-radius:9px;
+  padding:12px 18px;
+  margin:6px 8px 0 0;
+  font-size:16px;
+  font-weight:700;
+  cursor:pointer;
+  background:var(--blue);
+  color:white;
+}
+
+button.secondary{
+  background:#303b49;
+}
+
+button.danger{
+  background:#b8323c;
+}
+
+button:disabled{
+  opacity:.45;
+  cursor:not-allowed;
+}
+
+input[type=password]{
+  width:100%;
+  padding:13px;
+  border-radius:9px;
+  border:1px solid var(--border);
+  background:#0c1117;
+  color:white;
+  font-size:17px;
+}
+
+input[type=range]{
+  width:100%;
+  accent-color:var(--blue);
+}
+
+.volume-row{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-bottom:8px;
+}
+
+.volume-value{
+  font-size:20px;
+  font-weight:700;
+}
+
+#meter{
+  width:100%;
+  height:22px;
+  background:#29313b;
+  border-radius:11px;
+  overflow:hidden;
+  margin-top:10px;
+}
+
+#level{
+  width:0%;
+  height:100%;
+  background:var(--green);
+  transition:width .05s;
+}
+
+.record-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:12px;
+  margin-top:12px;
+}
+
+.record-box{
+  background:var(--card2);
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:14px;
+}
+
+.record-value{
+  margin-top:8px;
+  font-weight:700;
+}
+
+.small{
+  color:var(--muted);
+  font-size:13px;
+  line-height:1.5;
+}
+
+@media(max-width:650px){
+  .container{
+    width:min(100% - 18px,900px);
+    margin-top:14px;
+  }
+
+  h1{font-size:25px}
+
+  .grid,
+  .record-grid{
+    grid-template-columns:1fr;
+  }
+
+  .section{
+    padding:16px;
+  }
+
+  button{
+    width:100%;
+    margin-right:0;
+  }
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+  <h1>ESP32 INMP441</h1>
+  <div class="subtitle">Secure Live Audio Listener</div>
+
+  <!-- DEVICE STATUS -->
+  <div class="section">
+    <div class="section-title">ESP32 Status</div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="label">Device</div>
+        <div id="deviceStatus" class="value offline">🔴 OFFLINE</div>
+      </div>
+
+      <div class="card">
+        <div class="label">Audio</div>
+        <div id="audioState" class="value idle">IDLE</div>
+      </div>
+
+      <div class="card">
+        <div class="label">Streaming</div>
+        <div id="streamingState" class="value idle">OFF</div>
+      </div>
+
+      <div class="card">
+        <div class="label">Listeners</div>
+        <div id="listenerCount" class="value">0</div>
+      </div>
+
+      <div class="card">
+        <div class="label">Render / WSS</div>
+        <div id="renderState" class="value idle">Checking...</div>
+      </div>
+
+      <div class="card">
+        <div class="label">Last Seen</div>
+        <div id="lastSeen" class="value">Never</div>
+      </div>
+
+      <div class="card">
+        <div class="label">Last Reboot</div>
+        <div id="lastReboot" class="value">Never</div>
+      </div>
+
+      <div class="card">
+        <div class="label">ESP32 Uptime</div>
+        <div id="uptime" class="value">—</div>
+      </div>
+
+      <div class="card">
+        <div class="label">Connection Since</div>
+        <div id="connectedAt" class="value">—</div>
+      </div>
+    </div>
+
+    <div id="status" class="statusbar">Disconnected</div>
+  </div>
+
+  <!-- LISTENER AUTH -->
+  <div class="section">
+    <div class="section-title">Listener Access</div>
+
+    <button id="start">▶ Start Listening</button>
+    <button id="stop" class="secondary" disabled>⏹ Stop Listening</button>
+    <button id="rebootBtn" class="danger" disabled>ESP32 Reboot</button>
+    <button id="forgetWifiBtn" class="danger" disabled>Forget Wi-Fi</button>
+
+    <div class="small" style="margin-top:12px">
+      Wi-Fi settings are erased from the ESP32 and the device restarts into setup mode.
+    </div>
+  </div>
+
+  <!-- AUDIO -->
+  <div class="section">
+    <div class="section-title">Live Audio</div>
+
+    <div class="volume-row">
+      <span>Browser Volume</span>
+      <span id="volumeValue" class="volume-value">150%</span>
+    </div>
+
+    <input id="volume"
+           type="range"
+           min="0"
+           max="3"
+           step="0.01"
+           value="1.5">
+
+    <div class="label" style="margin-top:22px">Audio Level</div>
+    <div id="meter">
+      <div id="level"></div>
+    </div>
+
+    <div class="small" style="margin-top:12px">
+      16 kHz mono PCM16 • Secure PIN • Multi-listener • Low-latency playback
+    </div>
+  </div>
+
+  <!-- RECORDING -->
+  <div class="section">
+    <div class="section-title">Recording</div>
+
+    <button id="record" disabled>🔴 Start Recording</button>
+    <button id="stopRecord" class="secondary" disabled>⏹ Stop Recording</button>
+
+    <div class="record-grid">
+      <div class="record-box">
+        <div class="label">Recording Status</div>
+        <div id="recordStatus" class="record-value">Not recording</div>
+      </div>
+
+      <div class="record-box">
+        <div class="label">Duration</div>
+        <div id="duration" class="record-value">00:00</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const SAMPLE_RATE = 16000;
+const CHANNELS = 1;
+const BYTES_PER_SAMPLE = 2;
+
+const TARGET_BUFFER_SECONDS = 0.05;
+const MAX_BUFFER_SECONDS = 0.18;
+const MIN_BUFFER_SECONDS = 0.025;
+
+let ws = null;
+let audioContext = null;
+let gainNode = null;
+let nextPlayTime = 0;
+
+let recording = false;
+let recordedChunks = [];
+let recordedSamples = 0;
+let recordStartTime = 0;
+let timerHandle = null;
+
+let deviceOnline = false;
+let statusUptimeSeconds = null;
+let statusUptimeBaseMs = 0;
+
+const $ = id => document.getElementById(id);
+
+const status = $("status");
+const level = $("level");
+const start = $("start");
+const stop = $("stop");
+const record = $("record");
+const stopRecord = $("stopRecord");
+const recordStatus = $("recordStatus");
+const duration = $("duration");
+const volume = $("volume");
+const volumeValue = $("volumeValue");
+const rebootBtn = $("rebootBtn");
+const forgetWifiBtn = $("forgetWifiBtn");
+
+function setStatus(text) {
+  status.textContent = text;
+}
+
+function formatDate(value) {
+  if (!value) return "Never";
+
+  const d = new Date(value);
+
+  if (Number.isNaN(d.getTime())) return "—";
+
+  return d.toLocaleString();
+}
+
+function formatUptime(seconds) {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) {
+    return "—";
+  }
+
+  seconds = Math.max(0, Math.floor(seconds));
+
+  const days = Math.floor(seconds / 86400);
+  seconds %= 86400;
+
+  const hours = Math.floor(seconds / 3600);
+  seconds %= 3600;
+
+  const minutes = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+
+  if (days > 0) {
+    return `${days}d ${String(hours).padStart(2,"0")}:${String(minutes).padStart(2,"0")}:${String(secs).padStart(2,"0")}`;
+  }
+
+  return `${String(hours).padStart(2,"0")}:${String(minutes).padStart(2,"0")}:${String(secs).padStart(2,"0")}`;
+}
+
+function updateUptimeDisplay() {
+  if (!deviceOnline || statusUptimeSeconds === null) {
+    $("uptime").textContent = "—";
+    return;
+  }
+
+  const elapsed = Math.floor((Date.now() - statusUptimeBaseMs) / 1000);
+  $("uptime").textContent = formatUptime(statusUptimeSeconds + elapsed);
+}
+
+function applyDeviceStatus(data) {
+  deviceOnline = !!data.online;
+
+  $("deviceStatus").textContent =
+    deviceOnline ? "🟢 ONLINE" : "🔴 OFFLINE";
+
+  $("deviceStatus").className =
+    "value " + (deviceOnline ? "online" : "offline");
+
+  $("audioState").textContent =
+    data.audio || "IDLE";
+
+  $("audioState").className =
+    "value " + (data.audio === "OK" ? "ok" : "idle");
+
+  const streaming = !!data.streaming;
+
+  $("streamingState").textContent =
+    streaming ? "ON" : "OFF";
+
+  $("streamingState").className =
+    "value " + (streaming ? "ok" : "idle");
+
+  $("listenerCount").textContent =
+    Number.isFinite(Number(data.listeners))
+      ? data.listeners
+      : "0";
+
+  $("lastSeen").textContent =
+    formatDate(data.last_seen);
+
+  $("lastReboot").textContent =
+    formatDate(data.last_rebooted);
+
+  $("connectedAt").textContent =
+    formatDate(data.connected_at);
+
+  if (deviceOnline && data.uptime_seconds !== null && data.uptime_seconds !== undefined) {
+    statusUptimeSeconds = Number(data.uptime_seconds);
+    statusUptimeBaseMs = Date.now();
+  } else {
+    statusUptimeSeconds = null;
+  }
+
+  updateUptimeDisplay();
+
+  const controlsDisabled =
+    !deviceOnline ||
+    !ws ||
+    ws.readyState !== WebSocket.OPEN;
+
   rebootBtn.disabled = controlsDisabled;
   forgetWifiBtn.disabled = controlsDisabled;
 }
