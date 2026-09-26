@@ -5,6 +5,15 @@ const WebSocket = require("ws");
 const PORT = process.env.PORT || 10000;
 
 // ============================================================
+// EXPRESS / HTTP SERVER
+// ============================================================
+
+const app = express();
+const server = http.createServer(app);
+
+app.use(express.json({ limit: "4kb" }));
+
+// ============================================================
 // PRODUCTION SECURITY SETTINGS
 // ============================================================
 
@@ -18,13 +27,6 @@ if (!SOURCE_TOKEN) {
 if (!LISTENER_PIN) {
   console.error("ERROR: LISTENER_PIN environment variable is not set.");
 }
-
-// ============================================================
-// EXPRESS / HTTP SERVER
-// ============================================================
-
-const app = express();
-const server = http.createServer(app);
 
 // ============================================================
 // WEBSOCKET SERVER
@@ -120,18 +122,11 @@ function requireHttps(req, res, next) {
 }
 
 // ============================================================
-// ROOT STATUS
+// ROOT STATUS PAGE
 // ============================================================
 
 app.get("/", requireHttps, (req, res) => {
-  res.json({
-    service: "ESP32 INMP441 Audio WebSocket Relay",
-    status: "ok",
-    websocket: "/ws",
-    listener: "/listener",
-    listeners: listeners.size,
-    sources: sources.size
-  });
+  res.sendFile(__dirname + "/index.html");
 });
 
 // ============================================================
