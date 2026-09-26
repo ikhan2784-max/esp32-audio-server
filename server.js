@@ -5,21 +5,20 @@ const crypto = require("crypto");
 
 const PORT = process.env.PORT || 10000;
 
-// ============================================================
-// EXPRESS / HTTP SERVER
-// ============================================================
+const SOURCE_TOKEN = process.env.SOURCE_TOKEN || "";
+const LISTENER_PIN = process.env.LISTENER_PIN || "";
+
+const SESSION_COOKIE_NAME = "esp32_listener_session";
+const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
+
+// ESP32 application heartbeat settings
+const DEVICE_HEARTBEAT_INTERVAL_MS = 10000;
+const DEVICE_HEARTBEAT_TIMEOUT_MS = 30000;
 
 const app = express();
 const server = http.createServer(app);
 
 app.use(express.json({ limit: "4kb" }));
-
-// ============================================================
-// PRODUCTION SECURITY SETTINGS
-// ============================================================
-
-const SOURCE_TOKEN = process.env.SOURCE_TOKEN || "";
-const LISTENER_PIN = process.env.LISTENER_PIN || "";
 
 if (!SOURCE_TOKEN) {
   console.error(
@@ -33,38 +32,27 @@ if (!LISTENER_PIN) {
   );
 }
 
-// ============================================================
-// SESSION MANAGEMENT
-// ============================================================
+
+/* ============================================================
+   SESSION MANAGEMENT
+   ============================================================ */
 
 const sessions = new Map();
 
-const SESSION_COOKIE_NAME =
-  "esp32_listener_session";
-
-const SESSION_DURATION_MS =
-  24 * 60 * 60 * 1000;
-
 function createSession() {
-
   const sessionId =
     crypto.randomBytes(32).toString("hex");
 
-  sessions.set(
-    sessionId,
-    {
-      createdAt: Date.now(),
-      expiresAt:
-        Date.now() +
-        SESSION_DURATION_MS
-    }
-  );
+  sessions.set(sessionId, {
+    createdAt: Date.now(),
+    expiresAt:
+      Date.now() + SESSION_DURATION_MS
+  });
 
   return sessionId;
 }
 
 function getCookie(req, name) {
-
   const cookieHeader =
     req.headers.cookie;
 
@@ -72,30 +60,20 @@ function getCookie(req, name) {
     return null;
   }
 
-  const cookies =
-    cookieHeader.split(";");
-
-  for (const cookie of cookies) {
-
-    const index =
-      cookie.indexOf("=");
+  for (const cookie of cookieHeader.split(";")) {
+    const index = cookie.indexOf("=");
 
     if (index === -1) {
       continue;
     }
 
     const key =
-      cookie
-        .slice(0, index)
-        .trim();
+      cookie.slice(0, index).trim();
 
     const value =
-      cookie
-        .slice(index + 1)
-        .trim();
+      cookie.slice(index + 1).trim();
 
     if (key === name) {
-
       try {
         return decodeURIComponent(value);
       } catch {
@@ -108,7 +86,6 @@ function getCookie(req, name) {
 }
 
 function getSession(req) {
-
   const sessionId =
     getCookie(
       req,
@@ -126,13 +103,8 @@ function getSession(req) {
     return null;
   }
 
-  if (
-    Date.now() >
-    session.expiresAt
-  ) {
-
+  if (Date.now() > session.expiresAt) {
     sessions.delete(sessionId);
-
     return null;
   }
 
@@ -143,9 +115,10 @@ function isAuthenticatedRequest(req) {
   return !!getSession(req);
 }
 
-// ============================================================
-// WEBSOCKET SERVER
-// ============================================================
+
+/* ============================================================
+   WEBSOCKET SERVER
+   ============================================================ */
 
 const wss =
   new WebSocket.Server({
@@ -154,39 +127,30 @@ const wss =
     maxPayload: 8192
   });
 
-// Authenticated browser listeners
-const listeners = new Set();
 
-// Authenticated ESP32 sources
+/* ============================================================
+   CONNECTION STATE
+   ============================================================ */
+
+const listeners = new Set();
 const sources = new Set();
 
-// Current active ESP32 source
 let activeSource = null;
 
-// ============================================================
-// ESP32 DEVICE STATUS
-// ============================================================
-
 let deviceOnline = false;
-
 let deviceLastSeen = null;
-
 let deviceConnectedAt = null;
-
 let deviceLastRebooted = null;
-
 let deviceRebootPending = false;
 
-// ============================================================
-// DEVICE STATUS OBJECT
-// ============================================================
+
+/* ============================================================
+   DEVICE STATUS
+   ============================================================ */
 
 function buildDeviceStatus() {
-
   return {
-
-    type:
-      "device_status",
+    type: "device_status",
 
     online:
       deviceOnline,
@@ -231,56 +195,38 @@ function buildDeviceStatus() {
   };
 }
 
-// ============================================================
-// SEND JSON
-// ============================================================
+
+/* ============================================================
+   JSON HELPERS
+   ============================================================ */
 
 function sendJson(ws, object) {
-
   if (
     !ws ||
-    ws.readyState !==
-      WebSocket.OPEN
+    ws.readyState !== WebSocket.OPEN
   ) {
     return;
   }
 
   try {
-
     ws.send(
       JSON.stringify(object)
     );
-
-  } catch {
-    // Ignore individual WebSocket send errors
-  }
+  } catch {}
 }
 
-// ============================================================
-// SEND DEVICE STATUS
-// ============================================================
-
 function sendDeviceStatus(ws) {
-
   sendJson(
     ws,
     buildDeviceStatus()
   );
 }
 
-// ============================================================
-// BROADCAST DEVICE STATUS
-// ============================================================
-
 function broadcastDeviceStatus() {
-
   const message =
     buildDeviceStatus();
 
-  for (
-    const listener of listeners
-  ) {
-
+  for (const listener of listeners) {
     if (
       listener.readyState ===
         WebSocket.OPEN &&
@@ -288,7 +234,6 @@ function broadcastDeviceStatus() {
         "listener" &&
       listener.authenticated
     ) {
-
       sendJson(
         listener,
         message
@@ -297,23 +242,49 @@ function broadcastDeviceStatus() {
   }
 }
 
-// ============================================================
-// HTTPS DETECTION
-// ============================================================
+function broadcastToSources(message) {
+  for (const source of sources) {
+    if (
+      source.readyState ===
+        WebSocket.OPEN &&
+      source.role ===
+        "source" &&
+      source.authenticated
+    ) {
+      sendJson(
+        source,
+        message
+      );
+    }
+  }
+}
+
+function startESP32Audio() {
+  broadcastToSources({
+    type: "stream_start"
+  });
+}
+
+function stopESP32Audio() {
+  broadcastToSources({
+    type: "stream_stop"
+  });
+}
+
+
+/* ============================================================
+   HTTPS
+   ============================================================ */
 
 function isHttpsRequest(req) {
-
   const forwardedProto =
     req.headers[
       "x-forwarded-proto"
     ];
 
   if (forwardedProto) {
-
-    return (
-      forwardedProto ===
-      "https"
-    );
+    return forwardedProto ===
+      "https";
   }
 
   return (
@@ -322,19 +293,12 @@ function isHttpsRequest(req) {
   );
 }
 
-// ============================================================
-// HTTPS REDIRECT
-// ============================================================
-
 function requireHttps(
   req,
   res,
   next
 ) {
-
-  if (
-    isHttpsRequest(req)
-  ) {
+  if (isHttpsRequest(req)) {
     return next();
   }
 
@@ -342,7 +306,6 @@ function requireHttps(
     req.headers.host;
 
   if (!host) {
-
     return res
       .status(400)
       .send("Invalid Host");
@@ -353,9 +316,10 @@ function requireHttps(
   );
 }
 
-// ============================================================
-// HOMEPAGE
-// ============================================================
+
+/* ============================================================
+   HOMEPAGE
+   ============================================================ */
 
 app.get(
   "/",
@@ -365,7 +329,6 @@ app.get(
     if (
       isAuthenticatedRequest(req)
     ) {
-
       return res.redirect(
         "/listener"
       );
@@ -378,23 +341,24 @@ app.get(
   }
 );
 
-// ============================================================
-// HEALTH
-// ============================================================
+
+/* ============================================================
+   HEALTH
+   ============================================================ */
 
 app.get(
   "/health",
   (req, res) => {
-
     res
       .status(200)
       .send("OK");
   }
 );
 
-// ============================================================
-// LOGIN
-// ============================================================
+
+/* ============================================================
+   LOGIN
+   ============================================================ */
 
 app.post(
   "/api/auth",
@@ -411,13 +375,11 @@ app.post(
       pin !==
         LISTENER_PIN
     ) {
-
       return res
         .status(401)
         .json({
           ok: false,
-          error:
-            "Invalid PIN"
+          error: "Invalid PIN"
         });
     }
 
@@ -429,8 +391,7 @@ app.post(
       `${SESSION_COOKIE_NAME}=${encodeURIComponent(
         sessionId
       )}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${Math.floor(
-        SESSION_DURATION_MS /
-          1000
+        SESSION_DURATION_MS / 1000
       )}`
     );
 
@@ -440,9 +401,10 @@ app.post(
   }
 );
 
-// ============================================================
-// LOGOUT
-// ============================================================
+
+/* ============================================================
+   LOGOUT
+   ============================================================ */
 
 app.post(
   "/api/logout",
@@ -456,7 +418,6 @@ app.post(
       );
 
     if (sessionId) {
-
       sessions.delete(
         sessionId
       );
@@ -473,9 +434,10 @@ app.post(
   }
 );
 
-// ============================================================
-// LISTENER PAGE
-// ============================================================
+
+/* ============================================================
+   LISTENER PAGE
+   ============================================================ */
 
 app.get(
   "/listener",
@@ -485,10 +447,7 @@ app.get(
     if (
       !isAuthenticatedRequest(req)
     ) {
-
-      return res.redirect(
-        "/"
-      );
+      return res.redirect("/");
     }
 
     res.sendFile(
@@ -498,9 +457,10 @@ app.get(
   }
 );
 
-// ============================================================
-// DEVICE STATUS API
-// ============================================================
+
+/* ============================================================
+   DEVICE STATUS API
+   ============================================================ */
 
 app.get(
   "/api/device-status",
@@ -510,13 +470,11 @@ app.get(
     if (
       !isAuthenticatedRequest(req)
     ) {
-
       return res
         .status(401)
         .json({
           ok: false,
-          error:
-            "Unauthorized"
+          error: "Unauthorized"
         });
     }
 
@@ -526,37 +484,10 @@ app.get(
   }
 );
 
-// ============================================================
-// BROADCAST MESSAGE TO ESP32
-// ============================================================
 
-function broadcastToSources(
-  message
-) {
-
-  for (
-    const source of sources
-  ) {
-
-    if (
-      source.readyState ===
-        WebSocket.OPEN &&
-      source.role ===
-        "source" &&
-      source.authenticated
-    ) {
-
-      sendJson(
-        source,
-        message
-      );
-    }
-  }
-}
-
-// ============================================================
-// ESP32 REBOOT API
-// ============================================================
+/* ============================================================
+   ESP32 REBOOT API
+   ============================================================ */
 
 app.post(
   "/api/esp32/reboot",
@@ -566,13 +497,11 @@ app.post(
     if (
       !isAuthenticatedRequest(req)
     ) {
-
       return res
         .status(401)
         .json({
           ok: false,
-          error:
-            "Unauthorized"
+          error: "Unauthorized"
         });
     }
 
@@ -622,9 +551,10 @@ app.post(
   }
 );
 
-// ============================================================
-// FORGET WI-FI API
-// ============================================================
+
+/* ============================================================
+   ESP32 FORGET WI-FI API
+   ============================================================ */
 
 app.post(
   "/api/esp32/forget-wifi",
@@ -634,13 +564,11 @@ app.post(
     if (
       !isAuthenticatedRequest(req)
     ) {
-
       return res
         .status(401)
         .json({
           ok: false,
-          error:
-            "Unauthorized"
+          error: "Unauthorized"
         });
     }
 
@@ -682,35 +610,10 @@ app.post(
   }
 );
 
-// ============================================================
-// STREAM CONTROL
-// ============================================================
 
-function updateStreamState() {
-
-  if (
-    listeners.size > 0
-  ) {
-
-    broadcastToSources({
-      type:
-        "stream_start"
-    });
-
-  } else {
-
-    broadcastToSources({
-      type:
-        "stream_stop"
-    });
-  }
-
-  broadcastDeviceStatus();
-}
-
-// ============================================================
-// WEBSOCKET CONNECTION
-// ============================================================
+/* ============================================================
+   WEBSOCKET CONNECTION
+   ============================================================ */
 
 wss.on(
   "connection",
@@ -723,80 +626,57 @@ wss.on(
       req.socket.remoteAddress ||
       "unknown";
 
-    // --------------------------------------------------------
-    // INITIAL STATE
-    // --------------------------------------------------------
-
-    ws.role =
-      "unknown";
-
-    ws.authenticated =
-      false;
-
+    ws.role = "unknown";
+    ws.authenticated = false;
     ws.sessionAuthenticated =
-      false;
+      !!getSession(req);
 
-    ws.isAlive =
-      true;
-
+    ws.isAlive = true;
     ws.connectedAt =
       Date.now();
-
-    // --------------------------------------------------------
-    // CHECK BROWSER SESSION
-    // --------------------------------------------------------
-
-    const session =
-      getSession(req);
-
-    if (session) {
-
-      ws.sessionAuthenticated =
-        true;
-    }
 
     console.log(
       `WebSocket connected: ${ip}`
     );
 
-    // --------------------------------------------------------
-    // PONG
-    // --------------------------------------------------------
+
+    /* --------------------------------------------------------
+       PONG
+       -------------------------------------------------------- */
 
     ws.on(
       "pong",
       () => {
-
-        ws.isAlive =
-          true;
+        ws.isAlive = true;
       }
     );
 
-    // --------------------------------------------------------
-    // WELCOME
-    // --------------------------------------------------------
+
+    /* --------------------------------------------------------
+       WELCOME
+       -------------------------------------------------------- */
 
     sendJson(
       ws,
       {
-        type:
-          "welcome",
+        type: "welcome",
         message:
           "ESP32 INMP441 Audio Relay connected"
       }
     );
 
-    // ========================================================
-    // MESSAGE
-    // ========================================================
+
+    /* --------------------------------------------------------
+       MESSAGE
+       -------------------------------------------------------- */
 
     ws.on(
       "message",
       (data, isBinary) => {
 
-        // ====================================================
-        // BINARY AUDIO
-        // ====================================================
+        /* ====================================================
+           BINARY AUDIO
+           ==================================================== */
 
         if (isBinary) {
 
@@ -805,17 +685,12 @@ wss.on(
               "source" ||
             !ws.authenticated
           ) {
-
             return;
           }
 
-          // Actual ESP32 traffic proves
-          // the source is alive.
+          // Actual audio traffic also proves the ESP32 is alive.
           deviceLastSeen =
             new Date().toISOString();
-
-          // Forward PCM audio
-          // to every authenticated listener.
 
           for (
             const listener of listeners
@@ -838,18 +713,17 @@ wss.on(
                   }
                 );
 
-              } catch {
-                // Ignore failed listener
-              }
+              } catch {}
             }
           }
 
           return;
         }
 
-        // ====================================================
-        // PARSE TEXT
-        // ====================================================
+
+        /* ====================================================
+           PARSE JSON
+           ==================================================== */
 
         let message;
 
@@ -869,9 +743,10 @@ wss.on(
           return;
         }
 
-        // ====================================================
-        // ESP32 SOURCE AUTHENTICATION
-        // ====================================================
+
+        /* ====================================================
+           ESP32 SOURCE AUTHENTICATION
+           ==================================================== */
 
         if (
           message.type ===
@@ -905,11 +780,8 @@ wss.on(
             return;
           }
 
-          // --------------------------------------------------
-          // If an old ESP32 connection exists,
-          // terminate it before accepting the new one.
-          // --------------------------------------------------
 
+          // Remove old ESP32 source if one exists.
           if (
             activeSource &&
             activeSource !== ws
@@ -923,6 +795,7 @@ wss.on(
               activeSource
             );
           }
+
 
           ws.role =
             "source";
@@ -947,9 +820,11 @@ wss.on(
           deviceRebootPending =
             false;
 
+
           console.log(
             `ESP32 audio source authenticated. Active sources: ${sources.size}`
           );
+
 
           sendJson(
             ws,
@@ -965,9 +840,9 @@ wss.on(
             }
           );
 
-          // If listeners already exist,
-          // immediately wake ESP32 audio.
 
+          // If someone is already listening,
+          // immediately wake the ESP32 audio.
           if (
             listeners.size > 0
           ) {
@@ -981,25 +856,49 @@ wss.on(
             );
           }
 
+
           broadcastDeviceStatus();
 
           return;
         }
 
-        // ====================================================
-        // LISTENER AUTHENTICATION
-        // ====================================================
+
+        /* ====================================================
+           ESP32 APPLICATION HEARTBEAT
+           ====================================================
+
+           The ESP32 sends this every 10 seconds.
+
+           IMPORTANT:
+           This works even when nobody is listening.
+           */
+
+        if (
+          message.type ===
+            "heartbeat" &&
+          ws.role ===
+            "source" &&
+          ws.authenticated
+        ) {
+
+          deviceOnline =
+            true;
+
+          deviceLastSeen =
+            new Date().toISOString();
+
+          return;
+        }
+
+
+        /* ====================================================
+           LISTENER AUTHENTICATION
+           ==================================================== */
 
         if (
           message.type ===
           "listener"
         ) {
-
-          // PIN authentication has already
-          // happened on /api/auth.
-          //
-          // The browser proves authentication
-          // through its HttpOnly session cookie.
 
           if (
             !ws.sessionAuthenticated
@@ -1027,6 +926,7 @@ wss.on(
             return;
           }
 
+
           ws.role =
             "listener";
 
@@ -1035,9 +935,11 @@ wss.on(
 
           listeners.add(ws);
 
+
           console.log(
             `Listener authenticated. Active listeners: ${listeners.size}`
           );
+
 
           sendJson(
             ws,
@@ -1053,33 +955,33 @@ wss.on(
             }
           );
 
+
           sendDeviceStatus(ws);
 
-          // First listener starts ESP32 audio.
 
+          // First listener starts audio.
           if (
             listeners.size ===
             1
           ) {
 
-            broadcastToSources({
-              type:
-                "stream_start"
-            });
+            startESP32Audio();
 
             console.log(
               "First listener connected - ESP32 audio START requested."
             );
           }
 
+
           broadcastDeviceStatus();
 
           return;
         }
 
-        // ====================================================
-        // LISTENER STOP
-        // ====================================================
+
+        /* ====================================================
+           LISTENER STOP
+           ==================================================== */
 
         if (
           message.type ===
@@ -1092,24 +994,21 @@ wss.on(
             ws.authenticated
           ) {
 
-            listeners.delete(
-              ws
-            );
+            listeners.delete(ws);
 
             console.log(
               `Listener stopped. Active listeners: ${listeners.size}`
             );
+
 
             if (
               listeners.size ===
               0
             ) {
 
-              broadcastToSources({
-                type:
-                  "stream_stop"
-              });
+              stopESP32Audio();
             }
+
 
             broadcastDeviceStatus();
           }
@@ -1117,9 +1016,10 @@ wss.on(
           return;
         }
 
-        // ====================================================
-        // ESP32 REBOOT
-        // ====================================================
+
+        /* ====================================================
+           REBOOT FROM LISTENER WEBSOCKET
+           ==================================================== */
 
         if (
           message.type ===
@@ -1131,13 +1031,14 @@ wss.on(
               "listener" ||
             !ws.authenticated
           ) {
-
             return;
           }
+
 
           console.log(
             "Authenticated listener requested ESP32 reboot."
           );
+
 
           deviceRebootPending =
             true;
@@ -1147,6 +1048,7 @@ wss.on(
 
           let forwarded =
             false;
+
 
           for (
             const source of sources
@@ -1168,10 +1070,10 @@ wss.on(
                 }
               );
 
-              forwarded =
-                true;
+              forwarded = true;
             }
           }
+
 
           sendJson(
             ws,
@@ -1184,14 +1086,16 @@ wss.on(
             }
           );
 
+
           broadcastDeviceStatus();
 
           return;
         }
 
-        // ====================================================
-        // FORGET WI-FI
-        // ====================================================
+
+        /* ====================================================
+           FORGET WI-FI FROM LISTENER WEBSOCKET
+           ==================================================== */
 
         if (
           message.type ===
@@ -1203,16 +1107,18 @@ wss.on(
               "listener" ||
             !ws.authenticated
           ) {
-
             return;
           }
+
 
           console.log(
             "Authenticated listener requested ESP32 Wi-Fi reset."
           );
 
+
           let forwarded =
             false;
+
 
           for (
             const source of sources
@@ -1234,10 +1140,10 @@ wss.on(
                 }
               );
 
-              forwarded =
-                true;
+              forwarded = true;
             }
           }
+
 
           sendJson(
             ws,
@@ -1255,9 +1161,10 @@ wss.on(
       }
     );
 
-    // ========================================================
-    // CLOSE
-    // ========================================================
+
+    /* --------------------------------------------------------
+       CLOSE
+       -------------------------------------------------------- */
 
     ws.on(
       "close",
@@ -1273,13 +1180,12 @@ wss.on(
             "source" &&
           ws.authenticated;
 
-        listeners.delete(ws);
 
+        listeners.delete(ws);
         sources.delete(ws);
 
-        // ----------------------------------------------------
-        // LISTENER DISCONNECTED
-        // ----------------------------------------------------
+
+        /* Listener disconnected */
 
         if (
           wasListener
@@ -1289,55 +1195,50 @@ wss.on(
             `Listener disconnected. Active listeners: ${listeners.size}`
           );
 
+
           if (
             listeners.size ===
             0
           ) {
 
-            broadcastToSources({
-              type:
-                "stream_stop"
-            });
+            stopESP32Audio();
           }
+
 
           broadcastDeviceStatus();
         }
 
-        // ----------------------------------------------------
-        // ESP32 SOURCE DISCONNECTED
-        // ----------------------------------------------------
+
+        /* ESP32 disconnected */
 
         if (
-          wasSource
+          wasSource &&
+          ws === activeSource
         ) {
 
-          if (
-            ws ===
-            activeSource
-          ) {
+          activeSource =
+            null;
 
-            activeSource =
-              null;
+          deviceOnline =
+            false;
 
-            deviceOnline =
-              false;
+          // IMPORTANT:
+          // Keep last_seen at the last genuine
+          // heartbeat/audio timestamp.
 
-            deviceLastSeen =
-              new Date().toISOString();
+          console.log(
+            "ESP32 active audio source disconnected."
+          );
 
-            console.log(
-              "ESP32 active audio source disconnected."
-            );
-
-            broadcastDeviceStatus();
-          }
+          broadcastDeviceStatus();
         }
       }
     );
 
-    // ========================================================
-    // ERROR
-    // ========================================================
+
+    /* --------------------------------------------------------
+       ERROR
+       -------------------------------------------------------- */
 
     ws.on(
       "error",
@@ -1352,27 +1253,34 @@ wss.on(
   }
 );
 
-// ============================================================
-// FAST WEBSOCKET HEARTBEAT
-// ============================================================
-//
-// 10-second heartbeat.
-//
-// A dead/unplugged ESP32 normally becomes detected after
-// approximately 10-20 seconds instead of up to 60 seconds.
-//
-// IMPORTANT:
-// We do NOT update deviceLastSeen merely because a heartbeat
-// was sent. Only an actual ESP32 message / connection event
-// updates the device's last-seen timestamp.
-// ============================================================
+
+/* ============================================================
+   WEBSOCKET + APPLICATION HEARTBEAT
+   ============================================================
+
+   WebSocket ping/pong:
+       Checks whether the WebSocket connection itself is alive.
+
+   ESP32 application heartbeat:
+       Checks whether the ESP32 firmware is actually alive.
+
+   ESP32 sends heartbeat every 10 seconds.
+
+   Render marks ESP32 OFFLINE after 30 seconds without
+   receiving a heartbeat.
+   ============================================================ */
 
 const HEARTBEAT_INTERVAL_MS =
-  10000;
+  DEVICE_HEARTBEAT_INTERVAL_MS;
+
 
 const heartbeat =
   setInterval(
     () => {
+
+      /* ------------------------------------------------------
+         NORMAL WEBSOCKET PING/PONG
+         ------------------------------------------------------ */
 
       wss.clients.forEach(
         (ws) => {
@@ -1393,26 +1301,84 @@ const heartbeat =
             return;
           }
 
+
           ws.isAlive =
             false;
 
+
           try {
-
             ws.ping();
-
-          } catch {
-            // Connection will be handled by close/error
-          }
+          } catch {}
         }
       );
+
+
+      /* ------------------------------------------------------
+         ESP32 APPLICATION HEARTBEAT TIMEOUT
+         ------------------------------------------------------ */
+
+      if (
+        deviceOnline &&
+        activeSource
+      ) {
+
+        const lastSeenMs =
+          deviceLastSeen
+            ? new Date(
+                deviceLastSeen
+              ).getTime()
+            : 0;
+
+
+        const elapsed =
+          Date.now() -
+          lastSeenMs;
+
+
+        if (
+          elapsed >
+          DEVICE_HEARTBEAT_TIMEOUT_MS
+        ) {
+
+          console.log(
+            `ESP32 heartbeat timeout: ${Math.floor(
+              elapsed / 1000
+            )} seconds since last heartbeat.`
+          );
+
+
+          // Mark ESP32 offline.
+          deviceOnline =
+            false;
+
+
+          // Stop audio immediately.
+          stopESP32Audio();
+
+
+          // Tell dashboard immediately.
+          broadcastDeviceStatus();
+
+
+          // Kill stale WebSocket.
+          try {
+            activeSource.terminate();
+          } catch {}
+
+
+          activeSource =
+            null;
+        }
+      }
 
     },
     HEARTBEAT_INTERVAL_MS
   );
 
-// ============================================================
-// SESSION CLEANUP
-// ============================================================
+
+/* ============================================================
+   SESSION CLEANUP
+   ============================================================ */
 
 const sessionCleanup =
   setInterval(
@@ -1420,6 +1386,7 @@ const sessionCleanup =
 
       const now =
         Date.now();
+
 
       for (
         const [
@@ -1443,9 +1410,10 @@ const sessionCleanup =
     15 * 60 * 1000
   );
 
-// ============================================================
-// SERVER SHUTDOWN
-// ============================================================
+
+/* ============================================================
+   SERVER SHUTDOWN
+   ============================================================ */
 
 server.on(
   "close",
@@ -1461,9 +1429,10 @@ server.on(
   }
 );
 
-// ============================================================
-// START SERVER
-// ============================================================
+
+/* ============================================================
+   START SERVER
+   ============================================================ */
 
 server.listen(
   PORT,
@@ -1501,6 +1470,12 @@ server.listen(
     console.log(
       `ESP32 WebSocket heartbeat: ${
         HEARTBEAT_INTERVAL_MS / 1000
+      } seconds`
+    );
+
+    console.log(
+      `ESP32 application heartbeat timeout: ${
+        DEVICE_HEARTBEAT_TIMEOUT_MS / 1000
       } seconds`
     );
   }
