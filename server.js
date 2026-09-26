@@ -73,7 +73,7 @@ wss.on("connection", (ws, req) => {
 
         if (
           message.type === "hello" &&
-          message.device === "ESP32-S3-ICS43434"
+          message.device === "ESP32-S3-INMP441"
         ) {
           ws.role = "source";
           sources.add(ws);
