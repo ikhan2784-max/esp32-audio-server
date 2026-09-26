@@ -217,21 +217,16 @@ async function refreshStatus(){
       $("streaming").className = "value " + (d.streaming ? "online" : "idle");
     }
 
-    if(d.last_seen){
-      lastSeen = d.last_seen;
-      $("lastSeen").textContent = fmtTime(lastSeen);
-    }
+    if(d.last_rebooted){
+  lastReboot = d.last_rebooted;
+  $("lastReboot").textContent = fmtTime(lastReboot);
+}
 
-    if(d.last_reboot){
-      lastReboot = d.last_reboot;
-      $("lastReboot").textContent = fmtTime(lastReboot);
-    }
+if(d.connected_at){
+  bootTime = new Date(d.connected_at).getTime();
+}
 
-    if(d.boot_time){
-      bootTime = d.boot_time;
-    }
-
-    fmtUptime();
+fmtUptime();
 
   }catch(e){
     setDevice(false);
