@@ -201,8 +201,7 @@ app.post("/api/esp32/reboot", requireHttps, (req, res) => {
   console.log("Dashboard requested ESP32 reboot");
 
   deviceRebootPending = true;
-
-  let forwarded = false;
+  deviceLastRebooted = new Date().toISOString();
 
   for (const source of sources) {
     if (
