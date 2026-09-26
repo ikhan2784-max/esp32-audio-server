@@ -51,6 +51,7 @@ button.secondary{background:#273241;color:#fff}.row{display:flex;gap:10px}.row b
       <button id="stopBtn" class="secondary">Stop</button>
       <button id="recordBtn" class="secondary">Start Recording</button>
     </div>
+    <button id="rebootBtn" class="secondary">ESP32 Reboot</button>
     <div class="small" id="recordText">Recording: off</div>
   </div>
 </div>
@@ -488,6 +489,28 @@ function stopRecording(){
 $("connectBtn").onclick=connect;
 $("stopBtn").onclick=stop;
 $("recordBtn").onclick=()=>recording?stopRecording():startRecording();
+
+$("rebootBtn").onclick=()=>{
+  if(!ws || ws.readyState !== WebSocket.OPEN || !connected){
+    setStatus("Connect to the ESP32 first.","err");
+    return;
+  }
+
+  const confirmed = window.confirm(
+    "Are you sure you want to reboot the ESP32?\\n\\n" +
+    "The microphone stream will stop and the ESP32 will restart."
+  );
+
+  if(!confirmed) return;
+
+  try{
+    ws.send(JSON.stringify({type:"esp32_reboot"}));
+    stateText.textContent="ESP32 reboot requested…";
+    setStatus("ESP32 reboot command sent.","ok");
+  }catch(e){
+    setStatus("Could not send reboot command.","err");
+  }
+};
 $("volume").oninput=e=>{
   const pct=Number(e.target.value);
   $("volumeValue").textContent=pct+"%";
