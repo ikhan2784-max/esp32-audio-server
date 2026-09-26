@@ -2,6 +2,399 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ESP32 INMP441</title>
+<style>
+*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family:Arial,Helvetica,sans-serif;
+  background:#f4f6f8;
+  color:#17202a;
+}
+.container{
+  width:min(760px,92%);
+  margin:30px auto 50px;
+}
+.card{
+  background:#fff;
+  border-radius:16px;
+  padding:22px;
+  margin-bottom:18px;
+  box-shadow:0 4px 18px rgba(0,0,0,.08);
+}
+h1{margin:0 0 6px;font-size:28px}
+h2{margin:0 0 16px;font-size:21px}
+.subtitle{color:#667085;margin-bottom:22px}
+.status{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  font-size:20px;
+  font-weight:700;
+  margin-bottom:18px;
+}
+.dot{
+  width:13px;height:13px;border-radius:50%;
+  background:#888;
+}
+.online .dot{background:#20a464}
+.offline .dot{background:#d64545}
+.grid{
+  display:grid;
+  grid-template-columns:repeat(2,1fr);
+  gap:12px;
+}
+.item{
+  background:#f7f8fa;
+  border-radius:11px;
+  padding:13px;
+}
+.label{font-size:12px;color:#667085;margin-bottom:5px}
+.value{font-size:17px;font-weight:700;word-break:break-word}
+.ok{color:#16844b}
+.idle{color:#777}
+input{
+  width:100%;
+  padding:13px;
+  border:1px solid #ccd2d9;
+  border-radius:10px;
+  font-size:17px;
+  margin-bottom:10px;
+}
+button{
+  width:100%;
+  border:0;
+  border-radius:10px;
+  padding:13px 16px;
+  font-size:16px;
+  font-weight:700;
+  cursor:pointer;
+  background:#1f6feb;
+  color:#fff;
+}
+button.secondary{background:#555}
+button.danger{background:#c0392b}
+button:disabled{opacity:.5;cursor:not-allowed}
+.message{
+  min-height:20px;
+  margin-top:10px;
+  font-size:14px;
+}
+.links{
+  display:grid;
+  gap:10px;
+}
+.small{font-size:13px;color:#667085}
+@media(max-width:600px){
+  .grid{grid-template-columns:1fr}
+  .container{margin-top:18px}
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="card">
+    <h1>ESP32 INMP441</h1>
+    <div class="subtitle">Audio device status</div>
+
+    <div id="status" class="status offline">
+      <span class="dot"></span>
+      <span id="statusText">OFFLINE</span>
+    </div>
+
+    <div class="grid">
+      <div class="item">
+        <div class="label">Audio</div>
+        <div id="audio" class="value idle">IDLE</div>
+      </div>
+
+      <div class="item">
+        <div class="label">Streaming</div>
+        <div id="streaming" class="value idle">IDLE</div>
+      </div>
+
+      <div class="item">
+        <div class="label">Listeners</div>
+        <div id="listeners" class="value">0</div>
+      </div>
+
+      <div class="item">
+        <div class="label">Render / WSS</div>
+        <div id="render" class="value">Checking…</div>
+      </div>
+
+      <div class="item">
+        <div class="label">Last Seen</div>
+        <div id="lastSeen" class="value">—</div>
+      </div>
+
+      <div class="item">
+        <div class="label">Last Reboot</div>
+        <div id="lastReboot" class="value">—</div>
+      </div>
+
+      <div class="item">
+        <div class="label">ESP32 Uptime</div>
+        <div id="uptime" class="value">—</div>
+      </div>
+
+      <div class="item">
+        <div class="label">Connection Since</div>
+        <div id="connectedAt" class="value">—</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Listener PIN</h2>
+    <input id="pin" type="password" inputmode="numeric"
+           autocomplete="off" placeholder="Enter Listener PIN">
+    <button id="listenerBtn">Enter Listener Page</button>
+    <div id="authMessage" class="message"></div>
+  </div>
+
+  <div class="card">
+    <h2>ESP32 Control</h2>
+    <button id="rebootBtn" class="danger">ESP32 Reboot</button>
+    <div id="rebootMessage" class="message"></div>
+  </div>
+
+  <div class="card">
+    <div class="links">
+      <div class="small">
+        Status refreshes automatically every 3 seconds.
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+let uptimeBase = null;
+let uptimeFetchedAt = 0;
+let lastStatus = null;
+
+function fmtTime(value){
+  if(!value) return "—";
+  const d = new Date(value);
+  if(Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString();
+}
+
+function fmtUptime(seconds){
+  if(seconds === null || seconds === undefined || !Number.isFinite(Number(seconds))){
+    return "—";
+  }
+
+  seconds = Math.max(0, Math.floor(Number(seconds)));
+
+  const days = Math.floor(seconds / 86400);
+  seconds %= 86400;
+
+  const hours = Math.floor(seconds / 3600);
+  seconds %= 3600;
+
+  const minutes = Math.floor(seconds / 60);
+  seconds %= 60;
+
+  if(days > 0) return `${days}d ${hours}h ${minutes}m`;
+  if(hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
+  if(minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+}
+
+/*
+ * The server provides uptime_seconds.
+ * We remember the server value and the exact browser time
+ * when it was received, then advance it locally between polls.
+ * This avoids calculating uptime from the browser's clock
+ * against connected_at.
+ */
+function updateUptimeDisplay(){
+  if(uptimeBase === null || !uptimeFetchedAt){
+    $("uptime").textContent = "—";
+    return;
+  }
+
+  const elapsed = Math.max(
+    0,
+    Math.floor((Date.now() - uptimeFetchedAt) / 1000)
+  );
+
+  $("uptime").textContent = fmtUptime(uptimeBase + elapsed);
+}
+
+async function refreshStatus(){
+  try{
+    const response = await fetch("/api/device-status", {
+      cache:"no-store",
+      headers:{ "Cache-Control":"no-cache" }
+    });
+
+    if(!response.ok){
+      throw new Error("Status API returned " + response.status);
+    }
+
+    const d = await response.json();
+    lastStatus = d;
+
+    const online = d.online === true;
+
+    $("status").className = "status " + (online ? "online" : "offline");
+    $("statusText").textContent = online ? "ONLINE" : "OFFLINE";
+
+    $("listeners").textContent =
+      Number.isFinite(Number(d.listeners)) ? d.listeners : "0";
+
+    $("audio").textContent = d.audio || "IDLE";
+    $("audio").className =
+      "value " + (d.audio === "OK" ? "ok" : "idle");
+
+    $("streaming").textContent =
+      d.streaming === true ? "STREAMING" : "IDLE";
+    $("streaming").className =
+      "value " + (d.streaming === true ? "ok" : "idle");
+
+    $("render").textContent = online ? "CONNECTED" : "WAITING";
+    $("render").className =
+      "value " + (online ? "ok" : "idle");
+
+    $("lastSeen").textContent =
+      d.last_seen ? fmtTime(d.last_seen) : "—";
+
+    /*
+     * IMPORTANT:
+     * Display the API's last_rebooted value directly.
+     * Do not derive it from connected_at.
+     */
+    $("lastReboot").textContent =
+      d.last_rebooted ? fmtTime(d.last_rebooted) : "Never";
+
+    $("connectedAt").textContent =
+      d.connected_at ? fmtTime(d.connected_at) : "—";
+
+    /*
+     * IMPORTANT:
+     * Use uptime_seconds supplied by the server.
+     */
+    if(online && Number.isFinite(Number(d.uptime_seconds))){
+      uptimeBase = Math.max(0, Math.floor(Number(d.uptime_seconds)));
+      uptimeFetchedAt = Date.now();
+      updateUptimeDisplay();
+    }else{
+      uptimeBase = null;
+      uptimeFetchedAt = 0;
+      $("uptime").textContent = "—";
+    }
+
+  }catch(err){
+    $("render").textContent = "ERROR";
+    $("render").className = "value idle";
+    console.error("Status refresh failed:", err);
+  }
+}
+
+setInterval(updateUptimeDisplay, 1000);
+setInterval(refreshStatus, 3000);
+refreshStatus();
+
+$("listenerBtn").onclick = async () => {
+  const pin = $("pin").value.trim();
+  const msg = $("authMessage");
+
+  if(!pin){
+    msg.textContent = "Please enter the Listener PIN.";
+    msg.style.color = "#c0392b";
+    return;
+  }
+
+  msg.textContent = "Checking PIN…";
+  msg.style.color = "";
+
+  try{
+    const response = await fetch("/api/auth", {
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body:JSON.stringify({pin})
+    });
+
+    const data = await response.json();
+
+    if(!response.ok || !data.ok){
+      msg.textContent = "Invalid PIN.";
+      msg.style.color = "#c0392b";
+      return;
+    }
+
+    /*
+     * Do not put the PIN in the URL.
+     * The listener page performs its own WebSocket PIN authentication.
+     */
+    window.location.href = "/listener";
+
+  }catch(err){
+    msg.textContent = "Unable to contact the server.";
+    msg.style.color = "#c0392b";
+    console.error(err);
+  }
+};
+
+$("pin").addEventListener("keydown", e => {
+  if(e.key === "Enter") $("listenerBtn").click();
+});
+
+$("rebootBtn").onclick = async () => {
+  const msg = $("rebootMessage");
+
+  const confirmed = window.confirm(
+    "Are you sure you want to reboot the ESP32?\n\n" +
+    "The ESP32 will completely restart and the microphone stream will stop temporarily."
+  );
+
+  if(!confirmed) return;
+
+  msg.textContent = "Sending reboot command…";
+  msg.style.color = "";
+
+  try{
+    const response = await fetch("/api/esp32/reboot", {
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      cache:"no-store"
+    });
+
+    const data = await response.json();
+
+    if(!response.ok || !data.ok){
+      throw new Error(data.error || "Reboot request failed");
+    }
+
+    msg.textContent = data.source_connected
+      ? "Reboot command sent. ESP32 is restarting…"
+      : "ESP32 is not currently connected.";
+    msg.style.color = data.source_connected ? "#16844b" : "#c0392b";
+
+    setTimeout(refreshStatus, 1000);
+    setTimeout(refreshStatus, 4000);
+    setTimeout(refreshStatus, 8000);
+
+  }catch(err){
+    msg.textContent = "Could not send reboot command.";
+    msg.style.color = "#c0392b";
+    console.error(err);
+  }
+};
+</script>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b0f14">
 <title>ESP32 INMP441 Audio</title>
