@@ -55,10 +55,27 @@ let deviceRebootPending = false;
 function buildDeviceStatus() {
   return {
     type: "device_status",
+
     online: deviceOnline,
+
+    listeners: listeners.size,
+
+    streaming:
+      deviceOnline &&
+      listeners.size > 0,
+
+    audio:
+      deviceOnline &&
+      listeners.size > 0
+        ? "OK"
+        : "IDLE",
+
     last_seen: deviceLastSeen,
+
     connected_at: deviceConnectedAt,
+
     last_rebooted: deviceLastRebooted,
+
     uptime_seconds:
       deviceOnline && deviceConnectedAt
         ? Math.max(
@@ -151,6 +168,60 @@ app.get("/api/device-status", requireHttps, (req, res) => {
 
 app.get("/listener", requireHttps, (req, res) => {
   res.sendFile(__dirname + "/listener.html");
+});
+
+// ============================================================
+// DASHBOARD PIN AUTHENTICATION
+// ============================================================
+
+app.post("/api/auth", requireHttps, (req, res) => {
+  const { pin } = req.body || {};
+
+  if (
+    !LISTENER_PIN ||
+    typeof pin !== "string" ||
+    pin !== LISTENER_PIN
+  ) {
+    return res.status(401).json({
+      ok: false,
+      error: "Invalid PIN"
+    });
+  }
+
+  return res.json({
+    ok: true
+  });
+});
+
+// ============================================================
+// ESP32 REBOOT API
+// ============================================================
+
+app.post("/api/esp32/reboot", requireHttps, (req, res) => {
+  console.log("Dashboard requested ESP32 reboot");
+
+  deviceRebootPending = true;
+
+  let forwarded = false;
+
+  for (const source of sources) {
+    if (
+      source.readyState === WebSocket.OPEN &&
+      source.role === "source" &&
+      source.authenticated
+    ) {
+      sendJson(source, {
+        type: "esp32_reboot"
+      });
+
+      forwarded = true;
+    }
+  }
+
+  return res.json({
+    ok: true,
+    source_connected: forwarded
+  });
 });
 
 // ============================================================
