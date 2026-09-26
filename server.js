@@ -41,6 +41,53 @@ const listeners = new Set();
 const sources = new Set();
 
 // ============================================================
+// ESP32 DEVICE STATUS
+// ============================================================
+
+let deviceOnline = false;
+let deviceLastSeen = null;
+let deviceConnectedAt = null;
+let deviceLastRebooted = null;
+let deviceRebootPending = false;
+
+function buildDeviceStatus() {
+  return {
+    type: "device_status",
+    online: deviceOnline,
+    last_seen: deviceLastSeen,
+    connected_at: deviceConnectedAt,
+    last_rebooted: deviceLastRebooted,
+    uptime_seconds:
+      deviceOnline && deviceConnectedAt
+        ? Math.max(
+            0,
+            Math.floor(
+              (Date.now() - new Date(deviceConnectedAt).getTime()) / 1000
+            )
+          )
+        : null
+  };
+}
+
+function sendDeviceStatus(ws) {
+  sendJson(ws, buildDeviceStatus());
+}
+
+function broadcastDeviceStatus() {
+  const message = buildDeviceStatus();
+
+  for (const listener of listeners) {
+    if (
+      listener.readyState === WebSocket.OPEN &&
+      listener.role === "listener" &&
+      listener.authenticated
+    ) {
+      sendJson(listener, message);
+    }
+  }
+}
+
+// ============================================================
 // HTTPS DETECTION
 // ============================================================
 
@@ -289,10 +336,23 @@ wss.on("connection", (ws, req) => {
 
       sources.add(ws);
 
+      const connectedNow = new Date().toISOString();
+
+      deviceOnline = true;
+      deviceLastSeen = connectedNow;
+      deviceConnectedAt = connectedNow;
+
+      if (deviceRebootPending) {
+        deviceLastRebooted = connectedNow;
+        deviceRebootPending = false;
+      }
+
       console.log(
         `ESP32 audio source authenticated: ${ip} ` +
         `(sources=${sources.size})`
       );
+
+      broadcastDeviceStatus();
 
       sendJson(ws, {
         type: "source_ready",
@@ -370,6 +430,9 @@ wss.on("connection", (ws, req) => {
         channels: 1
       });
 
+      // Immediately provide current ESP32 status
+      sendDeviceStatus(ws);
+
       // First listener wakes ESP32
       if (listeners.size === 1) {
 
@@ -381,6 +444,46 @@ wss.on("connection", (ws, req) => {
           "First listener connected - ESP32 audio START requested"
         );
       }
+
+      return;
+    }
+
+    // ========================================================
+    // ESP32 REMOTE REBOOT
+    // ========================================================
+
+    if (
+      message.type === "esp32_reboot" &&
+      ws.role === "listener" &&
+      ws.authenticated
+    ) {
+
+      console.log(
+        `Authenticated listener requested ESP32 reboot: ${ip}`
+      );
+
+      deviceRebootPending = true;
+
+      let forwarded = false;
+
+      for (const source of sources) {
+        if (
+          source.readyState === WebSocket.OPEN &&
+          source.role === "source" &&
+          source.authenticated
+        ) {
+          sendJson(source, {
+            type: "esp32_reboot"
+          });
+
+          forwarded = true;
+        }
+      }
+
+      sendJson(ws, {
+        type: "reboot_requested",
+        source_connected: forwarded
+      });
 
       return;
     }
@@ -487,6 +590,11 @@ wss.on("connection", (ws, req) => {
 
     if (wasSource) {
 
+      deviceOnline = false;
+      deviceLastSeen = new Date().toISOString();
+
+      broadcastDeviceStatus();
+
       console.log(
         "ESP32 audio source disconnected"
       );
@@ -529,6 +637,12 @@ const heartbeat = setInterval(() => {
       );
     }
   });
+
+  // Refresh ESP32 status for connected listeners
+  if (deviceOnline && sources.size > 0) {
+    deviceLastSeen = new Date().toISOString();
+    broadcastDeviceStatus();
+  }
 
 }, 30000);
 
