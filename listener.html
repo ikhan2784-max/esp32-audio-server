@@ -470,20 +470,21 @@ function applyDeviceStatus(data) {
 
   updateUptimeDisplay();
 
-  // Start Listening only depends on ESP32 availability.
-// It is the button that creates the WebSocket connection.
-start.disabled = !deviceOnline;
+  // Start Listening is available when the ESP32 is online
+  // and we are not already connecting/listening.
+  const wsActive =
+    ws &&
+    (
+      ws.readyState === WebSocket.OPEN ||
+      ws.readyState === WebSocket.CONNECTING
+    );
 
-// These commands require an active listener WebSocket.
-const wsReady =
-  ws &&
-  ws.readyState === WebSocket.OPEN;
+  start.disabled = !deviceOnline || wsActive;
 
-rebootBtn.disabled =
-  !deviceOnline || !wsReady;
-
-forgetWifiBtn.disabled =
-  !deviceOnline || !wsReady;
+  // ESP32 control commands are available whenever the
+  // ESP32 itself is online. They do NOT require listening.
+  rebootBtn.disabled = !deviceOnline;
+  forgetWifiBtn.disabled = !deviceOnline;
 }
 
 async function refreshDeviceStatus() {
@@ -836,8 +837,9 @@ start.onclick = async () => {
       start.disabled = true;
       stop.disabled = false;
       record.disabled = false;
-      rebootBtn.disabled = true;
-      forgetWifiBtn.disabled = true;
+      // Reboot and Forget Wi-Fi remain available while the ESP32 is online.
+      rebootBtn.disabled = !deviceOnline;
+      forgetWifiBtn.disabled = !deviceOnline;
 
       $("renderState").textContent =
         "CONNECTED";
@@ -857,11 +859,11 @@ start.onclick = async () => {
               "Access denied — incorrect PIN"
             );
 
-            start.disabled = false;
+            start.disabled = !deviceOnline;
             stop.disabled = true;
             record.disabled = true;
-            rebootBtn.disabled = true;
-            forgetWifiBtn.disabled = true;
+            rebootBtn.disabled = !deviceOnline;
+            forgetWifiBtn.disabled = !deviceOnline;
 
             return;
           }
@@ -938,8 +940,8 @@ start.onclick = async () => {
       stop.disabled = true;
       record.disabled = true;
       stopRecord.disabled = true;
-      rebootBtn.disabled = true;
-      forgetWifiBtn.disabled = true;
+      rebootBtn.disabled = !deviceOnline;
+      forgetWifiBtn.disabled = !deviceOnline;
 
       $("renderState").textContent = "DISCONNECTED";
       $("renderState").className = "value idle";
@@ -986,12 +988,12 @@ stop.onclick = () => {
 
   setStatus("Stopped");
 
-  start.disabled = false;
+  start.disabled = !deviceOnline;
   stop.disabled = true;
   record.disabled = true;
   stopRecord.disabled = true;
-  rebootBtn.disabled = true;
-  forgetWifiBtn.disabled = true;
+  rebootBtn.disabled = !deviceOnline;
+  forgetWifiBtn.disabled = !deviceOnline;
 };
 
 rebootBtn.onclick = async () => {
@@ -1047,8 +1049,8 @@ rebootBtn.onclick = async () => {
   }
 };
 
-forgetWifiBtn.onclick = () => {
-  if (!deviceOnline || !ws || ws.readyState !== WebSocket.OPEN) {
+forgetWifiBtn.onclick = async () => {
+  if (!deviceOnline) {
     setStatus("ESP32 is offline");
     return;
   }
@@ -1061,14 +1063,37 @@ forgetWifiBtn.onclick = () => {
 
   if (!confirmed) return;
 
+  forgetWifiBtn.disabled = true;
+  rebootBtn.disabled = true;
+  setStatus("Sending Forget Wi-Fi command...");
+
   try {
-    ws.send(JSON.stringify({ type: "forget_wifi" }));
-    forgetWifiBtn.disabled = true;
-    rebootBtn.disabled = true;
-    setStatus("Forget Wi-Fi command sent. ESP32 is restarting into setup mode...");
+    // HTTP control endpoint: works even when Start Listening is not active.
+    const response = await fetch("/api/esp32/forget-wifi", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: "{}"
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || "Forget Wi-Fi request failed");
+    }
+
+    setStatus(
+      data.source_connected
+        ? "Forget Wi-Fi command sent. ESP32 is restarting into setup mode..."
+        : "ESP32 is not currently connected."
+    );
+
   } catch (error) {
     console.error(error);
     setStatus("Could not send Forget Wi-Fi command.");
+    forgetWifiBtn.disabled = !deviceOnline;
+    rebootBtn.disabled = !deviceOnline;
   }
 };
 
