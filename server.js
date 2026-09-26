@@ -12,8 +12,8 @@ const SESSION_COOKIE_NAME = "esp32_listener_session";
 const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
 
 // ESP32 application heartbeat settings
-const DEVICE_HEARTBEAT_INTERVAL_MS = 10000;
-const DEVICE_HEARTBEAT_TIMEOUT_MS = 30000;
+const DEVICE_HEARTBEAT_INTERVAL_MS = 5000;
+const DEVICE_HEARTBEAT_TIMEOUT_MS = 10000;
 
 const app = express();
 const server = http.createServer(app);
@@ -1270,9 +1270,7 @@ wss.on(
    receiving a heartbeat.
    ============================================================ */
 
-const HEARTBEAT_INTERVAL_MS =
-  DEVICE_HEARTBEAT_INTERVAL_MS;
-
+const HEARTBEAT_INTERVAL_MS = 2000;
 
 const heartbeat =
   setInterval(
