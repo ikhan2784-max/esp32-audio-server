@@ -101,7 +101,9 @@ input[type="range"] { width: 100%; }
 const SAMPLE_RATE = 16000;
 const CHANNELS = 1;
 const BYTES_PER_SAMPLE = 2;
-const TARGET_BUFFER_SECONDS = 0.12;
+const TARGET_BUFFER_SECONDS = 0.05;
+const MAX_BUFFER_SECONDS = 0.18;
+const MIN_BUFFER_SECONDS = 0.025;
 
 let ws = null;
 let audioContext = null;
@@ -207,20 +209,21 @@ function playPCM16(arrayBuffer) {
   level.style.width =
     Math.min(100, rms * 220) + "%";
 
-  const now =
-    audioContext.currentTime;
+  const now = audioContext.currentTime;
 
-  if (nextPlayTime < now + 0.03) {
-    nextPlayTime =
-      now + TARGET_BUFFER_SECONDS;
+  // Keep playback close to real time. If the queued audio has grown
+  // too far ahead, drop the old queue and restart from a small buffer.
+  const queued = nextPlayTime - now;
+
+  if (queued > MAX_BUFFER_SECONDS || queued < MIN_BUFFER_SECONDS) {
+    nextPlayTime = now + TARGET_BUFFER_SECONDS;
   }
 
-  const source =
-    audioContext.createBufferSource();
+  const source = audioContext.createBufferSource();
 
   source.buffer = buffer;
   source.connect(gainNode);
-  source.start(nextPlayTime);
+  source.start(Math.max(nextPlayTime, now + MIN_BUFFER_SECONDS));
 
   nextPlayTime += buffer.duration;
 }
