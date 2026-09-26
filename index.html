@@ -218,9 +218,18 @@ async function refreshStatus(){
     }
 
     if(d.last_rebooted){
-  lastReboot = d.last_rebooted;
-  $("lastReboot").textContent = fmtTime(lastReboot);
+  $("lastReboot").textContent = fmtTime(d.last_rebooted);
+}else{
+  $("lastReboot").textContent = "Never";
 }
+
+if(d.connected_at){
+  bootTime = new Date(d.connected_at).getTime();
+}else{
+  bootTime = 0;
+}
+
+fmtUptime();
 
 if(d.connected_at){
   bootTime = new Date(d.connected_at).getTime();
