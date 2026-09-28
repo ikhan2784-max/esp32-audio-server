@@ -794,40 +794,47 @@ function playPCM16(arrayBuffer) {
     return;
   }
 
+  // ESP32 framed-pcm-v1 header: 16 bytes, followed by PCM16 samples.
+  if (arrayBuffer.byteLength < 16) return;
+
+  const view = new DataView(arrayBuffer);
+  const magic = view.getUint32(0, true);
+  const version = view.getUint8(4);
+  const headerBytes = view.getUint8(5);
+  const sampleCount = view.getUint16(6, true);
+
   if (
-    arrayBuffer.byteLength === 0 ||
-    arrayBuffer.byteLength % 2 !== 0
+    magic !== 0x41334631 ||
+    version !== 1 ||
+    headerBytes !== 16 ||
+    sampleCount === 0 ||
+    arrayBuffer.byteLength !== headerBytes + sampleCount * 2
   ) {
+    console.warn("Invalid ESP32 audio frame", arrayBuffer.byteLength);
     return;
   }
 
-  const input = new Int16Array(arrayBuffer);
-
-  // Recording stores the original PCM16 received from the ESP32.
-  // Browser volume does not affect the WAV file.
-  if (recording) {
-    const copy = new Int16Array(input.length);
-    copy.set(input);
-
-    recordedChunks.push(copy);
-    recordedSamples += input.length;
-  }
-
+  const pcm = new Int16Array(sampleCount);
+  const floatSamples = new Float32Array(sampleCount);
   let sum = 0;
-  const floatSamples = new Float32Array(input.length);
 
-  for (let i = 0; i < input.length; i++) {
-    const value = input[i] / 32768.0;
+  for (let i = 0; i < sampleCount; i++) {
+    const sample = view.getInt16(headerBytes + i * 2, true);
+    pcm[i] = sample;
 
+    const value = sample / 32768.0;
     floatSamples[i] = value;
     sum += value * value;
   }
 
-  const rms =
-    Math.sqrt(sum / input.length);
+  // Recording stores only decoded PCM, never the transport header.
+  if (recording) {
+    recordedChunks.push(pcm);
+    recordedSamples += sampleCount;
+  }
 
-  level.style.width =
-    Math.min(100, rms * 220) + "%";
+  const rms = Math.sqrt(sum / sampleCount);
+  level.style.width = Math.min(100, rms * 220) + "%";
 
   audioWorkletNode.port.postMessage(
     {
@@ -839,7 +846,6 @@ function playPCM16(arrayBuffer) {
 
   playbackStarted = true;
 }
-
 function startRecording() {
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     return;
