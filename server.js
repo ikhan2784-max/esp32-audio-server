@@ -134,6 +134,7 @@ const wss =
 
 const listeners = new Set();
 const sources = new Set();
+let audioMessagesReceived = 0;
 
 let activeSource = null;
 
@@ -692,6 +693,13 @@ wss.on(
           deviceLastSeen =
             new Date().toISOString();
 
+          audioMessagesReceived++;
+          if (audioMessagesReceived === 1 || audioMessagesReceived % 100 === 0) {
+            console.log(
+              `ESP32 audio packets received: ${audioMessagesReceived} (latest: ${data.length} bytes)`
+            );
+          }
+
           for (
             const listener of listeners
           ) {
@@ -867,7 +875,7 @@ wss.on(
            ESP32 APPLICATION HEARTBEAT
            ====================================================
 
-           The ESP32 sends this every 10 seconds.
+            The ESP32 sends this every 3 seconds.
 
            IMPORTANT:
            This works even when nobody is listening.
@@ -886,6 +894,10 @@ wss.on(
 
           deviceLastSeen =
             new Date().toISOString();
+
+          console.log(
+            `ESP32 app heartbeat received: ${deviceLastSeen}`
+          );
 
           return;
         }
@@ -1478,3 +1490,4 @@ server.listen(
     );
   }
 );
+
