@@ -39,6 +39,56 @@ if (!LISTENER_PIN) {
 
 const sessions = new Map();
 
+// Simple in-memory login rate limiting.
+// This protects the PIN endpoint from rapid repeated guesses.
+// Counters reset automatically after the configured window.
+const authAttempts = new Map();
+const AUTH_WINDOW_MS = 15 * 60 * 1000;
+const AUTH_MAX_ATTEMPTS = 10;
+
+function getClientIp(req) {
+  const forwarded = req.headers["x-forwarded-for"];
+  if (forwarded) {
+    return forwarded.split(",")[0].trim();
+  }
+
+  return req.socket.remoteAddress || "unknown";
+}
+
+function isAuthRateLimited(ip) {
+  const now = Date.now();
+  const entry = authAttempts.get(ip);
+
+  if (!entry || now - entry.windowStart >= AUTH_WINDOW_MS) {
+    authAttempts.set(ip, {
+      windowStart: now,
+      attempts: 0
+    });
+    return false;
+  }
+
+  return entry.attempts >= AUTH_MAX_ATTEMPTS;
+}
+
+function recordAuthAttempt(ip) {
+  const now = Date.now();
+  const entry = authAttempts.get(ip);
+
+  if (!entry || now - entry.windowStart >= AUTH_WINDOW_MS) {
+    authAttempts.set(ip, {
+      windowStart: now,
+      attempts: 1
+    });
+    return;
+  }
+
+  entry.attempts++;
+}
+
+function clearAuthAttempts(ip) {
+  authAttempts.delete(ip);
+}
+
 function createSession() {
   const sessionId =
     crypto.randomBytes(32).toString("hex");
@@ -366,6 +416,17 @@ app.post(
   requireHttps,
   (req, res) => {
 
+    const clientIp = getClientIp(req);
+
+    if (isAuthRateLimited(clientIp)) {
+      return res
+        .status(429)
+        .json({
+          ok: false,
+          error: "Too many authentication attempts. Try again later."
+        });
+    }
+
     const { pin } =
       req.body || {};
 
@@ -376,6 +437,8 @@ app.post(
       pin !==
         LISTENER_PIN
     ) {
+      recordAuthAttempt(clientIp);
+
       return res
         .status(401)
         .json({
@@ -383,6 +446,8 @@ app.post(
           error: "Invalid PIN"
         });
     }
+
+    clearAuthAttempts(clientIp);
 
     const sessionId =
       createSession();
@@ -694,9 +759,11 @@ wss.on(
             new Date().toISOString();
 
           audioMessagesReceived++;
-          console.log(
-            `ESP32 audio packet ${audioMessagesReceived}: ${data.length} bytes`
-          );
+          if (audioMessagesReceived % 100 === 0) {
+            console.log(
+              `ESP32 audio packets received: ${audioMessagesReceived}`
+            );
+          }
 
           for (
             const listener of listeners
@@ -1418,6 +1485,20 @@ const sessionCleanup =
         }
       }
 
+      for (
+        const [
+          ip,
+          entry
+        ] of authAttempts
+      ) {
+
+        if (
+          now - entry.windowStart >= AUTH_WINDOW_MS
+        ) {
+          authAttempts.delete(ip);
+        }
+      }
+
     },
     15 * 60 * 1000
   );
@@ -1480,6 +1561,10 @@ server.listen(
     );
 
     console.log(
+      `Listener auth rate limit: ${AUTH_MAX_ATTEMPTS} attempts / ${AUTH_WINDOW_MS / 60000} minutes`
+    );
+
+    console.log(
       `ESP32 WebSocket heartbeat: ${
         HEARTBEAT_INTERVAL_MS / 1000
       } seconds`
@@ -1492,5 +1577,3 @@ server.listen(
     );
   }
 );
-
-
