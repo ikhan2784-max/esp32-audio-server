@@ -694,11 +694,9 @@ wss.on(
             new Date().toISOString();
 
           audioMessagesReceived++;
-          if (audioMessagesReceived === 1 || audioMessagesReceived % 100 === 0) {
-            console.log(
-              `ESP32 audio packets received: ${audioMessagesReceived} (latest: ${data.length} bytes)`
-            );
-          }
+          console.log(
+            `ESP32 audio packet ${audioMessagesReceived}: ${data.length} bytes`
+          );
 
           for (
             const listener of listeners
@@ -1180,7 +1178,11 @@ wss.on(
 
     ws.on(
       "close",
-      () => {
+      (code, reason) => {
+
+        console.log(
+          `WebSocket closed from ${ip}: code=${code}, reason=${reason.toString() || "(none)"}`
+        );
 
         const wasListener =
           ws.role ===
@@ -1490,4 +1492,5 @@ server.listen(
     );
   }
 );
+
 
