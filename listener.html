@@ -314,15 +314,6 @@ input[type=range]{
     <div class="small" style="margin-top:12px">
       16 kHz mono PCM16 • Secure PIN • Multi-listener • Low-latency playback
     </div>
-
-    <div style="margin-top:18px;padding:14px;background:var(--card2);border:1px solid var(--border);border-radius:10px">
-      <div class="volume-row">
-        <span>🤖 AI Voice Enhancement</span>
-        <strong id="aiState" class="idle">OFF</strong>
-      </div>
-      <button id="aiToggle" class="secondary" disabled>Enable AI Enhancement</button>
-      <div id="aiStatus" class="small" style="margin-top:8px">AI engine will initialize when listening starts.</div>
-    </div>
   </div>
 
   <!-- RECORDING -->
@@ -365,10 +356,6 @@ let gainNode = null;
 let audioWorkletNode = null;
 let audioWorkletReady = false;
 let playbackStarted = false;
-let aiWorklet = null;
-let aiEnabled = false;
-let aiReady = false;
-
 let recording = false;
 let recordedChunks = [];
 let recordedSamples = 0;
@@ -378,6 +365,15 @@ let timerHandle = null;
 let deviceOnline = false;
 let statusUptimeSeconds = null;
 let statusUptimeBaseMs = 0;
+
+// Listener connection/reconnection state.
+let listenerActive = false;
+let manualStop = false;
+let reconnectTimer = null;
+let reconnectAttempts = 0;
+let reconnectInProgress = false;
+
+const MAX_RECONNECT_DELAY_MS = 15000;
 
 const $ = id => document.getElementById(id);
 
@@ -393,9 +389,6 @@ const volume = $("volume");
 const volumeValue = $("volumeValue");
 const rebootBtn = $("rebootBtn");
 const forgetWifiBtn = $("forgetWifiBtn");
-const aiToggle = $("aiToggle");
-const aiState = $("aiState");
-const aiStatus = $("aiStatus");
 
 function setStatus(text) {
   status.textContent = text;
@@ -575,91 +568,6 @@ function updateDuration() {
  * is placed into an AudioWorklet ring buffer. The worklet pulls samples at
  * exactly 16 kHz, which prevents packet-to-packet scheduling gaps.
  */
-function updateAIUi() {
-  aiState.textContent = aiEnabled ? "ON" : "OFF";
-  aiState.className = aiEnabled ? "ok" : "idle";
-  aiToggle.textContent = aiEnabled
-    ? "Disable AI Enhancement"
-    : "Enable AI Enhancement";
-}
-
-async function loadAIEnhancer() {
-  if (!audioContext) return false;
-  if (aiReady && aiWorklet) return true;
-
-  aiStatus.textContent = "Loading AI voice-enhancement model...";
-  aiStatus.className = "small";
-
-  try {
-    // DTLN is a neural speech-denoising model designed for browser-side
-    // realtime processing. This package explicitly supports a 16 kHz,
-    // mono AudioContext, matching the ESP32 stream without resampling.
-    const mod = await import(
-      "https://esm.sh/@workadventure/noise-suppression@0.1.1/audio-worklet?bundle"
-    );
-
-    aiWorklet = await mod.createNoiseSuppressionAudioWorklet(
-      audioContext,
-      {
-        bypassUntilReady: true,
-        threads: false,
-        readyTimeoutMs: 30000
-      }
-    );
-
-    await aiWorklet.ready;
-    aiReady = true;
-    aiStatus.textContent = "AI enhancement ready — DTLN speech denoising active.";
-    aiStatus.className = "small ok";
-    return true;
-  } catch (error) {
-    console.error("AI enhancement initialization failed:", error);
-    aiWorklet = null;
-    aiReady = false;
-    aiEnabled = false;
-    updateAIUi();
-    aiStatus.textContent = "AI engine unavailable. Raw audio will continue normally.";
-    aiStatus.className = "small offline";
-    return false;
-  }
-}
-
-function connectAudioOutput() {
-  if (!audioWorkletNode || !gainNode) return;
-
-  try { audioWorkletNode.disconnect(); } catch {}
-  if (aiWorklet?.node) {
-    try { aiWorklet.node.disconnect(); } catch {}
-  }
-
-  if (aiEnabled && aiReady && aiWorklet?.node) {
-    audioWorkletNode.connect(aiWorklet.node);
-    aiWorklet.node.connect(gainNode);
-    aiStatus.textContent = "AI enhancement ON — cleaning background noise and improving speech clarity.";
-    aiStatus.className = "small ok";
-  } else {
-    audioWorkletNode.connect(gainNode);
-    if (!aiEnabled) {
-      aiStatus.textContent = aiReady
-        ? "AI engine ready. Raw audio playback selected."
-        : "AI engine is not loaded. Raw audio playback selected.";
-      aiStatus.className = "small";
-    }
-  }
-}
-
-aiToggle.onclick = async () => {
-  if (!audioContext) return;
-
-  if (!aiReady) {
-    const loaded = await loadAIEnhancer();
-    if (!loaded) return;
-  }
-
-  aiEnabled = !aiEnabled;
-  updateAIUi();
-  connectAudioOutput();
-};
 
 async function createAudioEngine() {
   const workletCode = `
@@ -785,7 +693,7 @@ async function createAudioEngine() {
   );
 
   audioWorkletReady = true;
-  connectAudioOutput();
+  audioWorkletNode.connect(gainNode);
   playbackStarted = false;
 }
 
@@ -997,7 +905,245 @@ function createWavBlob(chunks, sampleCount) {
   );
 }
 
+function resetReconnectState() {
+  reconnectAttempts = 0;
+
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+}
+
+function resetAudioBuffer() {
+  if (audioWorkletNode) {
+    try {
+      audioWorkletNode.port.postMessage({ type: "reset" });
+    } catch {}
+  }
+
+  playbackStarted = false;
+}
+
+function scheduleReconnect() {
+  if (!listenerActive || manualStop) {
+    return;
+  }
+
+  if (reconnectTimer || reconnectInProgress) {
+    return;
+  }
+
+  reconnectAttempts++;
+
+  const delay = Math.min(
+    1000 * Math.pow(2, reconnectAttempts - 1),
+    MAX_RECONNECT_DELAY_MS
+  );
+
+  setStatus(
+    `Connection lost — reconnecting in ${Math.ceil(delay / 1000)}s...`
+  );
+
+  $("renderState").textContent = "RECONNECTING";
+  $("renderState").className = "value offline";
+
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connectWebSocket();
+  }, delay);
+}
+
+function connectWebSocket() {
+  if (!listenerActive || manualStop) {
+    return;
+  }
+
+  if (
+    ws &&
+    (
+      ws.readyState === WebSocket.OPEN ||
+      ws.readyState === WebSocket.CONNECTING
+    )
+  ) {
+    return;
+  }
+
+  reconnectInProgress = true;
+
+  const protocol =
+    location.protocol === "https:"
+      ? "wss:"
+      : "ws:";
+
+  const socket = new WebSocket(
+    protocol +
+    "//" +
+    location.host +
+    "/ws"
+  );
+
+  ws = socket;
+  socket.binaryType = "arraybuffer";
+
+  socket.onopen = () => {
+    reconnectInProgress = false;
+
+    setStatus("Connected — authenticating listener...");
+
+    try {
+      socket.send(
+        JSON.stringify({
+          type: "listener"
+        })
+      );
+    } catch (error) {
+      console.error(error);
+      socket.close();
+      return;
+    }
+
+    resetAudioBuffer();
+
+    start.disabled = true;
+    stop.disabled = false;
+    record.disabled = false;
+    rebootBtn.disabled = !deviceOnline;
+    forgetWifiBtn.disabled = !deviceOnline;
+
+    $("renderState").textContent = "CONNECTED";
+    $("renderState").className = "value ok";
+  };
+
+  socket.onmessage = (event) => {
+    if (typeof event.data === "string") {
+      try {
+        const message = JSON.parse(event.data);
+
+        if (message.type === "auth_failed") {
+          listenerActive = false;
+          reconnectInProgress = false;
+          resetReconnectState();
+
+          setStatus(
+            "Access denied — listener authentication failed"
+          );
+
+          start.disabled = !deviceOnline;
+          stop.disabled = true;
+          record.disabled = true;
+          stopRecord.disabled = true;
+          rebootBtn.disabled = !deviceOnline;
+          forgetWifiBtn.disabled = !deviceOnline;
+
+          return;
+        }
+
+        if (message.type === "listener_ready") {
+          resetReconnectState();
+
+          setStatus(
+            "Listening — " +
+            message.sample_rate +
+            " Hz " +
+            message.format
+          );
+
+          rebootBtn.disabled = !deviceOnline;
+          forgetWifiBtn.disabled = !deviceOnline;
+        }
+
+        if (message.type === "device_status") {
+          applyDeviceStatus(message);
+        }
+
+        if (message.type === "stream_start") {
+          $("streamingState").textContent = "ON";
+          $("streamingState").className = "value ok";
+        }
+
+        if (message.type === "stream_stop") {
+          $("streamingState").textContent = "OFF";
+          $("streamingState").className = "value idle";
+        }
+
+        if (message.type === "reboot_requested") {
+          setStatus(
+            message.source_connected
+              ? "ESP32 reboot command sent..."
+              : "ESP32 is not currently connected"
+          );
+        }
+
+        if (message.type === "forget_wifi_requested") {
+          setStatus(
+            message.source_connected
+              ? "Forget Wi-Fi command sent. ESP32 is restarting into setup mode..."
+              : "ESP32 is not currently connected"
+          );
+
+          forgetWifiBtn.disabled = true;
+          rebootBtn.disabled = true;
+        }
+
+      } catch {
+        setStatus(event.data);
+      }
+
+      return;
+    }
+
+    playPCM16(event.data);
+  };
+
+  socket.onerror = () => {
+    reconnectInProgress = false;
+
+    $("renderState").textContent = "RECONNECTING";
+    $("renderState").className = "value offline";
+
+    setStatus("Connection error — preparing to reconnect...");
+  };
+
+  socket.onclose = () => {
+    reconnectInProgress = false;
+
+    if (ws === socket) {
+      ws = null;
+    }
+
+    if (recording) {
+      stopRecording();
+    }
+
+    $("renderState").textContent = "DISCONNECTED";
+    $("renderState").className = "value idle";
+
+    start.disabled = !deviceOnline;
+    stop.disabled = true;
+    record.disabled = true;
+    stopRecord.disabled = true;
+    rebootBtn.disabled = !deviceOnline;
+    forgetWifiBtn.disabled = !deviceOnline;
+
+    if (manualStop || !listenerActive) {
+      setStatus("Disconnected");
+      return;
+    }
+
+    resetAudioBuffer();
+    scheduleReconnect();
+  };
+}
+
 start.onclick = async () => {
+  if (listenerActive) {
+    return;
+  }
+
+  manualStop = false;
+  listenerActive = true;
+  resetReconnectState();
+
   try {
     audioContext =
       new (
@@ -1008,8 +1154,7 @@ start.onclick = async () => {
         latencyHint: "interactive"
       });
 
-    gainNode =
-      audioContext.createGain();
+    gainNode = audioContext.createGain();
 
     gainNode.gain.value =
       Number(volume.value);
@@ -1022,162 +1167,33 @@ start.onclick = async () => {
 
     await createAudioEngine();
 
-    aiToggle.disabled = false;
-    updateAIUi();
-    // Preload the AI engine while raw audio continues. The listener can
-    // switch it on after initialization without interrupting the stream.
-    loadAIEnhancer();
-
-    const protocol =
-      location.protocol === "https:"
-        ? "wss:"
-        : "ws:";
-
-    ws =
-      new WebSocket(
-        protocol +
-        "//" +
-        location.host +
-        "/ws"
-      );
-
-    ws.binaryType =
-      "arraybuffer";
-
-    ws.onopen = () => {
-      setStatus(
-        "Connected — authenticating listener..."
-      );
-
-      ws.send(
-        JSON.stringify({
-          type: "listener"
-        })
-      );
-
-      start.disabled = true;
-      stop.disabled = false;
-      record.disabled = false;
-      // Reboot and Forget Wi-Fi remain available while the ESP32 is online.
-      rebootBtn.disabled = !deviceOnline;
-      forgetWifiBtn.disabled = !deviceOnline;
-
-      $("renderState").textContent =
-        "CONNECTED";
-
-      $("renderState").className =
-        "value ok";
-    };
-
-    ws.onmessage = (event) => {
-      if (typeof event.data === "string") {
-        try {
-          const message =
-            JSON.parse(event.data);
-
-          if (message.type === "auth_failed") {
-            setStatus(
-              "Access denied — incorrect PIN"
-            );
-
-            start.disabled = !deviceOnline;
-            stop.disabled = true;
-            record.disabled = true;
-            rebootBtn.disabled = !deviceOnline;
-            forgetWifiBtn.disabled = !deviceOnline;
-
-            return;
-          }
-
-          if (message.type === "listener_ready") {
-            setStatus(
-              "Listening — " +
-              message.sample_rate +
-              " Hz " +
-              message.format
-            );
-
-            rebootBtn.disabled = !deviceOnline;
-            forgetWifiBtn.disabled = !deviceOnline;
-          }
-
-          if (message.type === "device_status") {
-            applyDeviceStatus(message);
-          }
-
-          if (message.type === "stream_start") {
-            $("streamingState").textContent = "ON";
-            $("streamingState").className = "value ok";
-          }
-
-          if (message.type === "stream_stop") {
-            $("streamingState").textContent = "OFF";
-            $("streamingState").className = "value idle";
-          }
-
-          if (message.type === "reboot_requested") {
-            setStatus(
-              message.source_connected
-                ? "ESP32 reboot command sent..."
-                : "ESP32 is not currently connected"
-            );
-          }
-
-          if (message.type === "forget_wifi_requested") {
-            setStatus(
-              message.source_connected
-                ? "Forget Wi-Fi command sent. ESP32 is restarting into setup mode..."
-                : "ESP32 is not currently connected"
-            );
-
-            forgetWifiBtn.disabled = true;
-            rebootBtn.disabled = true;
-          }
-
-        } catch {
-          setStatus(event.data);
-        }
-
-        return;
-      }
-
-      playPCM16(event.data);
-    };
-
-    ws.onerror = () => {
-      setStatus("WebSocket error");
-      $("renderState").textContent = "ERROR";
-      $("renderState").className = "value offline";
-    };
-
-    ws.onclose = () => {
-      if (recording) {
-        stopRecording();
-      }
-
-      setStatus("Disconnected");
-
-      start.disabled = !deviceOnline;
-      stop.disabled = true;
-      record.disabled = true;
-      stopRecord.disabled = true;
-      rebootBtn.disabled = !deviceOnline;
-      forgetWifiBtn.disabled = !deviceOnline;
-
-      $("renderState").textContent = "DISCONNECTED";
-      $("renderState").className = "value idle";
-    };
+    connectWebSocket();
 
   } catch (error) {
     console.error(error);
 
-    setStatus(
-      "Audio initialization failed"
-    );
+    listenerActive = false;
+    manualStop = true;
+
+    setStatus("Audio initialization failed");
+
+    if (audioContext) {
+      try {
+        await audioContext.close();
+      } catch {}
+    }
+
+    audioContext = null;
+    gainNode = null;
   }
 };
 
 stop.onclick = () => {
+  manualStop = true;
+  listenerActive = false;
+  reconnectInProgress = false;
+  resetReconnectState();
+
   if (recording) {
     stopRecording();
   }
@@ -1208,18 +1224,6 @@ stop.onclick = () => {
   audioWorkletReady = false;
   playbackStarted = false;
 
-  if (aiWorklet) {
-    try { aiWorklet.dispose(); } catch {}
-    aiWorklet = null;
-  }
-
-  aiReady = false;
-  aiEnabled = false;
-  aiToggle.disabled = true;
-  updateAIUi();
-  aiStatus.textContent = "AI engine will initialize when listening starts.";
-  aiStatus.className = "small";
-
   if (audioContext) {
     audioContext.close();
     audioContext = null;
@@ -1228,6 +1232,9 @@ stop.onclick = () => {
   gainNode = null;
 
   level.style.width = "0%";
+
+  $("streamingState").textContent = "OFF";
+  $("streamingState").className = "value idle";
 
   setStatus("Stopped");
 
