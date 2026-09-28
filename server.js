@@ -1270,7 +1270,7 @@ wss.on(
    receiving a heartbeat.
    ============================================================ */
 
-const HEARTBEAT_INTERVAL_MS = 2000;
+const HEARTBEAT_INTERVAL_MS = 30000;
 
 const heartbeat =
   setInterval(
