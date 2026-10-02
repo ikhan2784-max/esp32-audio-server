@@ -13,7 +13,8 @@ const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
 
 // ESP32 application heartbeat settings
 const DEVICE_HEARTBEAT_INTERVAL_MS = 5000;
-const DEVICE_HEARTBEAT_TIMEOUT_MS = 10000;
+const DEVICE_HEARTBEAT_TIMEOUT_MS = 15000;
+const DEVICE_OFFLINE_GRACE_MS = 15000;
 
 const app = express();
 const server = http.createServer(app);
@@ -193,6 +194,7 @@ let deviceLastSeen = null;
 let deviceConnectedAt = null;
 let deviceLastRebooted = null;
 let deviceRebootPending = false;
+let deviceOfflineTimer = null;
 
 
 /* ============================================================
@@ -884,6 +886,11 @@ wss.on(
           deviceOnline =
             true;
 
+          if (deviceOfflineTimer) {
+            clearTimeout(deviceOfflineTimer);
+            deviceOfflineTimer = null;
+          }
+
           deviceLastSeen =
             new Date().toISOString();
 
@@ -906,10 +913,10 @@ wss.on(
                 "source_ready",
 
               sample_rate:
-                16000,
+                44100,
 
               format:
-                "PCM16 mono"
+                "PCM24 mono"
             }
           );
 
@@ -1025,10 +1032,10 @@ wss.on(
                 "listener_ready",
 
               sample_rate:
-                16000,
+                44100,
 
               format:
-                "PCM16 mono"
+                "PCM24 mono"
             }
           );
 
@@ -1300,8 +1307,23 @@ wss.on(
           activeSource =
             null;
 
-          deviceOnline =
-            false;
+          // Keep the device temporarily ONLINE during the ESP32
+          // reconnect window so the listener UI does not flicker
+          // OFFLINE during a normal WebSocket reconnect.
+          if (deviceOfflineTimer) {
+            clearTimeout(deviceOfflineTimer);
+          }
+
+          deviceOfflineTimer = setTimeout(() => {
+            if (!activeSource) {
+              deviceOnline = false;
+              deviceOfflineTimer = null;
+              console.log(
+                "ESP32 reconnect grace period expired; device marked OFFLINE."
+              );
+              broadcastDeviceStatus();
+            }
+          }, DEVICE_OFFLINE_GRACE_MS);
 
           // IMPORTANT:
           // Keep last_seen at the last genuine
@@ -1345,13 +1367,13 @@ wss.on(
    ESP32 application heartbeat:
        Checks whether the ESP32 firmware is actually alive.
 
-   ESP32 sends heartbeat every 10 seconds.
+   ESP32 application heartbeat is expected every few seconds.
 
-   Render marks ESP32 OFFLINE after 30 seconds without
-   receiving a heartbeat.
+   Render checks the heartbeat every 5 seconds and marks the
+   ESP32 OFFLINE after 15 seconds without a heartbeat.
    ============================================================ */
 
-const HEARTBEAT_INTERVAL_MS = 30000;
+const HEARTBEAT_INTERVAL_MS = 5000;
 
 const heartbeat =
   setInterval(
@@ -1447,6 +1469,11 @@ const heartbeat =
 
           activeSource =
             null;
+
+          if (deviceOfflineTimer) {
+            clearTimeout(deviceOfflineTimer);
+            deviceOfflineTimer = null;
+          }
         }
       }
 
