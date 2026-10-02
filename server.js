@@ -906,10 +906,10 @@ wss.on(
                 "source_ready",
 
               sample_rate:
-                44100,
+                16000,
 
               format:
-                "PCM24 mono"
+                "PCM16 mono"
             }
           );
 
@@ -1025,10 +1025,10 @@ wss.on(
                 "listener_ready",
 
               sample_rate:
-                44100,
+                16000,
 
               format:
-                "PCM24 mono"
+                "PCM16 mono"
             }
           );
 
