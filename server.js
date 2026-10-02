@@ -174,7 +174,7 @@ const wss =
   new WebSocket.Server({
     server,
     path: "/ws",
-    maxPayload: 8192
+    maxPayload: 16384
   });
 
 
@@ -701,56 +701,8 @@ wss.on(
     ws.connectedAt =
       Date.now();
 
-    /* SERVER-SIDE WEBSOCKET DIAGNOSTICS: observation only. */
-    ws.diagnosticId =
-      crypto.randomBytes(4).toString("hex");
-    ws.lastMessageAt = Date.now();
-    ws.lastBinaryMessageAt = null;
-    ws.lastTextMessageAt = null;
-    ws.lastPongAt = null;
-    ws.lastPingAt = null;
-
     console.log(
-      `[WS ${ws.diagnosticId}] CONNECT | ip=${ip} | ` +
-      `remote=${req.socket.remoteAddress}:${req.socket.remotePort} | ` +
-      `xff=${req.headers["x-forwarded-for"] || "(none)"}`
-    );
-
-    /* Observe underlying TCP/TLS socket. No socket behavior is changed. */
-    if (ws._socket) {
-      ws._socket.on("end", () => {
-        console.warn(
-          `[WS ${ws.diagnosticId}] TCP END | role=${ws.role} | ` +
-          `auth=${ws.authenticated} | age_ms=${Date.now() - ws.connectedAt}`
-        );
-      });
-
-      ws._socket.on("close", (hadError) => {
-        console.warn(
-          `[WS ${ws.diagnosticId}] TCP CLOSE | hadError=${hadError} | ` +
-          `role=${ws.role} | auth=${ws.authenticated} | ` +
-          `age_ms=${Date.now() - ws.connectedAt}`
-        );
-      });
-
-      ws._socket.on("error", (err) => {
-        console.error(
-          `[WS ${ws.diagnosticId}] TCP SOCKET ERROR | ` +
-          `code=${err.code || "(none)"} | errno=${err.errno ?? "(none)"} | ` +
-          `message=${err.message}`
-        );
-      });
-
-      ws._socket.on("timeout", () => {
-        console.warn(
-          `[WS ${ws.diagnosticId}] TCP SOCKET TIMEOUT | ` +
-          `age_ms=${Date.now() - ws.connectedAt}`
-        );
-      });
-    }
-
-    console.log(
-      `[WS ${ws.diagnosticId}] WebSocket connected: ${ip}`
+      `WebSocket connected: ${ip}`
     );
 
 
@@ -762,12 +714,6 @@ wss.on(
       "pong",
       () => {
         ws.isAlive = true;
-        ws.lastPongAt = Date.now();
-
-        console.log(
-          `[WS ${ws.diagnosticId}] PONG | role=${ws.role} | ` +
-          `auth=${ws.authenticated} | age_ms=${Date.now() - ws.connectedAt}`
-        );
       }
     );
 
@@ -793,14 +739,6 @@ wss.on(
     ws.on(
       "message",
       (data, isBinary) => {
-
-        ws.lastMessageAt = Date.now();
-
-        if (isBinary) {
-          ws.lastBinaryMessageAt = Date.now();
-        } else {
-          ws.lastTextMessageAt = Date.now();
-        }
 
         /* ====================================================
            BINARY AUDIO
@@ -1309,19 +1247,8 @@ wss.on(
       "close",
       (code, reason) => {
 
-        const closedAt = Date.now();
-        const closeReason =
-          reason && reason.length ? reason.toString() : "(none)";
-
         console.log(
-          `[WS ${ws.diagnosticId || "unknown"}] CLOSE | ` +
-          `ip=${ip} | code=${code} | reason=${closeReason} | ` +
-          `role=${ws.role} | auth=${ws.authenticated} | ` +
-          `age_ms=${closedAt - (ws.connectedAt || closedAt)} | ` +
-          `last_msg_ms_ago=${ws.lastMessageAt ? closedAt - ws.lastMessageAt : "never"} | ` +
-          `last_binary_ms_ago=${ws.lastBinaryMessageAt ? closedAt - ws.lastBinaryMessageAt : "never"} | ` +
-          `last_text_ms_ago=${ws.lastTextMessageAt ? closedAt - ws.lastTextMessageAt : "never"} | ` +
-          `last_pong_ms_ago=${ws.lastPongAt ? closedAt - ws.lastPongAt : "never"}`
+          `WebSocket closed from ${ip}: code=${code}, reason=${reason.toString() || "(none)"}`
         );
 
         const wasListener =
@@ -1399,10 +1326,8 @@ wss.on(
       (err) => {
 
         console.error(
-          `[WS ${ws.diagnosticId || "unknown"}] WebSocket ERROR | ` +
-          `ip=${ip} | role=${ws.role} | auth=${ws.authenticated} | ` +
-          `code=${err.code || "(none)"} | errno=${err.errno ?? "(none)"} | ` +
-          `message=${err.message}`
+          `WebSocket error from ${ip}:`,
+          err.message
         );
       }
     );
@@ -1445,20 +1370,12 @@ const heartbeat =
           ) {
 
             console.log(
-              `[WS ${ws.diagnosticId || "unknown"}] SERVER TERMINATE | ` +
-              `no pong received | role=${ws.role} | auth=${ws.authenticated} | ` +
-              `age_ms=${Date.now() - (ws.connectedAt || Date.now())} | ` +
-              `last_pong_ms_ago=${ws.lastPongAt ? Date.now() - ws.lastPongAt : "never"}`
+              "Terminating dead WebSocket connection."
             );
 
             try {
               ws.terminate();
-            } catch (err) {
-              console.error(
-                `[WS ${ws.diagnosticId || "unknown"}] SERVER TERMINATE ERROR | ` +
-                `message=${err.message}`
-              );
-            }
+            } catch {}
 
             return;
           }
@@ -1467,22 +1384,10 @@ const heartbeat =
           ws.isAlive =
             false;
 
-          ws.lastPingAt =
-            Date.now();
-
-          console.log(
-            `[WS ${ws.diagnosticId || "unknown"}] PING | ` +
-            `role=${ws.role} | auth=${ws.authenticated}`
-          );
 
           try {
             ws.ping();
-          } catch (err) {
-            console.error(
-              `[WS ${ws.diagnosticId || "unknown"}] PING ERROR | ` +
-              `message=${err.message}`
-            );
-          }
+          } catch {}
         }
       );
 
@@ -1629,10 +1534,6 @@ server.listen(
 
     console.log(
       `HTTP/WebSocket server listening on port ${PORT}`
-    );
-
-    console.log(
-      "SERVER WS DIAGNOSTICS: V2 ENABLED"
     );
 
     console.log(
