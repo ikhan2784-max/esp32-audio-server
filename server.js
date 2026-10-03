@@ -412,7 +412,7 @@ wss.on("connection", (ws, req) => {
 
       console.log(`ESP32 authenticated. Active sources: ${sources.size}`);
 
-      sendJson(ws, { type: "source_ready", sample_rate: 44100, format: "PCM24 mono" });
+      sendJson(ws, { type: "source_ready", sample_rate: 16000, format: "PCM24 mono" });
 
       if (listeners.size > 0) {
         sendJson(ws, { type: "stream_start" });
@@ -445,7 +445,7 @@ wss.on("connection", (ws, req) => {
 
       sendJson(ws, {
         type: "listener_ready",
-        sample_rate: 44100,
+        sample_rate: 16000,
         format: "PCM24 mono"
       });
 
