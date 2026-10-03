@@ -53,6 +53,9 @@ input[type=range]{width:100%;accent-color:var(--blue);}
   <h1>ESP32 INMP441</h1>
   <div class="subtitle">Secure Live Audio Listener</div>
 
+  <!-- ============================================================ -->
+  <!-- ESP32 STATUS                                                 -->
+  <!-- ============================================================ -->
   <div class="section">
     <div class="section-title">ESP32 Status</div>
     <div class="grid">
@@ -69,6 +72,37 @@ input[type=range]{width:100%;accent-color:var(--blue);}
     <div id="status" class="statusbar">Disconnected</div>
   </div>
 
+  <!-- ============================================================ -->
+  <!-- ESP32 HARDWARE HEALTH                                        -->
+  <!-- ============================================================ -->
+  <div class="section">
+    <div class="section-title">ESP32 Hardware Health</div>
+    <div class="grid">
+      <div class="card"><div class="label">MAC</div><div id="hwMac" class="value">—</div></div>
+      <div class="card"><div class="label">Chip</div><div id="hwChip" class="value">—</div></div>
+      <div class="card"><div class="label">Version</div><div id="hwVersion" class="value">—</div></div>
+      <div class="card"><div class="label">Uptime</div><div id="hwUptime" class="value">—</div></div>
+      <div class="card"><div class="label">Boot Reason</div><div id="hwBoot" class="value">—</div></div>
+      <div class="card"><div class="label">Total Reboots</div><div id="hwReboots" class="value">—</div></div>
+      <div class="card"><div class="label">Brownouts</div><div id="hwBrownouts" class="value">—</div></div>
+      <div class="card"><div class="label">Chip Temp</div><div id="hwTemp" class="value">—</div></div>
+      <div class="card"><div class="label">WiFi RSSI</div><div id="hwRssi" class="value">—</div></div>
+      <div class="card"><div class="label">WiFi Drops</div><div id="hwWifiDrops" class="value">—</div></div>
+      <div class="card"><div class="label">WS Connects</div><div id="hwWsConn" class="value">—</div></div>
+      <div class="card"><div class="label">WS Disconnects</div><div id="hwWsDisc" class="value">—</div></div>
+      <div class="card"><div class="label">Free Heap</div><div id="hwHeap" class="value">—</div></div>
+      <div class="card"><div class="label">Min Heap</div><div id="hwMinHeap" class="value">—</div></div>
+      <div class="card"><div class="label">Free PSRAM</div><div id="hwPsram" class="value">—</div></div>
+      <div class="card"><div class="label">Stacks (A/Tx/Mon)</div><div id="hwStack" class="value">—</div></div>
+      <div class="card"><div class="label">Packets / Bytes</div><div id="hwPackets" class="value">—</div></div>
+      <div class="card"><div class="label">Send Err / I2S Err</div><div id="hwErrors" class="value">—</div></div>
+      <div class="card"><div class="label">TX Max / Slow</div><div id="hwTx" class="value">—</div></div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- LISTENER ACCESS                                              -->
+  <!-- ============================================================ -->
   <div class="section">
     <div class="section-title">Listener Access</div>
     <button id="start">▶ Start Listening</button>
@@ -78,6 +112,9 @@ input[type=range]{width:100%;accent-color:var(--blue);}
     <div class="small" style="margin-top:12px">Wi-Fi settings are erased from the ESP32 and the device restarts into setup mode.</div>
   </div>
 
+  <!-- ============================================================ -->
+  <!-- LIVE AUDIO                                                   -->
+  <!-- ============================================================ -->
   <div class="section">
     <div class="section-title">Live Audio</div>
     <div class="volume-row">
@@ -90,6 +127,9 @@ input[type=range]{width:100%;accent-color:var(--blue);}
     <div class="small" style="margin-top:12px">44.1 kHz mono PCM24 • Secure PIN • Multi-listener • Low-latency playback</div>
   </div>
 
+  <!-- ============================================================ -->
+  <!-- RECORDING                                                    -->
+  <!-- ============================================================ -->
   <div class="section">
     <div class="section-title">Recording</div>
     <button id="record" disabled>🔴 Start Recording</button>
@@ -100,9 +140,102 @@ input[type=range]{width:100%;accent-color:var(--blue);}
     </div>
   </div>
 
+  <!-- ============================================================ -->
+  <!-- EVENT LOG                                                    -->
+  <!-- ============================================================ -->
+  <div class="section">
+    <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
+      <span>Event Log</span>
+      <span style="font-weight:400;font-size:13px;color:var(--muted);">
+        <button id="logCopy" style="font-size:12px;padding:6px 12px;margin:0 4px 0 0;background:#303b49;">Copy</button>
+        <button id="logClear" style="font-size:12px;padding:6px 12px;margin:0 4px 0 0;background:#303b49;">Clear</button>
+        <button id="logToggle" style="font-size:12px;padding:6px 12px;margin:0;background:#303b49;">Hide</button>
+      </span>
+    </div>
+    <div id="logBox"
+         style="
+           background:#000;
+           color:#ccc;
+           font-family:'Courier New',monospace;
+           font-size:12px;
+           line-height:1.4;
+           padding:10px 12px;
+           border-radius:8px;
+           border:1px solid var(--border);
+           height:220px;
+           overflow-y:auto;
+           white-space:pre-wrap;
+           word-break:break-all;
+         ">
+      <span style="color:var(--muted);">Log initialized...</span>
+    </div>
+  </div>
+
 </div>
 
 <script>
+/* ============================================================
+ * EVENT LOG
+ * ============================================================ */
+const LOG_MAX_LINES = 500;
+let logLineCount = 0;
+const logBox = document.getElementById("logBox");
+
+function logAdd(message, level = "info") {
+  if (!logBox) return;
+  const color =
+    level === "error" ? "#ff5d67" :
+    level === "warn"  ? "#f5c451" :
+    level === "ok"    ? "#35d07f" :
+    level === "debug" ? "#6b7684" :
+                        "#9aa7b5";
+  const d = new Date();
+  const t = String(d.getHours()).padStart(2,"0") + ":" +
+            String(d.getMinutes()).padStart(2,"0") + ":" +
+            String(d.getSeconds()).padStart(2,"0") + "." +
+            String(d.getMilliseconds()).padStart(3,"0");
+  const line = document.createElement("div");
+  line.style.color = color;
+  line.textContent = `[${t}] ${message}`;
+  logBox.appendChild(line);
+  logLineCount++;
+  while (logLineCount > LOG_MAX_LINES) {
+    logBox.removeChild(logBox.firstChild);
+    logLineCount--;
+  }
+  logBox.scrollTop = logBox.scrollHeight;
+}
+
+const logToggleBtn = document.getElementById("logToggle");
+const logClearBtn  = document.getElementById("logClear");
+const logCopyBtn   = document.getElementById("logCopy");
+
+logToggleBtn.onclick = () => {
+  const hidden = logBox.style.display === "none";
+  logBox.style.display = hidden ? "block" : "none";
+  logToggleBtn.textContent = hidden ? "Hide" : "Show";
+};
+
+logClearBtn.onclick = () => {
+  logBox.innerHTML = "";
+  logLineCount = 0;
+  logAdd("Log cleared", "debug");
+};
+
+logCopyBtn.onclick = async () => {
+  try {
+    await navigator.clipboard.writeText(logBox.innerText);
+    logAdd("Log copied to clipboard", "ok");
+  } catch {
+    logAdd("Copy failed", "error");
+  }
+};
+
+logAdd("Log initialized", "info");
+
+/* ============================================================
+ * CONSTANTS AND STATE
+ * ============================================================ */
 const SAMPLE_RATE = 44100;
 const CHANNELS = 1;
 const BYTES_PER_SAMPLE = 3;
@@ -214,23 +347,107 @@ async function refreshDeviceStatus() {
     if (!response.ok) throw new Error("HTTP " + response.status);
     const data = await response.json();
     applyDeviceStatus(data);
+    const wasUnavailable = $("renderState").textContent !== "CONNECTED";
     $("renderState").textContent = "CONNECTED";
     $("renderState").className = "value ok";
+    if (wasUnavailable) logAdd("Render reachable", "ok");
   } catch (error) {
+    const wasConnected = $("renderState").textContent === "CONNECTED";
     $("renderState").textContent = "UNAVAILABLE";
     $("renderState").className = "value offline";
+    if (wasConnected) logAdd("Render unreachable: " + error.message, "error");
   }
 }
 
 setInterval(refreshDeviceStatus, 1000);
 setInterval(updateUptimeDisplay, 1000);
 
+/* ============================================================
+ * ESP32 HEALTH POLLING
+ * ============================================================ */
+let healthFailCount = 0;
+async function refreshHealth() {
+  try {
+    const r = await fetch("/api/esp32-health?_=" + Date.now(), { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const h = await r.json();
+
+    if (healthFailCount > 0) {
+      logAdd("Health endpoint recovered", "ok");
+      healthFailCount = 0;
+    }
+
+    const upSec = h.uptime_sec || 0;
+    const hrs = Math.floor(upSec / 3600);
+    const mins = Math.floor((upSec % 3600) / 60);
+    const secs = upSec % 60;
+
+    $("hwMac").textContent = h.mac || "—";
+    $("hwChip").textContent = h.chip || "—";
+    $("hwVersion").textContent = h.version || "—";
+    $("hwUptime").textContent = `${hrs}h ${mins}m ${secs}s`;
+    $("hwBoot").textContent = h.boot_reason || "—";
+    $("hwReboots").textContent = (h.total_reboots || 0).toString();
+    $("hwBrownouts").textContent = (h.brownouts || 0).toString();
+    $("hwTemp").textContent = (h.temp_c !== undefined ? Number(h.temp_c).toFixed(1) : "—") + " °C";
+    $("hwRssi").textContent = (h.wifi_rssi || 0) + " dBm";
+    $("hwWifiDrops").textContent = (h.wifi_drops || 0).toString();
+    $("hwWsConn").textContent = (h.ws_connects || 0).toString();
+    $("hwWsDisc").textContent = (h.ws_disconnects || 0).toString();
+    $("hwHeap").textContent = Math.round((h.free_heap || 0) / 1024) + " KB";
+    $("hwMinHeap").textContent = Math.round((h.min_heap || 0) / 1024) + " KB";
+    $("hwPsram").textContent = Math.round((h.free_psram || 0) / 1024) + " KB";
+    $("hwStack").textContent = `${h.stack_audio || 0} / ${h.stack_sender || 0} / ${h.stack_monitor || 0}`;
+    $("hwPackets").textContent = `${h.packets || 0} / ${((h.bytes || 0) / 1048576).toFixed(1)} MB`;
+    $("hwErrors").textContent = `${h.send_err || 0} / ${h.i2s_err || 0}`;
+    $("hwTx").textContent = `${h.tx_max_us || 0} µs / ${h.tx_slow || 0}`;
+
+    const tempEl = $("hwTemp");
+    if (h.temp_c > 70) tempEl.style.color = "var(--red)";
+    else if (h.temp_c > 60) tempEl.style.color = "var(--yellow)";
+    else tempEl.style.color = "var(--green)";
+
+    const bootEl = $("hwBoot");
+    if (h.boot_reason === "POWERON" || h.boot_reason === "SOFTWARE") {
+      bootEl.style.color = "var(--green)";
+    } else if (h.boot_reason === "BROWNOUT" || h.boot_reason === "PANIC" || h.boot_reason === "CPU_LOCKUP") {
+      bootEl.style.color = "var(--red)";
+    } else {
+      bootEl.style.color = "var(--yellow)";
+    }
+
+    const brownEl = $("hwBrownouts");
+    brownEl.style.color = h.brownouts > 0 ? "var(--red)" : "var(--green)";
+
+    const rssiEl = $("hwRssi");
+    if (h.wifi_rssi > -55) rssiEl.style.color = "var(--green)";
+    else if (h.wifi_rssi > -70) rssiEl.style.color = "var(--yellow)";
+    else rssiEl.style.color = "var(--red)";
+
+    const wsDiscEl = $("hwWsDisc");
+    wsDiscEl.style.color = h.ws_disconnects > 0 ? "var(--yellow)" : "var(--green)";
+
+  } catch (e) {
+    healthFailCount++;
+    if (healthFailCount === 1) {
+      logAdd("Health endpoint unavailable: " + e.message, "warn");
+    } else if (healthFailCount % 20 === 0) {
+      logAdd("Health endpoint still down (" + healthFailCount + " tries)", "warn");
+    }
+  }
+}
+
+setInterval(refreshHealth, 3000);
+refreshHealth();
+
+/* ============================================================
+ * VOLUME / DURATION
+ * ============================================================ */
 function updateVolume() {
   const value = Number(volume.value);
   volumeValue.textContent = Math.round(value * 100) + "%";
   if (gainNode) gainNode.gain.value = value;
 }
-
 volume.addEventListener("input", updateVolume);
 
 function updateDuration() {
@@ -242,6 +459,9 @@ function updateDuration() {
   timerHandle = setTimeout(updateDuration, 500);
 }
 
+/* ============================================================
+ * AUDIO WORKLET
+ * ============================================================ */
 async function createAudioEngine() {
   const workletCode = `
     class PCMPlayerProcessor extends AudioWorkletProcessor {
@@ -320,6 +540,10 @@ async function createAudioEngine() {
   playbackStarted = false;
 }
 
+/* ============================================================
+ * PCM DECODER
+ * ============================================================ */
+let playCount = 0;
 function playPCM24(arrayBuffer) {
   if (!audioContext || !gainNode || !audioWorkletNode || !audioWorkletReady) return;
   if (arrayBuffer.byteLength < 16) return;
@@ -331,6 +555,7 @@ function playPCM24(arrayBuffer) {
   if (magic !== 0x41334631 || version !== 1 || headerBytes !== 16 ||
       sampleCount === 0 || arrayBuffer.byteLength !== headerBytes + sampleCount * 3) {
     console.warn("Invalid ESP32 audio frame", arrayBuffer.byteLength);
+    logAdd("Bad audio frame: " + arrayBuffer.byteLength + " bytes", "error");
     return;
   }
   const pcm = new Int32Array(sampleCount);
@@ -350,8 +575,16 @@ function playPCM24(arrayBuffer) {
   level.style.width = Math.min(100, rms * 220) + "%";
   audioWorkletNode.port.postMessage({ type: "pcm", buffer: floatSamples.buffer }, [floatSamples.buffer]);
   playbackStarted = true;
+
+  playCount++;
+  if (playCount % 500 === 0) {
+    logAdd("Received " + playCount + " frames, RMS=" + rms.toFixed(4), "debug");
+  }
 }
 
+/* ============================================================
+ * RECORDING
+ * ============================================================ */
 function startRecording() {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   recordedChunks = [];
@@ -363,6 +596,7 @@ function startRecording() {
   recordStatus.textContent = "🔴 Recording...";
   duration.textContent = "00:00";
   updateDuration();
+  logAdd("Recording started", "info");
 }
 
 function stopRecording() {
@@ -383,6 +617,7 @@ function stopRecording() {
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   recordStatus.textContent = "Recording saved as WAV";
+  logAdd("Recording saved (" + recordedSamples + " samples)", "ok");
 }
 
 function createWavBlob(chunks, sampleCount) {
@@ -418,6 +653,9 @@ function createWavBlob(chunks, sampleCount) {
   return new Blob([buffer], { type: "audio/wav" });
 }
 
+/* ============================================================
+ * RECONNECT LOGIC
+ * ============================================================ */
 function resetReconnectState() {
   reconnectAttempts = 0;
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
@@ -436,9 +674,13 @@ function scheduleReconnect() {
   setStatus(`Connection lost — reconnecting in ${Math.ceil(delay / 1000)}s...`);
   $("renderState").textContent = "RECONNECTING";
   $("renderState").className = "value offline";
+  logAdd("Reconnecting in " + Math.ceil(delay / 1000) + "s (attempt " + reconnectAttempts + ")", "warn");
   reconnectTimer = setTimeout(() => { reconnectTimer = null; connectWebSocket(); }, delay);
 }
 
+/* ============================================================
+ * WEBSOCKET
+ * ============================================================ */
 function connectWebSocket() {
   if (!listenerActive || manualStop) return;
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
@@ -447,11 +689,20 @@ function connectWebSocket() {
   const socket = new WebSocket(protocol + "//" + location.host + "/ws");
   ws = socket;
   socket.binaryType = "arraybuffer";
+
   socket.onopen = () => {
     reconnectInProgress = false;
     setStatus("Connected — authenticating listener...");
-    try { socket.send(JSON.stringify({ type: "listener" })); }
-    catch (error) { console.error(error); socket.close(); return; }
+    logAdd("WebSocket connected to " + location.host, "ok");
+    try {
+      socket.send(JSON.stringify({ type: "listener" }));
+      logAdd("Sent listener authentication", "debug");
+    } catch (error) {
+      console.error(error);
+      logAdd("Failed to send auth: " + error.message, "error");
+      socket.close();
+      return;
+    }
     resetAudioBuffer();
     start.disabled = true;
     stop.disabled = false;
@@ -461,6 +712,7 @@ function connectWebSocket() {
     $("renderState").textContent = "CONNECTED";
     $("renderState").className = "value ok";
   };
+
   socket.onmessage = (event) => {
     if (typeof event.data === "string") {
       try {
@@ -470,6 +722,7 @@ function connectWebSocket() {
           reconnectInProgress = false;
           resetReconnectState();
           setStatus("Access denied — listener authentication failed");
+          logAdd("Auth failed: " + (message.reason || "unknown"), "error");
           start.disabled = !deviceOnline;
           stop.disabled = true;
           record.disabled = true;
@@ -481,6 +734,7 @@ function connectWebSocket() {
         if (message.type === "listener_ready") {
           resetReconnectState();
           setStatus("Listening — " + message.sample_rate + " Hz " + message.format);
+          logAdd("Listener ready: " + message.sample_rate + " Hz " + message.format, "ok");
           rebootBtn.disabled = !deviceOnline;
           forgetWifiBtn.disabled = !deviceOnline;
         }
@@ -488,31 +742,41 @@ function connectWebSocket() {
         if (message.type === "stream_start") {
           $("streamingState").textContent = "ON";
           $("streamingState").className = "value ok";
+          logAdd("Stream started", "ok");
         }
         if (message.type === "stream_stop") {
           $("streamingState").textContent = "OFF";
           $("streamingState").className = "value idle";
+          logAdd("Stream stopped", "warn");
         }
         if (message.type === "reboot_requested") {
           setStatus(message.source_connected ? "ESP32 reboot command sent..." : "ESP32 is not currently connected");
+          logAdd("Reboot request: " + (message.source_connected ? "forwarded" : "no source"), "warn");
         }
         if (message.type === "forget_wifi_requested") {
           setStatus(message.source_connected ? "Forget Wi-Fi command sent. ESP32 is restarting into setup mode..." : "ESP32 is not currently connected");
+          logAdd("Forget Wi-Fi request: " + (message.source_connected ? "forwarded" : "no source"), "warn");
           forgetWifiBtn.disabled = true;
           rebootBtn.disabled = true;
         }
-      } catch { setStatus(event.data); }
+      } catch {
+        setStatus(event.data);
+        logAdd("Unexpected message: " + event.data, "debug");
+      }
       return;
     }
     playPCM24(event.data);
   };
+
   socket.onerror = () => {
     reconnectInProgress = false;
     $("renderState").textContent = "RECONNECTING";
     $("renderState").className = "value offline";
     setStatus("Connection error — preparing to reconnect...");
+    logAdd("WebSocket error", "error");
   };
-  socket.onclose = () => {
+
+  socket.onclose = (e) => {
     reconnectInProgress = false;
     if (ws === socket) ws = null;
     if (recording) stopRecording();
@@ -524,17 +788,28 @@ function connectWebSocket() {
     stopRecord.disabled = true;
     rebootBtn.disabled = !deviceOnline;
     forgetWifiBtn.disabled = !deviceOnline;
-    if (manualStop || !listenerActive) { setStatus("Disconnected"); return; }
+    logAdd(
+      "WebSocket closed: code=" + e.code + " reason=" + (e.reason || "(none)"),
+      e.wasClean ? "warn" : "error"
+    );
+    if (manualStop || !listenerActive) {
+      setStatus("Disconnected");
+      return;
+    }
     resetAudioBuffer();
     scheduleReconnect();
   };
 }
 
+/* ============================================================
+ * START / STOP
+ * ============================================================ */
 start.onclick = async () => {
   if (listenerActive) return;
   manualStop = false;
   listenerActive = true;
   resetReconnectState();
+  logAdd("Start listening requested", "info");
   try {
     audioContext = new (window.AudioContext || window.webkitAudioContext)({
       sampleRate: SAMPLE_RATE, latencyHint: "interactive"
@@ -544,12 +819,14 @@ start.onclick = async () => {
     gainNode.connect(audioContext.destination);
     await audioContext.resume();
     await createAudioEngine();
+    logAdd("Audio engine ready (" + SAMPLE_RATE + " Hz)", "ok");
     connectWebSocket();
   } catch (error) {
     console.error(error);
     listenerActive = false;
     manualStop = true;
     setStatus("Audio initialization failed");
+    logAdd("Audio init failed: " + error.message, "error");
     if (audioContext) { try { await audioContext.close(); } catch {} }
     audioContext = null;
     gainNode = null;
@@ -561,6 +838,7 @@ stop.onclick = () => {
   listenerActive = false;
   reconnectInProgress = false;
   resetReconnectState();
+  logAdd("Stop listening requested", "info");
   if (recording) stopRecording();
   if (ws) {
     if (ws.readyState === WebSocket.OPEN) {
@@ -589,11 +867,15 @@ stop.onclick = () => {
   forgetWifiBtn.disabled = !deviceOnline;
 };
 
+/* ============================================================
+ * REBOOT / FORGET WIFI
+ * ============================================================ */
 rebootBtn.onclick = async () => {
   if (!deviceOnline) { setStatus("ESP32 is offline"); return; }
   const confirmed = window.confirm("Are you sure you want to reboot the ESP32?\n\nThe microphone stream will stop and the ESP32 will restart.");
   if (!confirmed) return;
   setStatus("Sending ESP32 reboot command...");
+  logAdd("Sending reboot request", "info");
   try {
     const response = await fetch("/api/esp32/reboot", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: "{}"
@@ -601,9 +883,11 @@ rebootBtn.onclick = async () => {
     const data = await response.json();
     if (!response.ok || !data.ok) throw new Error(data.error || "Reboot request failed");
     setStatus(data.source_connected ? "ESP32 reboot command sent." : "ESP32 is not currently connected.");
+    logAdd("Reboot request sent", "warn");
   } catch (error) {
     console.error(error);
     setStatus("Could not send reboot command.");
+    logAdd("Reboot request failed: " + error.message, "error");
   }
 };
 
@@ -618,6 +902,7 @@ forgetWifiBtn.onclick = async () => {
   forgetWifiBtn.disabled = true;
   rebootBtn.disabled = true;
   setStatus("Sending Forget Wi-Fi command...");
+  logAdd("Sending forget-wifi request", "info");
   try {
     const response = await fetch("/api/esp32/forget-wifi", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: "{}"
@@ -625,9 +910,11 @@ forgetWifiBtn.onclick = async () => {
     const data = await response.json();
     if (!response.ok || !data.ok) throw new Error(data.error || "Forget Wi-Fi request failed");
     setStatus(data.source_connected ? "Forget Wi-Fi command sent. ESP32 is restarting into setup mode..." : "ESP32 is not currently connected.");
+    logAdd("Forget-wifi request sent", "warn");
   } catch (error) {
     console.error(error);
     setStatus("Could not send Forget Wi-Fi command.");
+    logAdd("Forget-wifi request failed: " + error.message, "error");
     forgetWifiBtn.disabled = !deviceOnline;
     rebootBtn.disabled = !deviceOnline;
   }
