@@ -27,7 +27,7 @@ const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
 // proxy idle timeout, and it leaves the ESP32 mutex free for
 // audio 99.9% of the time.
 // ============================================================
-const WS_CLIENT_PING_MS            = 45000;  // per-connection native ping
+const WS_CLIENT_PING_MS            = 15000;  // per-connection native ping
 const DEVICE_HEARTBEAT_INTERVAL_MS = 5000;   // bookkeeping tick (no ping)
 const DEVICE_HEARTBEAT_TIMEOUT_MS  = 20000;  // stale source threshold
 const SOURCE_KEEPALIVE_MS          = 30000;  // JSON keepalive to ESP32
