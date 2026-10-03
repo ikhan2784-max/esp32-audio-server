@@ -30,6 +30,17 @@ const authAttempts = new Map();
 const AUTH_WINDOW_MS = 15 * 60 * 1000;
 const AUTH_MAX_ATTEMPTS = 10;
 
+/* ============================================================
+ * HEALTH REQUEST TRACKING
+ * ------------------------------------------------------------
+ * Maps request IDs to { resolve, reject, timeout } so the
+ * server can match the ESP32's health_response back to the
+ * awaiting HTTP request.
+ * ============================================================ */
+const healthRequests = new Map();
+const HEALTH_REQUEST_TIMEOUT_MS = 5000;
+let healthRequestCounter = 0;
+
 function getClientIp(req) {
   const forwarded = req.headers["x-forwarded-for"];
   if (forwarded) return forwarded.split(",")[0].trim();
@@ -217,6 +228,45 @@ app.get("/api/device-status", requireHttps, (req, res) => {
   res.json(buildDeviceStatus());
 });
 
+/* ============================================================
+ * ESP32 HEALTH BRIDGE
+ * ------------------------------------------------------------
+ * Browser calls GET /api/esp32-health
+ * Server sends { type: "health_request", id: "xxxx" } to ESP32
+ * ESP32 replies { type: "health_response", id: "xxxx", data: {...} }
+ * Server forwards data JSON to the browser
+ * ============================================================ */
+app.get("/api/esp32-health", requireHttps, async (req, res) => {
+  if (!isAuthenticatedRequest(req)) {
+    return res.status(401).json({ ok: false, error: "Unauthorized" });
+  }
+
+  if (!activeSource || activeSource.readyState !== WebSocket.OPEN) {
+    return res.status(503).json({ ok: false, error: "ESP32 not connected" });
+  }
+
+  const requestId = (++healthRequestCounter).toString(36) +
+                    crypto.randomBytes(2).toString("hex");
+
+  const pending = new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      healthRequests.delete(requestId);
+      reject(new Error("ESP32 health request timeout"));
+    }, HEALTH_REQUEST_TIMEOUT_MS);
+
+    healthRequests.set(requestId, { resolve, reject, timeout });
+  });
+
+  sendJson(activeSource, { type: "health_request", id: requestId });
+
+  try {
+    const health = await pending;
+    res.json(health);
+  } catch (e) {
+    res.status(504).json({ ok: false, error: e.message });
+  }
+});
+
 app.post("/api/esp32/reboot", requireHttps, (req, res) => {
   if (!isAuthenticatedRequest(req)) {
     return res.status(401).json({ ok: false, error: "Unauthorized" });
@@ -321,6 +371,20 @@ wss.on("connection", (ws, req) => {
     let message;
     try { message = JSON.parse(data.toString()); }
     catch { console.log("Rejected invalid JSON WS message."); return; }
+
+    /* ============================================================
+     * ESP32 HEALTH RESPONSE
+     * ============================================================ */
+    if (message.type === "health_response" &&
+        ws.role === "source" && ws.authenticated) {
+      const pending = healthRequests.get(message.id);
+      if (pending) {
+        clearTimeout(pending.timeout);
+        healthRequests.delete(message.id);
+        pending.resolve(message.data);
+      }
+      return;
+    }
 
     if (message.type === "hello") {
       if (message.device !== "ESP32-S3-INMP441" ||
@@ -460,6 +524,13 @@ wss.on("connection", (ws, req) => {
       deviceOnline = false;
       console.log("ESP32 source disconnected.");
       broadcastDeviceStatus();
+
+      /* Reject any pending health requests so the HTTP callers don't hang */
+      for (const [id, pending] of healthRequests) {
+        clearTimeout(pending.timeout);
+        pending.reject(new Error("ESP32 disconnected"));
+      }
+      healthRequests.clear();
     }
   });
 
