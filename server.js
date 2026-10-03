@@ -12,17 +12,23 @@ const SESSION_COOKIE_NAME = "esp32_listener_session";
 const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
 
 /* ============================================================
- * FIX #1: HEARTBEAT TIMING CORRECTED
+ * HEARTBEAT / KEEPALIVE TIMING
  * ------------------------------------------------------------
- * Old: DEVICE_HEARTBEAT_TIMEOUT_MS = 10000 with a 30s check interval
- *      → first check happened at t=30s, by which time the device
- *        was marked offline even though it was still connected.
- * New: check every 5 s, timeout at 20 s → 4 missed heartbeats
- *      (device sends every 5 s) before considering it dead.
+ * DEVICE_HEARTBEAT_INTERVAL_MS: how often the server checks
+ *     whether the ESP32 is still alive.
+ * DEVICE_HEARTBEAT_TIMEOUT_MS: how long without an ESP32
+ *     application heartbeat before the source is dropped.
+ * WS_PING_INTERVAL_MS: WS-level ping used by the ws library.
+ * SOURCE_KEEPALIVE_MS: how often the server sends a small
+ *     JSON message to the ESP32 to keep Render's edge proxy
+ *     from closing an "idle" WebSocket. Render's free-tier
+ *     proxy kills WS connections after ~200-260 s of no
+ *     server-side traffic, which was causing the ~30 s
+ *     reconnect storms in the firmware log.
  * ============================================================ */
 const DEVICE_HEARTBEAT_INTERVAL_MS = 5000;
 const DEVICE_HEARTBEAT_TIMEOUT_MS = 20000;
-const WS_PING_INTERVAL_MS = 20000;
+const SOURCE_KEEPALIVE_MS = 20000;
 
 const app = express();
 const server = http.createServer(app);
@@ -391,7 +397,7 @@ wss.on("connection", (ws, req) => {
         ws.role === "source" && ws.authenticated) {
       deviceOnline = true;
       deviceLastSeen = new Date().toISOString();
-      // Heartbeat logged but not spammed to console
+      /* Heartbeat is logged only in device_status updates. */
       return;
     }
 
@@ -512,9 +518,6 @@ wss.on("connection", (ws, req) => {
 
 /* ============================================================
  * HEARTBEAT LOOP
- * ------------------------------------------------------------
- * FIX #2: Now runs every 5 s instead of 30 s so a dead ESP32 is
- * detected within ~20 s instead of up to 60 s.
  * ============================================================ */
 const heartbeat = setInterval(() => {
   wss.clients.forEach((ws) => {
@@ -542,6 +545,23 @@ const heartbeat = setInterval(() => {
 }, DEVICE_HEARTBEAT_INTERVAL_MS);
 
 /* ============================================================
+ * SERVER → ESP32 KEEPALIVE (every 20 s)
+ * ------------------------------------------------------------
+ * Render's edge proxy closes WebSocket connections that have
+ * no server-side traffic for roughly 200-260 seconds. This
+ * sends a small JSON message to the ESP32 to keep the
+ * connection alive and prevent the ~30 s reconnect storm.
+ * ============================================================ */
+const sourceKeepalive = setInterval(() => {
+  for (const source of sources) {
+    if (source.readyState === WebSocket.OPEN &&
+        source.role === "source" && source.authenticated) {
+      sendJson(source, { type: "keepalive", t: Date.now() });
+    }
+  }
+}, SOURCE_KEEPALIVE_MS);
+
+/* ============================================================
  * SESSION CLEANUP
  * ============================================================ */
 const sessionCleanup = setInterval(() => {
@@ -557,11 +577,13 @@ const sessionCleanup = setInterval(() => {
 server.on("close", () => {
   clearInterval(heartbeat);
   clearInterval(sessionCleanup);
+  clearInterval(sourceKeepalive);
 });
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`HTTP/WS server on port ${PORT}`);
   console.log(`SOURCE_TOKEN: ${SOURCE_TOKEN ? "YES" : "NO"}`);
   console.log(`LISTENER_PIN: ${LISTENER_PIN ? "YES" : "NO"}`);
-  console.log(`Heartbeat check: every ${DEVICE_HEARTBEAT_INTERVAL_MS / 1000}s, timeout ${DEVICE_HEARTBEAT_TIMEOUT_MS / 1000}s`);
+  console.log(`Device heartbeat check: every ${DEVICE_HEARTBEAT_INTERVAL_MS / 1000}s, timeout ${DEVICE_HEARTBEAT_TIMEOUT_MS / 1000}s`);
+  console.log(`Server->ESP32 keepalive: every ${SOURCE_KEEPALIVE_MS / 1000}s`);
 });
