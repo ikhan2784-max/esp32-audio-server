@@ -3,7 +3,7 @@ const http = require("http");
 const WebSocket = require("ws");
 const crypto = require("crypto");
 
-const PORT = process.env.PORT || 10000;
+const PORT = process.env.PORT || 8080;
 
 const SOURCE_TOKEN = process.env.SOURCE_TOKEN || "";
 const LISTENER_PIN = process.env.LISTENER_PIN || "";
@@ -13,22 +13,10 @@ const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
 
 /* ============================================================
  * HEARTBEAT / KEEPALIVE TIMING
- * ------------------------------------------------------------
- * DEVICE_HEARTBEAT_INTERVAL_MS: how often the server checks
- *     whether the ESP32 is still alive.
- * DEVICE_HEARTBEAT_TIMEOUT_MS: how long without an ESP32
- *     application heartbeat before the source is dropped.
- * WS_PING_INTERVAL_MS: WS-level ping used by the ws library.
- * SOURCE_KEEPALIVE_MS: how often the server sends a small
- *     JSON message to the ESP32 to keep Render's edge proxy
- *     from closing an "idle" WebSocket. Render's free-tier
- *     proxy kills WS connections after ~200-260 s of no
- *     server-side traffic, which was causing the ~30 s
- *     reconnect storms in the firmware log.
  * ============================================================ */
 const DEVICE_HEARTBEAT_INTERVAL_MS = 5000;
 const DEVICE_HEARTBEAT_TIMEOUT_MS = 20000;
-const SOURCE_KEEPALIVE_MS = 20000;
+const SOURCE_KEEPALIVE_MS = 5000;
 
 const app = express();
 const server = http.createServer(app);
@@ -297,7 +285,6 @@ wss.on("connection", (ws, req) => {
   sendJson(ws, { type: "welcome", message: "ESP32 INMP441 Relay connected" });
 
   ws.on("message", (data, isBinary) => {
-
     /* ============================================================
      * BINARY AUDIO (from ESP32)
      * ============================================================ */
@@ -397,7 +384,6 @@ wss.on("connection", (ws, req) => {
         ws.role === "source" && ws.authenticated) {
       deviceOnline = true;
       deviceLastSeen = new Date().toISOString();
-      /* Heartbeat is logged only in device_status updates. */
       return;
     }
 
@@ -545,12 +531,7 @@ const heartbeat = setInterval(() => {
 }, DEVICE_HEARTBEAT_INTERVAL_MS);
 
 /* ============================================================
- * SERVER → ESP32 KEEPALIVE (every 20 s)
- * ------------------------------------------------------------
- * Render's edge proxy closes WebSocket connections that have
- * no server-side traffic for roughly 200-260 seconds. This
- * sends a small JSON message to the ESP32 to keep the
- * connection alive and prevent the ~30 s reconnect storm.
+ * SERVER → ESP32 KEEPALIVE (every 5 s)
  * ============================================================ */
 const sourceKeepalive = setInterval(() => {
   for (const source of sources) {
