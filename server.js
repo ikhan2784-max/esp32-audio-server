@@ -355,7 +355,7 @@ wss.on("connection", (ws, req) => {
                 return;
             }
             const frameSamples = frame.readUInt16LE(6);
-            if (frameSamples === 0 || frameSamples > 2048 ||
+            if (frameSamples === 0 || frameSamples > 4096 ||
                 frame.length !== 16 + frameSamples * 3) {
                 console.warn(`Rejected invalid ESP32 frame length: ${frame.length}`);
                 return;
