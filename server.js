@@ -11,21 +11,6 @@ const LISTENER_PIN = process.env.LISTENER_PIN || "";
 const SESSION_COOKIE_NAME = "esp32_listener_session";
 const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
 
-// ============================================================
-// TIMER TUNING
-// ------------------------------------------------------------
-// Key insight from ESP32 diagnostics (TXMaxUs: 132696, TXSlow: 2280):
-// the ESP-IDF WebSocket client uses a single mutex for TX and RX.
-// Every incoming message from the server forces the internal WS
-// task to grab the mutex, which can block the audio sender for
-// up to 130ms. If enough messages arrive while audio is flowing,
-// the socket silently dies from proxy idle timeout.
-//
-// Solution: minimise incoming traffic to the ESP32.
-//   - Native ping: every 45s (was 15s)
-//   - JSON keepalive: every 60s (was 30s)
-//   - ESP32 pings the server itself every 10s (native keep_alive)
-// ============================================================
 const WS_CLIENT_PING_MS            = 45000;
 const DEVICE_HEARTBEAT_INTERVAL_MS = 5000;
 const DEVICE_HEARTBEAT_TIMEOUT_MS  = 60000;
@@ -355,7 +340,7 @@ wss.on("connection", (ws, req) => {
                 return;
             }
             const frameSamples = frame.readUInt16LE(6);
-            if (frameSamples === 0 || frameSamples > 4096 ||
+            if (frameSamples === 0 || frameSamples > 2048 ||
                 frame.length !== 16 + frameSamples * 3) {
                 console.warn(`Rejected invalid ESP32 frame length: ${frame.length}`);
                 return;
@@ -560,12 +545,6 @@ wss.on("connection", (ws, req) => {
     });
 });
 
-// ============================================================
-// INTERVAL: stale-client detection (BOOKKEEPING — NO PING)
-// ------------------------------------------------------------
-// Only kills a socket if a ping was sent AND no pong came back
-// within DEVICE_HEARTBEAT_TIMEOUT_MS.
-// ============================================================
 const heartbeat = setInterval(() => {
     const now = Date.now();
     wss.clients.forEach((ws) => {
