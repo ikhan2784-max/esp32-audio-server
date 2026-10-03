@@ -32,14 +32,21 @@ const AUTH_MAX_ATTEMPTS = 10;
 
 /* ============================================================
  * HEALTH REQUEST TRACKING
- * ------------------------------------------------------------
- * Maps request IDs to { resolve, reject, timeout } so the
- * server can match the ESP32's health_response back to the
- * awaiting HTTP request.
  * ============================================================ */
 const healthRequests = new Map();
 const HEALTH_REQUEST_TIMEOUT_MS = 5000;
 let healthRequestCounter = 0;
+
+/* ============================================================
+ * AUDIO SEQUENCE TRACKING (per source)
+ * ------------------------------------------------------------
+ * Detects dropped frames between ESP32 and relay. Non-fatal —
+ * logged only, so the operator can see when the ESP32's send
+ * queue overflowed or a reconnect happened without a seq reset.
+ * ============================================================ */
+let lastAudioSequence = null;
+let audioSequenceGaps = 0;
+let audioFramesReceived = 0;
 
 function getClientIp(req) {
   const forwarded = req.headers["x-forwarded-for"];
@@ -117,7 +124,6 @@ const wss = new WebSocket.Server({
 
 const listeners = new Set();
 const sources = new Set();
-let audioMessagesReceived = 0;
 
 let activeSource = null;
 let deviceOnline = false;
@@ -138,7 +144,8 @@ function buildDeviceStatus() {
     last_rebooted: deviceLastRebooted,
     uptime_seconds: deviceOnline && deviceConnectedAt
       ? Math.max(0, Math.floor((Date.now() - new Date(deviceConnectedAt).getTime()) / 1000))
-      : null
+      : null,
+    audio_sequence_gaps: audioSequenceGaps
   };
 }
 
@@ -230,11 +237,6 @@ app.get("/api/device-status", requireHttps, (req, res) => {
 
 /* ============================================================
  * ESP32 HEALTH BRIDGE
- * ------------------------------------------------------------
- * Browser calls GET /api/esp32-health
- * Server sends { type: "health_request", id: "xxxx" } to ESP32
- * ESP32 replies { type: "health_response", id: "xxxx", data: {...} }
- * Server forwards data JSON to the browser
  * ============================================================ */
 app.get("/api/esp32-health", requireHttps, async (req, res) => {
   if (!isAuthenticatedRequest(req)) {
@@ -343,10 +345,26 @@ wss.on("connection", (ws, req) => {
         return;
       }
 
+      // Sequence gap detection (non-fatal, logged for diagnostics)
+      const seq = frame.readUInt32LE(8);
+      audioFramesReceived++;
+      if (lastAudioSequence !== null) {
+        // Detect reset (new connection sent seq=0) vs. real gap
+        const expected = (lastAudioSequence + 1) >>> 0;
+        if (seq !== expected) {
+          if (seq < lastAudioSequence) {
+            console.log(`ESP32 audio sequence reset: ${lastAudioSequence} -> ${seq}`);
+          } else {
+            audioSequenceGaps++;
+            console.warn(`ESP32 audio sequence gap: expected ${expected}, got ${seq} (${seq - expected} frames missed)`);
+          }
+        }
+      }
+      lastAudioSequence = seq;
+
       deviceLastSeen = new Date().toISOString();
-      audioMessagesReceived++;
-      if (audioMessagesReceived % 100 === 0) {
-        console.log(`ESP32 audio packets received: ${audioMessagesReceived}`);
+      if (audioFramesReceived % 100 === 0) {
+        console.log(`ESP32 audio frames received: ${audioFramesReceived} | seq gaps: ${audioSequenceGaps}`);
       }
 
       for (const listener of listeners) {
@@ -372,9 +390,6 @@ wss.on("connection", (ws, req) => {
     try { message = JSON.parse(data.toString()); }
     catch { console.log("Rejected invalid JSON WS message."); return; }
 
-    /* ============================================================
-     * ESP32 HEALTH RESPONSE
-     * ============================================================ */
     if (message.type === "health_response" &&
         ws.role === "source" && ws.authenticated) {
       const pending = healthRequests.get(message.id);
@@ -409,6 +424,9 @@ wss.on("connection", (ws, req) => {
       deviceLastSeen = new Date().toISOString();
       deviceConnectedAt = new Date().toISOString();
       deviceRebootPending = false;
+
+      // Reset sequence tracking on new source connection
+      lastAudioSequence = null;
 
       console.log(`ESP32 authenticated. Active sources: ${sources.size}`);
 
@@ -522,10 +540,10 @@ wss.on("connection", (ws, req) => {
     if (wasSource && ws === activeSource) {
       activeSource = null;
       deviceOnline = false;
+      lastAudioSequence = null;
       console.log("ESP32 source disconnected.");
       broadcastDeviceStatus();
 
-      /* Reject any pending health requests so the HTTP callers don't hang */
       for (const [id, pending] of healthRequests) {
         clearTimeout(pending.timeout);
         pending.reject(new Error("ESP32 disconnected"));
