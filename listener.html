@@ -770,6 +770,7 @@ function playPCM24(arrayBuffer) {
 
   playbackStarted = true;
 }
+
 function startRecording() {
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     return;
@@ -1016,8 +1017,8 @@ function connectWebSocket() {
       return;
     }
 
-    // FIX: Reset the worklet buffer on every (re)connect so stale
-    // audio from the previous session can never play after reconnect.
+    // Reset the worklet buffer on every (re)connect so stale audio from the
+    // previous session can never play after reconnect.
     resetAudioBuffer();
 
     start.disabled = true;
@@ -1373,73 +1374,4 @@ updateVolume();
 refreshDeviceStatus();
 </script>
 </body>
-</html><!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ESP32 INMP441 Listener</title>
-
-<style>
-:root{
-  --bg:#0b0f14;
-  --card:#151b23;
-  --card2:#10161d;
-  --border:#28313d;
-  --text:#f2f5f8;
-  --muted:#9aa7b5;
-  --green:#35d07f;
-  --red:#ff5d67;
-  --yellow:#f5c451;
-  --blue:#5aa7ff;
-}
-*{box-sizing:border-box}
-body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text);}
-.container{width:min(900px,calc(100% - 28px));margin:24px auto 50px;}
-h1{margin:0 0 5px;font-size:30px;}
-.subtitle{color:var(--muted);margin-bottom:22px;}
-.section{margin-top:18px;padding:20px;background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.18);}
-.section-title{font-size:18px;font-weight:700;margin-bottom:16px;}
-.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}
-.card{background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:14px;min-height:76px;}
-.label{color:var(--muted);font-size:13px;margin-bottom:8px;}
-.value{font-size:18px;font-weight:700;word-break:break-word;}
-.online{color:var(--green)}.offline{color:var(--red)}.ok{color:var(--green)}.idle{color:var(--muted)}
-.statusbar{margin-top:12px;padding:13px 15px;border-radius:10px;background:var(--card2);border:1px solid var(--border);color:var(--muted);}
-button{border:0;border-radius:9px;padding:12px 18px;margin:6px 8px 0 0;font-size:16px;font-weight:700;cursor:pointer;background:var(--blue);color:white;}
-button.secondary{background:#303b49}
-button.danger{background:#b8323c}
-button:disabled{opacity:.45;cursor:not-allowed}
-input[type=range]{width:100%;accent-color:var(--blue);}
-.volume-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
-.volume-value{font-size:20px;font-weight:700;}
-#meter{width:100%;height:22px;background:#29313b;border-radius:11px;overflow:hidden;margin-top:10px;}
-#level{width:0%;height:100%;background:var(--green);transition:width .05s;}
-.record-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;}
-.record-box{background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:14px;}
-.record-value{margin-top:8px;font-weight:700;}
-.small{color:var(--muted);font-size:13px;line-height:1.5;}
-@media(max-width:650px){
-  .container{width:min(100% - 18px,900px);margin-top:14px;}
-  h1{font-size:25px}
-  .grid,.record-grid{grid-template-columns:1fr;}
-  .section{padding:16px;}
-  button{width:100%;margin-right:0;}
-}
-</style>
-</head>
-
-<body>
-<div class="container">
-  <h1>ESP32 INMP441</h1>
-  <div class="subtitle">Secure Live Audio Listener</div>
-
-  <div class="section">
-    <div class="section-title">ESP32 Status</div>
-    <div class="grid">
-      <div class="card"><div class="label">Device</div><div id="deviceStatus" class="value offline">🔴 OFFLINE</div></div>
-      <div class="card"><div class="label">Audio</div><div id="audioState" class="value idle">IDLE</div></div>
-      <div class="card"><div class="label">Streaming</div><div id="streamingState" class="value idle">OFF</div></div>
-      <div class="card"><div class="label">Listeners</div><div id="listenerCount" class="value">0</div></div>
-      <div class="card"><div class="label">Render / WSS</div><div id="renderState" class="value idle">Checking...</div></div>
-      <div class="card"><div class="label
+</html>
