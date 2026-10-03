@@ -13,7 +13,12 @@ const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
 
 const DEVICE_HEARTBEAT_INTERVAL_MS = 5000;
 const DEVICE_HEARTBEAT_TIMEOUT_MS = 20000;
-const SOURCE_KEEPALIVE_MS = 2000;
+
+// FIX #4: server-side application keepalive slowed from 2 s to 10 s.
+// Native WS pings (5 s) already keep the TCP path alive. Sending JSON
+// keepalive every 2 s just adds write pressure on the ESP32's TLS stack
+// and was likely contributing to the frequent disconnects.
+const SOURCE_KEEPALIVE_MS = 10000;
 const SOURCE_NATIVE_PING_MS = 5000;
 
 const app = express();
@@ -38,11 +43,7 @@ const HEALTH_REQUEST_TIMEOUT_MS = 5000;
 let healthRequestCounter = 0;
 
 /* ============================================================
- * AUDIO SEQUENCE TRACKING (per source)
- * ------------------------------------------------------------
- * Detects dropped frames between ESP32 and relay. Non-fatal —
- * logged only, so the operator can see when the ESP32's send
- * queue overflowed or a reconnect happened without a seq reset.
+ * AUDIO SEQUENCE TRACKING
  * ============================================================ */
 let lastAudioSequence = null;
 let audioSequenceGaps = 0;
@@ -345,11 +346,9 @@ wss.on("connection", (ws, req) => {
         return;
       }
 
-      // Sequence gap detection (non-fatal, logged for diagnostics)
       const seq = frame.readUInt32LE(8);
       audioFramesReceived++;
       if (lastAudioSequence !== null) {
-        // Detect reset (new connection sent seq=0) vs. real gap
         const expected = (lastAudioSequence + 1) >>> 0;
         if (seq !== expected) {
           if (seq < lastAudioSequence) {
@@ -425,7 +424,6 @@ wss.on("connection", (ws, req) => {
       deviceConnectedAt = new Date().toISOString();
       deviceRebootPending = false;
 
-      // Reset sequence tracking on new source connection
       lastAudioSequence = null;
 
       console.log(`ESP32 authenticated. Active sources: ${sources.size}`);
@@ -624,6 +622,6 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log(`SOURCE_TOKEN: ${SOURCE_TOKEN ? "YES" : "NO"}`);
   console.log(`LISTENER_PIN: ${LISTENER_PIN ? "YES" : "NO"}`);
   console.log(`Device heartbeat check: every ${DEVICE_HEARTBEAT_INTERVAL_MS / 1000}s, timeout ${DEVICE_HEARTBEAT_TIMEOUT_MS / 1000}s`);
-  console.log(`Server->ESP32 keepalive: every ${SOURCE_KEEPALIVE_MS / 1000}s`);
+  console.log(`Server->ESP32 app keepalive: every ${SOURCE_KEEPALIVE_MS / 1000}s`);
   console.log(`Server->ESP32 native WS ping: every ${SOURCE_NATIVE_PING_MS / 1000}s`);
 });
