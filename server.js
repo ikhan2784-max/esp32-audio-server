@@ -13,8 +13,8 @@ const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
 
 const DEVICE_HEARTBEAT_INTERVAL_MS = 5000;
 const DEVICE_HEARTBEAT_TIMEOUT_MS = 20000;
-const SOURCE_KEEPALIVE_MS = 5000;
-const SOURCE_NATIVE_PING_MS = 10000;
+const SOURCE_KEEPALIVE_MS = 2000;
+const SOURCE_NATIVE_PING_MS = 5000;
 
 const app = express();
 const server = http.createServer(app);
@@ -255,7 +255,6 @@ app.post("/api/esp32/forget-wifi", requireHttps, (req, res) => {
 wss.on("connection", (ws, req) => {
   const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown";
 
-  /* FIX: Disable Nagle's algorithm — critical for proxied WebSockets */
   if (ws._socket && typeof ws._socket.setNoDelay === "function") {
     ws._socket.setNoDelay(true);
   }
