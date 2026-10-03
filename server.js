@@ -12,19 +12,25 @@ const SESSION_COOKIE_NAME = "esp32_listener_session";
 const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
 
 // ============================================================
-// HEARTBEAT / KEEPALIVE TUNING
+// TIMER TUNING
 // ------------------------------------------------------------
-// Render's proxy will drop idle WebSocket connections. We fight
-// that with three independent timers:
-//   1. Native WS ping to every client (every 20 s)
-//   2. Native WS ping specifically to the ESP32 source (5 s)
-//   3. Application-level JSON keepalive to the ESP32 (10 s)
+// CRITICAL: Only ONE ping mechanism is allowed.
+//
+// The ESP-IDF esp_websocket_client library uses a single
+// internal mutex for all TX/RX/ping/pong traffic. If the server
+// sends native pings too frequently, the ESP32's audio sender
+// task cannot acquire the mutex in time and the socket dies
+// with close_code:1006 (abnormal closure, no close frame).
+//
+// Solution: ping each client once every 45 s from a per-
+// connection timer. That is plenty to defeat Render's 60 s
+// proxy idle timeout, and it leaves the ESP32 mutex free for
+// audio 99.9% of the time.
 // ============================================================
-const WS_CLIENT_PING_MS          = 20000;  // ping all clients
-const DEVICE_HEARTBEAT_INTERVAL_MS = 5000;   // how often to check isAlive
-const DEVICE_HEARTBEAT_TIMEOUT_MS  = 20000;  // how long before a source is stale
-const SOURCE_KEEPALIVE_MS        = 30000;  // JSON keepalive to ESP32
-const SOURCE_NATIVE_PING_MS      = 5000;   // native WS ping to ESP32
+const WS_CLIENT_PING_MS            = 45000;  // per-connection native ping
+const DEVICE_HEARTBEAT_INTERVAL_MS = 5000;   // bookkeeping tick (no ping)
+const DEVICE_HEARTBEAT_TIMEOUT_MS  = 20000;  // stale source threshold
+const SOURCE_KEEPALIVE_MS          = 30000;  // JSON keepalive to ESP32
 
 const app = express();
 const server = http.createServer(app);
@@ -37,18 +43,16 @@ if (!LISTENER_PIN) console.error("ERROR: LISTENER_PIN not set.");
 // ============================================================
 // PROCESS-LEVEL SAFETY NETS
 // ------------------------------------------------------------
-// If anything throws and we let the process die, Render's health
-// check will return 504 until the restart completes. Logging and
-// keeping the process alive is the lesser evil.
+// If anything throws and the process dies, Render's health
+// check returns 504 until the restart completes. Log the error
+// and keep the process alive so /health keeps responding.
 // ============================================================
 process.on("uncaughtException", (err) => {
     console.error("UNCAUGHT EXCEPTION:", err && err.stack ? err.stack : err);
-    // Do NOT exit — keep the process alive so /health keeps responding.
 });
 
 process.on("unhandledRejection", (reason) => {
     console.error("UNHANDLED REJECTION:", reason);
-    // Do NOT exit.
 });
 
 const sessions = new Map();
@@ -245,7 +249,6 @@ app.get("/", requireHttps, (req, res) => {
 });
 
 // ---- HEALTH ENDPOINT (Render health check) ----
-// Must return 2xx/3xx within 5 s. Never blocks.
 app.get("/health", (req, res) => {
     res.status(200).send("OK");
 });
@@ -387,14 +390,15 @@ wss.on("connection", (ws, req) => {
 
     console.log(`WS connected: ${ip}`);
 
-    // ---- pong handler: MUST set isAlive = true ----
+    // ---- pong handler: sets isAlive so we don't kill a live socket ----
     ws.on("pong", () => {
         ws.isAlive = true;
     });
 
-    // ---- Per-connection native ping every 20 s ----
-    // This is the critical fix: it keeps Render's proxy from
-    // treating the connection as idle and killing it with 1006.
+    // ---- THE ONLY ping mechanism ----
+    // One native ping per connection every 45 seconds. This
+    // defeats Render's 60 s proxy idle timeout without
+    // overwhelming the ESP32's WebSocket mutex.
     ws.pingTimer = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
             try {
@@ -655,9 +659,12 @@ wss.on("connection", (ws, req) => {
 
     ws.on("close", (code, reason) => {
         console.log(
-            `WS closed from ${ip}: code=${code}, reason=${reason.toString() || "(none)"}`
+            `WS closed from ${ip}: code=${code}, reason=${reason.toString() || "(none)"}, ` +
+            `role=${ws.role}, authenticated=${ws.authenticated}, ` +
+            `uptime=${Date.now() - ws.connectedAt}ms`
         );
 
+        // Stop this connection's ping timer
         if (ws.pingTimer) {
             clearInterval(ws.pingTimer);
             ws.pingTimer = null;
@@ -696,7 +703,11 @@ wss.on("connection", (ws, req) => {
 });
 
 // ============================================================
-// INTERVAL: stale-client detection (kills half-dead sockets)
+// INTERVAL: stale-client detection (BOOKKEEPING ONLY — NO PING)
+// ------------------------------------------------------------
+// The per-connection ws.pingTimer handles pinging. This timer
+// only checks the isAlive flag that the pong handler sets, and
+// checks whether the ESP32 source has gone stale.
 // ============================================================
 const heartbeat = setInterval(() => {
     wss.clients.forEach((ws) => {
@@ -707,10 +718,9 @@ const heartbeat = setInterval(() => {
             } catch {}
             return;
         }
+        // Reset the flag; the pong handler will set it back to true.
+        // The per-connection pingTimer sends the actual ping.
         ws.isAlive = false;
-        try {
-            ws.ping();
-        } catch {}
     });
 
     if (deviceOnline && activeSource) {
@@ -734,7 +744,10 @@ const heartbeat = setInterval(() => {
 }, DEVICE_HEARTBEAT_INTERVAL_MS);
 
 // ============================================================
-// INTERVAL: application-level keepalive to ESP32
+// INTERVAL: application-level JSON keepalive to ESP32
+// ------------------------------------------------------------
+// Not a native ping. Sends {"type":"keepalive"} JSON, which the
+// ESP32 handles as a no-op. Cheap liveness probe.
 // ============================================================
 const sourceKeepalive = setInterval(() => {
     for (const source of sources) {
@@ -746,6 +759,9 @@ const sourceKeepalive = setInterval(() => {
     }
 }, SOURCE_KEEPALIVE_MS);
 
+// ============================================================
+// INTERVAL: session + auth-attempt cleanup
+// ============================================================
 const sessionCleanup = setInterval(() => {
     const now = Date.now();
     for (const [sessionId, session] of sessions) {
@@ -758,8 +774,8 @@ const sessionCleanup = setInterval(() => {
 
 server.on("close", () => {
     clearInterval(heartbeat);
-    clearInterval(sessionCleanup);
     clearInterval(sourceKeepalive);
+    clearInterval(sessionCleanup);
 });
 
 server.listen(PORT, "0.0.0.0", () => {
@@ -769,7 +785,6 @@ server.listen(PORT, "0.0.0.0", () => {
     console.log(
         `Device heartbeat check: every ${DEVICE_HEARTBEAT_INTERVAL_MS / 1000}s, timeout ${DEVICE_HEARTBEAT_TIMEOUT_MS / 1000}s`
     );
-    console.log(`Per-client WS ping: every ${WS_CLIENT_PING_MS / 1000}s`);
-    console.log(`Server->ESP32 app keepalive: every ${SOURCE_KEEPALIVE_MS / 1000}s`);
-    console.log(`Server->ESP32 native WS ping: every ${SOURCE_NATIVE_PING_MS / 1000}s`);
+    console.log(`Per-connection WS ping: every ${WS_CLIENT_PING_MS / 1000}s (ONLY ping mechanism)`);
+    console.log(`Server->ESP32 JSON keepalive: every ${SOURCE_KEEPALIVE_MS / 1000}s`);
 });
