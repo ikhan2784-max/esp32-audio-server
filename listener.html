@@ -222,7 +222,6 @@ input[type=range]{
   <h1>ESP32 INMP441</h1>
   <div class="subtitle">Secure Live Audio Listener</div>
 
-  <!-- DEVICE STATUS -->
   <div class="section">
     <div class="section-title">ESP32 Status</div>
 
@@ -276,7 +275,6 @@ input[type=range]{
     <div id="status" class="statusbar">Disconnected</div>
   </div>
 
-  <!-- LISTENER AUTH -->
   <div class="section">
     <div class="section-title">Listener Access</div>
 
@@ -290,7 +288,6 @@ input[type=range]{
     </div>
   </div>
 
-  <!-- AUDIO -->
   <div class="section">
     <div class="section-title">Live Audio</div>
 
@@ -312,11 +309,10 @@ input[type=range]{
     </div>
 
     <div class="small" style="margin-top:12px">
-      16 kHz mono PCM16 • Secure PIN • Multi-listener • Low-latency playback
+      16 kHz mono PCM24 • Secure PIN • Multi-listener • Low-latency playback
     </div>
   </div>
 
-  <!-- RECORDING -->
   <div class="section">
     <div class="section-title">Recording</div>
 
@@ -341,11 +337,9 @@ input[type=range]{
 <script>
 const SAMPLE_RATE = 16000;
 const CHANNELS = 1;
-const BYTES_PER_SAMPLE = 2;
+const BYTES_PER_SAMPLE = 3;
+const BITS_PER_SAMPLE = 24;
 
-// Continuous playback jitter buffer.
-// 120 ms startup gives the network enough room to absorb small packet
-// arrival variations without making the listener feel noticeably delayed.
 const TARGET_BUFFER_SECONDS = 0.20;
 const MAX_BUFFER_SECONDS = 0.80;
 const MIN_BUFFER_SECONDS = 0.06;
@@ -366,7 +360,6 @@ let deviceOnline = false;
 let statusUptimeSeconds = null;
 let statusUptimeBaseMs = 0;
 
-// Listener connection/reconnection state.
 let listenerActive = false;
 let manualStop = false;
 let reconnectTimer = null;
@@ -396,11 +389,8 @@ function setStatus(text) {
 
 function formatDate(value) {
   if (!value) return "Never";
-
   const d = new Date(value);
-
   if (Number.isNaN(d.getTime())) return "—";
-
   return d.toLocaleString();
 }
 
@@ -408,22 +398,16 @@ function formatUptime(seconds) {
   if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) {
     return "—";
   }
-
   seconds = Math.max(0, Math.floor(seconds));
-
   const days = Math.floor(seconds / 86400);
   seconds %= 86400;
-
   const hours = Math.floor(seconds / 3600);
   seconds %= 3600;
-
   const minutes = Math.floor(seconds / 60);
   const secs = seconds % 60;
-
   if (days > 0) {
     return `${days}d ${String(hours).padStart(2,"0")}:${String(minutes).padStart(2,"0")}:${String(secs).padStart(2,"0")}`;
   }
-
   return `${String(hours).padStart(2,"0")}:${String(minutes).padStart(2,"0")}:${String(secs).padStart(2,"0")}`;
 }
 
@@ -432,47 +416,23 @@ function updateUptimeDisplay() {
     $("uptime").textContent = "—";
     return;
   }
-
   const elapsed = Math.floor((Date.now() - statusUptimeBaseMs) / 1000);
   $("uptime").textContent = formatUptime(statusUptimeSeconds + elapsed);
 }
 
 function applyDeviceStatus(data) {
   deviceOnline = !!data.online;
-
-  $("deviceStatus").textContent =
-    deviceOnline ? "🟢 ONLINE" : "🔴 OFFLINE";
-
-  $("deviceStatus").className =
-    "value " + (deviceOnline ? "online" : "offline");
-
-  $("audioState").textContent =
-    data.audio || "IDLE";
-
-  $("audioState").className =
-    "value " + (data.audio === "OK" ? "ok" : "idle");
-
+  $("deviceStatus").textContent = deviceOnline ? "🟢 ONLINE" : "🔴 OFFLINE";
+  $("deviceStatus").className = "value " + (deviceOnline ? "online" : "offline");
+  $("audioState").textContent = data.audio || "IDLE";
+  $("audioState").className = "value " + (data.audio === "OK" ? "ok" : "idle");
   const streaming = !!data.streaming;
-
-  $("streamingState").textContent =
-    streaming ? "ON" : "OFF";
-
-  $("streamingState").className =
-    "value " + (streaming ? "ok" : "idle");
-
-  $("listenerCount").textContent =
-    Number.isFinite(Number(data.listeners))
-      ? data.listeners
-      : "0";
-
-  $("lastSeen").textContent =
-    formatDate(data.last_seen);
-
-  $("lastReboot").textContent =
-    formatDate(data.last_rebooted);
-
-  $("connectedAt").textContent =
-    formatDate(data.connected_at);
+  $("streamingState").textContent = streaming ? "ON" : "OFF";
+  $("streamingState").className = "value " + (streaming ? "ok" : "idle");
+  $("listenerCount").textContent = Number.isFinite(Number(data.listeners)) ? data.listeners : "0";
+  $("lastSeen").textContent = formatDate(data.last_seen);
+  $("lastReboot").textContent = formatDate(data.last_rebooted);
+  $("connectedAt").textContent = formatDate(data.connected_at);
 
   if (deviceOnline && data.uptime_seconds !== null && data.uptime_seconds !== undefined) {
     statusUptimeSeconds = Number(data.uptime_seconds);
@@ -480,45 +440,25 @@ function applyDeviceStatus(data) {
   } else {
     statusUptimeSeconds = null;
   }
-
   updateUptimeDisplay();
 
-  const wsActive =
-    ws &&
-    (
-      ws.readyState === WebSocket.OPEN ||
-      ws.readyState === WebSocket.CONNECTING
-    );
-
+  const wsActive = ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING);
   start.disabled = !deviceOnline || wsActive;
-
   rebootBtn.disabled = !deviceOnline;
   forgetWifiBtn.disabled = !deviceOnline;
 }
 
 async function refreshDeviceStatus() {
   try {
-    const response = await fetch(
-      "/api/device-status?_=" + Date.now(),
-      {
-        cache: "no-store",
-        headers: {
-          "Cache-Control": "no-cache"
-        }
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error("HTTP " + response.status);
-    }
-
+    const response = await fetch("/api/device-status?_=" + Date.now(), {
+      cache: "no-store",
+      headers: { "Cache-Control": "no-cache" }
+    });
+    if (!response.ok) throw new Error("HTTP " + response.status);
     const data = await response.json();
-
     applyDeviceStatus(data);
-
     $("renderState").textContent = "CONNECTED";
     $("renderState").className = "value ok";
-
   } catch (error) {
     $("renderState").textContent = "UNAVAILABLE";
     $("renderState").className = "value offline";
@@ -530,95 +470,57 @@ setInterval(updateUptimeDisplay, 1000);
 
 function updateVolume() {
   const value = Number(volume.value);
-
-  volumeValue.textContent =
-    Math.round(value * 100) + "%";
-
-  if (gainNode) {
-    gainNode.gain.value = value;
-  }
+  volumeValue.textContent = Math.round(value * 100) + "%";
+  if (gainNode) gainNode.gain.value = value;
 }
 
 volume.addEventListener("input", updateVolume);
 
 function updateDuration() {
   if (!recording) return;
-
-  const seconds =
-    Math.floor((Date.now() - recordStartTime) / 1000);
-
-  const minutes =
-    Math.floor(seconds / 60);
-
-  const remaining =
-    seconds % 60;
-
-  duration.textContent =
-    String(minutes).padStart(2, "0") + ":" +
-    String(remaining).padStart(2, "0");
-
+  const seconds = Math.floor((Date.now() - recordStartTime) / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const remaining = seconds % 60;
+  duration.textContent = String(minutes).padStart(2, "0") + ":" + String(remaining).padStart(2, "0");
   timerHandle = setTimeout(updateDuration, 500);
 }
-
-/*
- * Continuous PCM playback.
- *
- * The browser receives 16 ms ESP32 packets, but WebSocket delivery is not
- * perfectly periodic. Instead of scheduling every packet separately, audio
- * is placed into an AudioWorklet ring buffer. The worklet pulls samples at
- * exactly 16 kHz, which prevents packet-to-packet scheduling gaps.
- */
 
 async function createAudioEngine() {
   const workletCode = `
     class PCMPlayerProcessor extends AudioWorkletProcessor {
       constructor() {
         super();
-
-        this.capacity = 32768; // about 2.05 seconds at 16 kHz
+        this.capacity = 32768;
         this.buffer = new Float32Array(this.capacity);
         this.readIndex = 0;
         this.writeIndex = 0;
         this.available = 0;
-
         this.started = false;
         this.targetSamples = ${Math.round(TARGET_BUFFER_SECONDS * SAMPLE_RATE)};
         this.minSamples = ${Math.round(MIN_BUFFER_SECONDS * SAMPLE_RATE)};
         this.maxSamples = ${Math.round(MAX_BUFFER_SECONDS * SAMPLE_RATE)};
-
         this.underruns = 0;
 
         this.port.onmessage = (event) => {
           const data = event.data;
-
           if (!data) return;
-
           if (data.type === "pcm") {
             const samples = new Float32Array(data.buffer);
-
             for (let i = 0; i < samples.length; i++) {
               if (this.available >= this.capacity) {
-                // Drop the oldest sample if the browser falls far behind.
-                this.readIndex =
-                  (this.readIndex + 1) % this.capacity;
+                this.readIndex = (this.readIndex + 1) % this.capacity;
                 this.available--;
               }
-
               this.buffer[this.writeIndex] = samples[i];
-              this.writeIndex =
-                (this.writeIndex + 1) % this.capacity;
+              this.writeIndex = (this.writeIndex + 1) % this.capacity;
               this.available++;
             }
-
-            // If a very large burst arrives, retain the newest audio.
             if (this.available > this.maxSamples) {
               const excess = this.available - this.maxSamples;
-              this.readIndex =
-                (this.readIndex + excess) % this.capacity;
+              this.readIndex = (this.readIndex + excess) % this.capacity;
               this.available -= excess;
             }
           }
-
           if (data.type === "reset") {
             this.readIndex = 0;
             this.writeIndex = 0;
@@ -630,13 +532,8 @@ async function createAudioEngine() {
 
       process(inputs, outputs) {
         const output = outputs[0];
-
-        if (!output || !output[0]) {
-          return true;
-        }
-
+        if (!output || !output[0]) return true;
         const channel = output[0];
-
         if (!this.started) {
           if (this.available >= this.targetSamples) {
             this.started = true;
@@ -645,64 +542,44 @@ async function createAudioEngine() {
             return true;
           }
         }
-
         for (let i = 0; i < channel.length; i++) {
           if (this.available > 0) {
             channel[i] = this.buffer[this.readIndex];
-
-            this.readIndex =
-              (this.readIndex + 1) % this.capacity;
-
+            this.readIndex = (this.readIndex + 1) % this.capacity;
             this.available--;
           } else {
-            // Very short network interruption. Output silence rather than
-            // re-timing or restarting the audio clock.
             channel[i] = 0;
             this.underruns++;
             this.started = false;
           }
         }
-
         return true;
       }
     }
-
     registerProcessor("pcm-player", PCMPlayerProcessor);
   `;
 
-  const blob = new Blob([workletCode], {
-    type: "application/javascript"
-  });
-
+  const blob = new Blob([workletCode], { type: "application/javascript" });
   const url = URL.createObjectURL(blob);
-
   try {
     await audioContext.audioWorklet.addModule(url);
   } finally {
     URL.revokeObjectURL(url);
   }
 
-  audioWorkletNode = new AudioWorkletNode(
-    audioContext,
-    "pcm-player",
-    {
-      numberOfInputs: 0,
-      numberOfOutputs: 1,
-      outputChannelCount: [1]
-    }
-  );
+  audioWorkletNode = new AudioWorkletNode(audioContext, "pcm-player", {
+    numberOfInputs: 0,
+    numberOfOutputs: 1,
+    outputChannelCount: [1]
+  });
 
   audioWorkletReady = true;
   audioWorkletNode.connect(gainNode);
   playbackStarted = false;
 }
 
-function playPCM16(arrayBuffer) {
-  if (!audioContext || !gainNode || !audioWorkletNode || !audioWorkletReady) {
-    return;
-  }
-
-  // ESP32 framed-pcm-v1 header: 16 bytes, followed by PCM16 samples.
+function playPCM24(arrayBuffer) {
+  if (!audioContext || !gainNode || !audioWorkletNode || !audioWorkletReady) return;
   if (arrayBuffer.byteLength < 16) return;
 
   const view = new DataView(arrayBuffer);
@@ -711,31 +588,29 @@ function playPCM16(arrayBuffer) {
   const headerBytes = view.getUint8(5);
   const sampleCount = view.getUint16(6, true);
 
-  if (
-    magic !== 0x41334631 ||
-    version !== 1 ||
-    headerBytes !== 16 ||
-    sampleCount === 0 ||
-    arrayBuffer.byteLength !== headerBytes + sampleCount * 2
-  ) {
+  if (magic !== 0x41334631 || version !== 1 || headerBytes !== 16 ||
+      sampleCount === 0 || arrayBuffer.byteLength !== headerBytes + sampleCount * 3) {
     console.warn("Invalid ESP32 audio frame", arrayBuffer.byteLength);
     return;
   }
 
-  const pcm = new Int16Array(sampleCount);
+  const pcm = new Int32Array(sampleCount);
   const floatSamples = new Float32Array(sampleCount);
   let sum = 0;
 
   for (let i = 0; i < sampleCount; i++) {
-    const sample = view.getInt16(headerBytes + i * 2, true);
+    const offset = headerBytes + i * 3;
+    let sample =
+      view.getUint8(offset) |
+      (view.getUint8(offset + 1) << 8) |
+      (view.getUint8(offset + 2) << 16);
+    if (sample & 0x800000) sample |= 0xFF000000;
     pcm[i] = sample;
-
-    const value = sample / 32768.0;
+    const value = sample / 8388608.0;
     floatSamples[i] = value;
     sum += value * value;
   }
 
-  // Recording stores only decoded PCM, never the transport header.
   if (recording) {
     recordedChunks.push(pcm);
     recordedSamples += sampleCount;
@@ -745,169 +620,90 @@ function playPCM16(arrayBuffer) {
   level.style.width = Math.min(100, rms * 220) + "%";
 
   audioWorkletNode.port.postMessage(
-    {
-      type: "pcm",
-      buffer: floatSamples.buffer
-    },
+    { type: "pcm", buffer: floatSamples.buffer },
     [floatSamples.buffer]
   );
 
   playbackStarted = true;
 }
-function startRecording() {
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    return;
-  }
 
+function startRecording() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
   recordedChunks = [];
   recordedSamples = 0;
-
   recording = true;
   recordStartTime = Date.now();
-
   record.disabled = true;
   stopRecord.disabled = false;
-
-  recordStatus.textContent =
-    "🔴 Recording...";
-
+  recordStatus.textContent = "🔴 Recording...";
   duration.textContent = "00:00";
-
   updateDuration();
 }
 
 function stopRecording() {
   if (!recording) return;
-
   recording = false;
-
   if (timerHandle) {
     clearTimeout(timerHandle);
     timerHandle = null;
   }
-
   record.disabled = false;
   stopRecord.disabled = true;
-
-  recordStatus.textContent =
-    "Processing WAV...";
-
-  const wavBlob =
-    createWavBlob(
-      recordedChunks,
-      recordedSamples
-    );
-
-  const url =
-    URL.createObjectURL(wavBlob);
-
-  const link =
-    document.createElement("a");
-
-  const stamp =
-    new Date()
-      .toISOString()
-      .replace(/[:.]/g, "-");
-
+  recordStatus.textContent = "Processing WAV...";
+  const wavBlob = createWavBlob(recordedChunks, recordedSamples);
+  const url = URL.createObjectURL(wavBlob);
+  const link = document.createElement("a");
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   link.href = url;
-  link.download =
-    "ESP32_INMP441_" +
-    stamp +
-    ".wav";
-
+  link.download = "ESP32_INMP441_" + stamp + ".wav";
   document.body.appendChild(link);
   link.click();
   link.remove();
-
-  setTimeout(() => {
-    URL.revokeObjectURL(url);
-  }, 1000);
-
-  recordStatus.textContent =
-    "Recording saved as WAV";
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  recordStatus.textContent = "Recording saved as WAV";
 }
 
 function createWavBlob(chunks, sampleCount) {
-  const dataSize =
-    sampleCount * BYTES_PER_SAMPLE;
-
-  const buffer =
-    new ArrayBuffer(44 + dataSize);
-
-  const view =
-    new DataView(buffer);
+  const dataSize = sampleCount * BYTES_PER_SAMPLE;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
 
   function writeString(offset, text) {
     for (let i = 0; i < text.length; i++) {
-      view.setUint8(
-        offset + i,
-        text.charCodeAt(i)
-      );
+      view.setUint8(offset + i, text.charCodeAt(i));
     }
   }
 
   writeString(0, "RIFF");
-  view.setUint32(
-    4,
-    36 + dataSize,
-    true
-  );
-
+  view.setUint32(4, 36 + dataSize, true);
   writeString(8, "WAVE");
-
   writeString(12, "fmt ");
   view.setUint32(16, 16, true);
   view.setUint16(20, 1, true);
   view.setUint16(22, CHANNELS, true);
   view.setUint32(24, SAMPLE_RATE, true);
-
-  view.setUint32(
-    28,
-    SAMPLE_RATE *
-    CHANNELS *
-    BYTES_PER_SAMPLE,
-    true
-  );
-
-  view.setUint16(
-    32,
-    CHANNELS *
-    BYTES_PER_SAMPLE,
-    true
-  );
-
-  view.setUint16(34, 16, true);
-
+  view.setUint32(28, SAMPLE_RATE * CHANNELS * BYTES_PER_SAMPLE, true);
+  view.setUint16(32, CHANNELS * BYTES_PER_SAMPLE, true);
+  view.setUint16(34, BITS_PER_SAMPLE, true);
   writeString(36, "data");
-  view.setUint32(
-    40,
-    dataSize,
-    true
-  );
+  view.setUint32(40, dataSize, true);
 
   let offset = 44;
-
   for (const chunk of chunks) {
     for (let i = 0; i < chunk.length; i++) {
-      view.setInt16(
-        offset,
-        chunk[i],
-        true
-      );
-
-      offset += 2;
+      const sample = chunk[i];
+      view.setUint8(offset, sample & 0xFF);
+      view.setUint8(offset + 1, (sample >> 8) & 0xFF);
+      view.setUint8(offset + 2, (sample >> 16) & 0xFF);
+      offset += 3;
     }
   }
 
-  return new Blob(
-    [buffer],
-    { type: "audio/wav" }
-  );
+  return new Blob([buffer], { type: "audio/wav" });
 }
 
 function resetReconnectState() {
   reconnectAttempts = 0;
-
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
@@ -916,37 +712,19 @@ function resetReconnectState() {
 
 function resetAudioBuffer() {
   if (audioWorkletNode) {
-    try {
-      audioWorkletNode.port.postMessage({ type: "reset" });
-    } catch {}
+    try { audioWorkletNode.port.postMessage({ type: "reset" }); } catch {}
   }
-
   playbackStarted = false;
 }
 
 function scheduleReconnect() {
-  if (!listenerActive || manualStop) {
-    return;
-  }
-
-  if (reconnectTimer || reconnectInProgress) {
-    return;
-  }
-
+  if (!listenerActive || manualStop) return;
+  if (reconnectTimer || reconnectInProgress) return;
   reconnectAttempts++;
-
-  const delay = Math.min(
-    1000 * Math.pow(2, reconnectAttempts - 1),
-    MAX_RECONNECT_DELAY_MS
-  );
-
-  setStatus(
-    `Connection lost — reconnecting in ${Math.ceil(delay / 1000)}s...`
-  );
-
+  const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), MAX_RECONNECT_DELAY_MS);
+  setStatus(`Connection lost — reconnecting in ${Math.ceil(delay / 1000)}s...`);
   $("renderState").textContent = "RECONNECTING";
   $("renderState").className = "value offline";
-
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
     connectWebSocket();
@@ -954,62 +732,32 @@ function scheduleReconnect() {
 }
 
 function connectWebSocket() {
-  if (!listenerActive || manualStop) {
-    return;
-  }
-
-  if (
-    ws &&
-    (
-      ws.readyState === WebSocket.OPEN ||
-      ws.readyState === WebSocket.CONNECTING
-    )
-  ) {
-    return;
-  }
+  if (!listenerActive || manualStop) return;
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
 
   reconnectInProgress = true;
-
-  const protocol =
-    location.protocol === "https:"
-      ? "wss:"
-      : "ws:";
-
-  const socket = new WebSocket(
-    protocol +
-    "//" +
-    location.host +
-    "/ws"
-  );
+  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+  const socket = new WebSocket(protocol + "//" + location.host + "/ws");
 
   ws = socket;
   socket.binaryType = "arraybuffer";
 
   socket.onopen = () => {
     reconnectInProgress = false;
-
     setStatus("Connected — authenticating listener...");
-
     try {
-      socket.send(
-        JSON.stringify({
-          type: "listener"
-        })
-      );
+      socket.send(JSON.stringify({ type: "listener" }));
     } catch (error) {
       console.error(error);
       socket.close();
       return;
     }
-
     resetAudioBuffer();
-
     start.disabled = true;
     stop.disabled = false;
     record.disabled = false;
     rebootBtn.disabled = !deviceOnline;
     forgetWifiBtn.disabled = !deviceOnline;
-
     $("renderState").textContent = "CONNECTED";
     $("renderState").className = "value ok";
   };
@@ -1023,38 +771,24 @@ function connectWebSocket() {
           listenerActive = false;
           reconnectInProgress = false;
           resetReconnectState();
-
-          setStatus(
-            "Access denied — listener authentication failed"
-          );
-
+          setStatus("Access denied — listener authentication failed");
           start.disabled = !deviceOnline;
           stop.disabled = true;
           record.disabled = true;
           stopRecord.disabled = true;
           rebootBtn.disabled = !deviceOnline;
           forgetWifiBtn.disabled = !deviceOnline;
-
           return;
         }
 
         if (message.type === "listener_ready") {
           resetReconnectState();
-
-          setStatus(
-            "Listening — " +
-            message.sample_rate +
-            " Hz " +
-            message.format
-          );
-
+          setStatus("Listening — " + message.sample_rate + " Hz " + message.format);
           rebootBtn.disabled = !deviceOnline;
           forgetWifiBtn.disabled = !deviceOnline;
         }
 
-        if (message.type === "device_status") {
-          applyDeviceStatus(message);
-        }
+        if (message.type === "device_status") applyDeviceStatus(message);
 
         if (message.type === "stream_start") {
           $("streamingState").textContent = "ON";
@@ -1067,122 +801,77 @@ function connectWebSocket() {
         }
 
         if (message.type === "reboot_requested") {
-          setStatus(
-            message.source_connected
-              ? "ESP32 reboot command sent..."
-              : "ESP32 is not currently connected"
-          );
+          setStatus(message.source_connected ? "ESP32 reboot command sent..." : "ESP32 is not currently connected");
         }
 
         if (message.type === "forget_wifi_requested") {
-          setStatus(
-            message.source_connected
-              ? "Forget Wi-Fi command sent. ESP32 is restarting into setup mode..."
-              : "ESP32 is not currently connected"
-          );
-
+          setStatus(message.source_connected
+            ? "Forget Wi-Fi command sent. ESP32 is restarting into setup mode..."
+            : "ESP32 is not currently connected");
           forgetWifiBtn.disabled = true;
           rebootBtn.disabled = true;
         }
-
       } catch {
         setStatus(event.data);
       }
-
       return;
     }
-
-    playPCM16(event.data);
+    playPCM24(event.data);
   };
 
   socket.onerror = () => {
     reconnectInProgress = false;
-
     $("renderState").textContent = "RECONNECTING";
     $("renderState").className = "value offline";
-
     setStatus("Connection error — preparing to reconnect...");
   };
 
   socket.onclose = () => {
     reconnectInProgress = false;
-
-    if (ws === socket) {
-      ws = null;
-    }
-
-    if (recording) {
-      stopRecording();
-    }
-
+    if (ws === socket) ws = null;
+    if (recording) stopRecording();
     $("renderState").textContent = "DISCONNECTED";
     $("renderState").className = "value idle";
-
     start.disabled = !deviceOnline;
     stop.disabled = true;
     record.disabled = true;
     stopRecord.disabled = true;
     rebootBtn.disabled = !deviceOnline;
     forgetWifiBtn.disabled = !deviceOnline;
-
     if (manualStop || !listenerActive) {
       setStatus("Disconnected");
       return;
     }
-
     resetAudioBuffer();
     scheduleReconnect();
   };
 }
 
 start.onclick = async () => {
-  if (listenerActive) {
-    return;
-  }
-
+  if (listenerActive) return;
   manualStop = false;
   listenerActive = true;
   resetReconnectState();
 
   try {
-    audioContext =
-      new (
-        window.AudioContext ||
-        window.webkitAudioContext
-      )({
-        sampleRate: SAMPLE_RATE,
-        latencyHint: "interactive"
-      });
-
+    audioContext = new (window.AudioContext || window.webkitAudioContext)({
+      sampleRate: SAMPLE_RATE,
+      latencyHint: "interactive"
+    });
     gainNode = audioContext.createGain();
-
-    gainNode.gain.value =
-      Number(volume.value);
-
-    gainNode.connect(
-      audioContext.destination
-    );
-
+    gainNode.gain.value = Number(volume.value);
+    gainNode.connect(audioContext.destination);
     await audioContext.resume();
-
     await createAudioEngine();
-
     connectWebSocket();
-
   } catch (error) {
     console.error(error);
-
     listenerActive = false;
     manualStop = true;
-
     setStatus("Audio initialization failed");
-
     if (audioContext) {
-      try {
-        await audioContext.close();
-      } catch {}
+      try { await audioContext.close(); } catch {}
     }
-
     audioContext = null;
     gainNode = null;
   }
@@ -1194,21 +883,12 @@ stop.onclick = () => {
   reconnectInProgress = false;
   resetReconnectState();
 
-  if (recording) {
-    stopRecording();
-  }
+  if (recording) stopRecording();
 
   if (ws) {
     if (ws.readyState === WebSocket.OPEN) {
-      try {
-        ws.send(
-          JSON.stringify({
-            type: "listener_stop"
-          })
-        );
-      } catch {}
+      try { ws.send(JSON.stringify({ type: "listener_stop" })); } catch {}
     }
-
     ws.close();
     ws = null;
   }
@@ -1230,14 +910,10 @@ stop.onclick = () => {
   }
 
   gainNode = null;
-
   level.style.width = "0%";
-
   $("streamingState").textContent = "OFF";
   $("streamingState").className = "value idle";
-
   setStatus("Stopped");
-
   start.disabled = !deviceOnline;
   stop.disabled = true;
   record.disabled = true;
@@ -1247,114 +923,50 @@ stop.onclick = () => {
 };
 
 rebootBtn.onclick = async () => {
-  if (!deviceOnline) {
-    setStatus("ESP32 is offline");
-    return;
-  }
-
-  const confirmed =
-    window.confirm(
-      "Are you sure you want to reboot the ESP32?\n\n" +
-      "The microphone stream will stop and the ESP32 will restart."
-    );
-
+  if (!deviceOnline) { setStatus("ESP32 is offline"); return; }
+  const confirmed = window.confirm(
+    "Are you sure you want to reboot the ESP32?\n\n" +
+    "The microphone stream will stop and the ESP32 will restart."
+  );
   if (!confirmed) return;
-
   setStatus("Sending ESP32 reboot command...");
-
   try {
-    const response =
-      await fetch(
-        "/api/esp32/reboot",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: "{}"
-        }
-      );
-
-    const data =
-      await response.json();
-
-    if (!response.ok || !data.ok) {
-      throw new Error(
-        data.error || "Reboot request failed"
-      );
-    }
-
-    setStatus(
-      data.source_connected
-        ? "ESP32 reboot command sent."
-        : "ESP32 is not currently connected."
-    );
-
+    const response = await fetch("/api/esp32/reboot", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}"
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || "Reboot request failed");
+    setStatus(data.source_connected ? "ESP32 reboot command sent." : "ESP32 is not currently connected.");
   } catch (error) {
     console.error(error);
-
-    setStatus(
-      "Could not send reboot command."
-    );
+    setStatus("Could not send reboot command.");
   }
 };
 
 forgetWifiBtn.onclick = async () => {
-  if (!deviceOnline) {
-    setStatus("ESP32 is offline");
-    return;
-  }
-
+  if (!deviceOnline) { setStatus("ESP32 is offline"); return; }
   const confirmed = window.confirm(
     "Are you sure you want to forget the ESP32 Wi-Fi settings?\n\n" +
     "The ESP32 will erase its saved Wi-Fi credentials and restart into setup mode.\n\n" +
     "You will need to connect to the ESP32 setup hotspot to configure Wi-Fi again."
   );
-
   if (!confirmed) return;
-
   forgetWifiBtn.disabled = true;
   rebootBtn.disabled = true;
   setStatus("Sending Forget Wi-Fi command...");
-
   try {
-    // HTTP control endpoint: works even when Start Listening is not active.
     const response = await fetch("/api/esp32/forget-wifi", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
+      headers: { "Content-Type": "application/json" },
       body: "{}"
     });
-
     const data = await response.json();
-
-    if (!response.ok || !data.ok) {
-      throw new Error(data.error || "Forget Wi-Fi request failed");
-    }
-
-    setStatus(
-      data.source_connected
-        ? "Forget Wi-Fi command sent. ESP32 is restarting into setup mode..."
-        : "ESP32 is not currently connected."
-    );
-
+    if (!response.ok || !data.ok) throw new Error(data.error || "Forget Wi-Fi request failed");
+    setStatus(data.source_connected
+      ? "Forget Wi-Fi command sent. ESP32 is restarting into setup mode..."
+      : "ESP32 is not currently connected.");
   } catch (error) {
     console.error(error);
-    setStatus("Could not send Forget Wi-Fi command.");
-    forgetWifiBtn.disabled = !deviceOnline;
-    rebootBtn.disabled = !deviceOnline;
-  }
-};
-
-record.onclick =
-  startRecording;
-
-stopRecord.onclick =
-  stopRecording;
-
-updateVolume();
-refreshDeviceStatus();
-</script>
-</body>
-</html>
+    setStatus("
