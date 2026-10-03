@@ -174,7 +174,8 @@ const wss =
   new WebSocket.Server({
     server,
     path: "/ws",
-    maxPayload: 16384
+    maxPayload: 16384,
+    perMessageDeflate: false
   });
 
 
@@ -777,6 +778,25 @@ wss.on(
               listener.authenticated
             ) {
 
+              // PCM audio is a continuous real-time stream. Do not allow a
+              // slow browser/listener to build an unbounded server-side queue.
+              // At 44.1 kHz / PCM24 mono the stream is about 132 KB/s, so
+              // 512 KB represents only a few seconds of queued audio.
+              const buffered =
+                Number(listener.bufferedAmount || 0);
+
+              if (buffered > 512 * 1024) {
+                console.warn(
+                  `Terminating slow listener: buffered=${buffered} bytes`
+                );
+
+                try {
+                  listener.terminate();
+                } catch {}
+
+                continue;
+              }
+
               try {
 
                 listener.send(
@@ -786,7 +806,15 @@ wss.on(
                   }
                 );
 
-              } catch {}
+              } catch (err) {
+                console.warn(
+                  `Audio forwarding error: ${err.message}`
+                );
+
+                try {
+                  listener.terminate();
+                } catch {}
+              }
             }
           }
 
@@ -906,10 +934,10 @@ wss.on(
                 "source_ready",
 
               sample_rate:
-                16000,
+                44100,
 
               format:
-                "PCM16 mono"
+                "PCM24 mono"
             }
           );
 
@@ -1025,10 +1053,10 @@ wss.on(
                 "listener_ready",
 
               sample_rate:
-                16000,
+                44100,
 
               format:
-                "PCM16 mono"
+                "PCM24 mono"
             }
           );
 
