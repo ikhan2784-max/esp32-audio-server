@@ -6,3 +6,9 @@ README.md
 fly.toml
 .env
 *.md
+build/
+main/
+sdkconfig
+sdkconfig.old
+dependencies.lock
+CMakeLists.txt
