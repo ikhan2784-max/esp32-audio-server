@@ -14,23 +14,18 @@ const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
 // ============================================================
 // TIMER TUNING
 // ------------------------------------------------------------
-// CRITICAL: Only ONE ping mechanism is allowed.
+// Rules learned from testing:
+//   - 3 ping mechanisms  → 6 s disconnects (ESP32 mutex contention)
+//   - 1 ping mechanism, 45 s → 9 s disconnects (Render proxy idle)
+//   - 1 ping mechanism, 15 s → stable (both satisfied)
 //
-// The ESP-IDF esp_websocket_client library uses a single
-// internal mutex for all TX/RX/ping/pong traffic. If the server
-// sends native pings too frequently, the ESP32's audio sender
-// task cannot acquire the mutex in time and the socket dies
-// with close_code:1006 (abnormal closure, no close frame).
-//
-// Solution: ping each client once every 45 s from a per-
-// connection timer. That is plenty to defeat Render's 60 s
-// proxy idle timeout, and it leaves the ESP32 mutex free for
-// audio 99.9% of the time.
+// There must be EXACTLY ONE ping mechanism: the per-connection
+// ws.pingTimer. Do NOT add pings anywhere else.
 // ============================================================
-const WS_CLIENT_PING_MS            = 15000;  // per-connection native ping
-const DEVICE_HEARTBEAT_INTERVAL_MS = 5000;   // bookkeeping tick (no ping)
+const WS_CLIENT_PING_MS            = 15000;  // 15 s — the ONLY ping
+const DEVICE_HEARTBEAT_INTERVAL_MS = 5000;   // bookkeeping check only
 const DEVICE_HEARTBEAT_TIMEOUT_MS  = 20000;  // stale source threshold
-const SOURCE_KEEPALIVE_MS          = 30000;  // JSON keepalive to ESP32
+const SOURCE_KEEPALIVE_MS          = 10000;  // 10 s JSON keepalive to ESP32
 
 const app = express();
 const server = http.createServer(app);
@@ -396,8 +391,8 @@ wss.on("connection", (ws, req) => {
     });
 
     // ---- THE ONLY ping mechanism ----
-    // One native ping per connection every 45 seconds. This
-    // defeats Render's 60 s proxy idle timeout without
+    // One native ping per connection every 15 seconds.
+    // 15 s defeats Render's 60 s proxy idle timeout without
     // overwhelming the ESP32's WebSocket mutex.
     ws.pingTimer = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
@@ -461,7 +456,6 @@ wss.on("connection", (ws, req) => {
                 );
             }
 
-            // Forward to every authenticated listener
             for (const listener of listeners) {
                 if (listener.readyState === WebSocket.OPEN &&
                     listener.role === "listener" &&
@@ -498,7 +492,6 @@ wss.on("connection", (ws, req) => {
             return;
         }
 
-        // ---- health_response from ESP32 ----
         if (message.type === "health_response" &&
             ws.role === "source" &&
             ws.authenticated) {
@@ -511,7 +504,6 @@ wss.on("connection", (ws, req) => {
             return;
         }
 
-        // ---- hello: ESP32 authenticates as source ----
         if (message.type === "hello") {
             if (message.device !== "ESP32-S3-INMP441" ||
                 !SOURCE_TOKEN ||
@@ -559,7 +551,6 @@ wss.on("connection", (ws, req) => {
             return;
         }
 
-        // ---- heartbeat from ESP32 ----
         if (message.type === "heartbeat" &&
             ws.role === "source" &&
             ws.authenticated) {
@@ -568,7 +559,6 @@ wss.on("connection", (ws, req) => {
             return;
         }
 
-        // ---- listener: browser authenticates as listener ----
         if (message.type === "listener") {
             if (!ws.sessionAuthenticated) {
                 console.log("Rejected listener without session.");
@@ -602,7 +592,6 @@ wss.on("connection", (ws, req) => {
             return;
         }
 
-        // ---- listener_stop ----
         if (message.type === "listener_stop") {
             if (ws.role === "listener" && ws.authenticated) {
                 listeners.delete(ws);
@@ -613,7 +602,6 @@ wss.on("connection", (ws, req) => {
             return;
         }
 
-        // ---- listener requests ESP32 reboot ----
         if (message.type === "esp32_reboot") {
             if (ws.role !== "listener" || !ws.authenticated) return;
             console.log("Listener requested ESP32 reboot.");
@@ -636,7 +624,6 @@ wss.on("connection", (ws, req) => {
             return;
         }
 
-        // ---- listener requests ESP32 forget-wifi ----
         if (message.type === "forget_wifi") {
             if (ws.role !== "listener" || !ws.authenticated) return;
             console.log("Listener requested ESP32 Wi-Fi reset.");
@@ -664,7 +651,6 @@ wss.on("connection", (ws, req) => {
             `uptime=${Date.now() - ws.connectedAt}ms`
         );
 
-        // Stop this connection's ping timer
         if (ws.pingTimer) {
             clearInterval(ws.pingTimer);
             ws.pingTimer = null;
@@ -704,10 +690,6 @@ wss.on("connection", (ws, req) => {
 
 // ============================================================
 // INTERVAL: stale-client detection (BOOKKEEPING ONLY — NO PING)
-// ------------------------------------------------------------
-// The per-connection ws.pingTimer handles pinging. This timer
-// only checks the isAlive flag that the pong handler sets, and
-// checks whether the ESP32 source has gone stale.
 // ============================================================
 const heartbeat = setInterval(() => {
     wss.clients.forEach((ws) => {
@@ -745,9 +727,6 @@ const heartbeat = setInterval(() => {
 
 // ============================================================
 // INTERVAL: application-level JSON keepalive to ESP32
-// ------------------------------------------------------------
-// Not a native ping. Sends {"type":"keepalive"} JSON, which the
-// ESP32 handles as a no-op. Cheap liveness probe.
 // ============================================================
 const sourceKeepalive = setInterval(() => {
     for (const source of sources) {
