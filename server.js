@@ -23,7 +23,7 @@ const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
 const WS_CLIENT_PING_MS          = 20000;  // ping all clients
 const DEVICE_HEARTBEAT_INTERVAL_MS = 5000;   // how often to check isAlive
 const DEVICE_HEARTBEAT_TIMEOUT_MS  = 20000;  // how long before a source is stale
-const SOURCE_KEEPALIVE_MS        = 10000;  // JSON keepalive to ESP32
+const SOURCE_KEEPALIVE_MS        = 30000;  // JSON keepalive to ESP32
 const SOURCE_NATIVE_PING_MS      = 5000;   // native WS ping to ESP32
 
 const app = express();
@@ -746,30 +746,6 @@ const sourceKeepalive = setInterval(() => {
     }
 }, SOURCE_KEEPALIVE_MS);
 
-// ============================================================
-// INTERVAL: native WS ping to ESP32 source
-// ------------------------------------------------------------
-// Runs alongside the per-connection ping timer. The ESP32
-// benefits from extra pings because its TLS stack is more
-// fragile than a browser's.
-// ============================================================
-const sourcePingInterval = setInterval(() => {
-    for (const source of sources) {
-        if (source.readyState === WebSocket.OPEN &&
-            source.role === "source" &&
-            source.authenticated) {
-            try {
-                source.ping();
-            } catch (err) {
-                console.error("Source ping error:", err.message);
-            }
-        }
-    }
-}, SOURCE_NATIVE_PING_MS);
-
-// ============================================================
-// INTERVAL: session cleanup
-// ============================================================
 const sessionCleanup = setInterval(() => {
     const now = Date.now();
     for (const [sessionId, session] of sessions) {
@@ -784,7 +760,6 @@ server.on("close", () => {
     clearInterval(heartbeat);
     clearInterval(sessionCleanup);
     clearInterval(sourceKeepalive);
-    clearInterval(sourcePingInterval);
 });
 
 server.listen(PORT, "0.0.0.0", () => {
