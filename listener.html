@@ -87,7 +87,7 @@ input[type=range]{width:100%;accent-color:var(--blue);}
     <input id="volume" type="range" min="0" max="3" step="0.01" value="1.5">
     <div class="label" style="margin-top:22px">Audio Level</div>
     <div id="meter"><div id="level"></div></div>
-    <div class="small" style="margin-top:12px">16 kHz mono PCM24 • Secure PIN • Multi-listener • Low-latency playback</div>
+    <div class="small" style="margin-top:12px">44.1 kHz mono PCM24 • Secure PIN • Multi-listener • Low-latency playback</div>
   </div>
 
   <div class="section">
@@ -103,7 +103,7 @@ input[type=range]{width:100%;accent-color:var(--blue);}
 </div>
 
 <script>
-const SAMPLE_RATE = 16000;
+const SAMPLE_RATE = 44100;
 const CHANNELS = 1;
 const BYTES_PER_SAMPLE = 3;
 const BITS_PER_SAMPLE = 24;
