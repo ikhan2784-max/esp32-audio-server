@@ -312,7 +312,7 @@ input[type=range]{
     </div>
 
     <div class="small" style="margin-top:12px">
-      16 kHz mono PCM16 • Secure PIN • Multi-listener • Low-latency playback
+      44.1 kHz mono PCM24 • Secure PIN • Multi-listener • Low-latency playback
     </div>
   </div>
 
@@ -660,7 +660,14 @@ async function createAudioEngine() {
             // re-timing or restarting the audio clock.
             channel[i] = 0;
             this.underruns++;
-            this.started = false;
+
+            // Do not force a full TARGET_BUFFER refill after one transient
+            // packet gap. Continue the audio clock and resume normal output
+            // as soon as MIN_BUFFER is available again. This avoids a long
+            // audible pause after a short network interruption.
+            if (this.available < this.minSamples) {
+              this.started = false;
+            }
           }
         }
 
