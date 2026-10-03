@@ -1,0 +1,32 @@
+app = "esp32-fly-audio"
+primary_region = "yyz"   # Toronto — change to your closest region
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+
+[[services]]
+  internal_port = 8080
+  protocol = "tcp"
+  auto_stop_machines = "off"      # Keep running — prevents sleep
+  auto_start_machines = true
+  min_machines_running = 1         # Always at least 1 machine
+
+  [[services.ports]]
+    handlers = ["tls", "http"]
+    port = 443
+
+  [[services.ports]]
+    handlers = ["http"]
+    port = 80
+
+  [services.http_checks]
+    [[services.http_checks.checks]]
+      interval = "15s"
+      timeout = "5s"
+      grace_period = "10s"
+      method = "GET"
+      path = "/health"
+      protocol = "http"
