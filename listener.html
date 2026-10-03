@@ -312,7 +312,7 @@ input[type=range]{
     </div>
 
     <div class="small" style="margin-top:12px">
-      44.1 kHz mono PCM24 • Secure PIN • Multi-listener • Low-latency playback
+      16 kHz mono PCM16 • Secure PIN • Multi-listener • Low-latency playback
     </div>
   </div>
 
@@ -339,17 +339,16 @@ input[type=range]{
 </div>
 
 <script>
-const SAMPLE_RATE = 44100;
+const SAMPLE_RATE = 16000;
 const CHANNELS = 1;
-const BYTES_PER_SAMPLE = 3;
-const BITS_PER_SAMPLE = 24;
+const BYTES_PER_SAMPLE = 2;
 
 // Continuous playback jitter buffer.
 // 120 ms startup gives the network enough room to absorb small packet
 // arrival variations without making the listener feel noticeably delayed.
-const TARGET_BUFFER_SECONDS = 0.12;
-const MAX_BUFFER_SECONDS = 0.50;
-const MIN_BUFFER_SECONDS = 0.04;
+const TARGET_BUFFER_SECONDS = 0.20;
+const MAX_BUFFER_SECONDS = 0.80;
+const MIN_BUFFER_SECONDS = 0.06;
 
 let ws = null;
 let audioContext = null;
@@ -564,10 +563,10 @@ function updateDuration() {
 /*
  * Continuous PCM playback.
  *
- * The browser receives 11.6 ms ESP32 packets, but WebSocket delivery is not
+ * The browser receives 16 ms ESP32 packets, but WebSocket delivery is not
  * perfectly periodic. Instead of scheduling every packet separately, audio
  * is placed into an AudioWorklet ring buffer. The worklet pulls samples at
- * exactly 44.1 kHz, which prevents packet-to-packet scheduling gaps.
+ * exactly 16 kHz, which prevents packet-to-packet scheduling gaps.
  */
 
 async function createAudioEngine() {
@@ -576,7 +575,7 @@ async function createAudioEngine() {
       constructor() {
         super();
 
-        this.capacity = 32768; // about 0.74 seconds at 44.1 kHz
+        this.capacity = 32768; // about 2.05 seconds at 16 kHz
         this.buffer = new Float32Array(this.capacity);
         this.readIndex = 0;
         this.writeIndex = 0;
@@ -660,14 +659,7 @@ async function createAudioEngine() {
             // re-timing or restarting the audio clock.
             channel[i] = 0;
             this.underruns++;
-
-            // Do not force a full TARGET_BUFFER refill after one transient
-            // packet gap. Continue the audio clock and resume normal output
-            // as soon as MIN_BUFFER is available again. This avoids a long
-            // audible pause after a short network interruption.
-            if (this.available < this.minSamples) {
-              this.started = false;
-            }
+            this.started = false;
           }
         }
 
@@ -705,12 +697,12 @@ async function createAudioEngine() {
   playbackStarted = false;
 }
 
-function playPCM24(arrayBuffer) {
+function playPCM16(arrayBuffer) {
   if (!audioContext || !gainNode || !audioWorkletNode || !audioWorkletReady) {
     return;
   }
 
-  // ESP32 framed-pcm-v1 header: 16 bytes, followed by packed signed 24-bit PCM samples.
+  // ESP32 framed-pcm-v1 header: 16 bytes, followed by PCM16 samples.
   if (arrayBuffer.byteLength < 16) return;
 
   const view = new DataView(arrayBuffer);
@@ -724,29 +716,21 @@ function playPCM24(arrayBuffer) {
     version !== 1 ||
     headerBytes !== 16 ||
     sampleCount === 0 ||
-    arrayBuffer.byteLength !== headerBytes + sampleCount * 3
+    arrayBuffer.byteLength !== headerBytes + sampleCount * 2
   ) {
     console.warn("Invalid ESP32 audio frame", arrayBuffer.byteLength);
     return;
   }
 
-  const pcm = new Int32Array(sampleCount);
+  const pcm = new Int16Array(sampleCount);
   const floatSamples = new Float32Array(sampleCount);
   let sum = 0;
 
   for (let i = 0; i < sampleCount; i++) {
-    const offset = headerBytes + i * 3;
-    let sample =
-      view.getUint8(offset) |
-      (view.getUint8(offset + 1) << 8) |
-      (view.getUint8(offset + 2) << 16);
-
-    if (sample & 0x800000) {
-      sample |= 0xFF000000;
-    }
+    const sample = view.getInt16(headerBytes + i * 2, true);
     pcm[i] = sample;
 
-    const value = sample / 8388608.0;
+    const value = sample / 32768.0;
     floatSamples[i] = value;
     sum += value * value;
   }
@@ -770,7 +754,6 @@ function playPCM24(arrayBuffer) {
 
   playbackStarted = true;
 }
-
 function startRecording() {
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     return;
@@ -893,7 +876,7 @@ function createWavBlob(chunks, sampleCount) {
     true
   );
 
-  view.setUint16(34, BITS_PER_SAMPLE, true);
+  view.setUint16(34, 16, true);
 
   writeString(36, "data");
   view.setUint32(
@@ -906,11 +889,13 @@ function createWavBlob(chunks, sampleCount) {
 
   for (const chunk of chunks) {
     for (let i = 0; i < chunk.length; i++) {
-      const sample = chunk[i];
-      view.setUint8(offset, sample & 0xFF);
-      view.setUint8(offset + 1, (sample >> 8) & 0xFF);
-      view.setUint8(offset + 2, (sample >> 16) & 0xFF);
-      offset += 3;
+      view.setInt16(
+        offset,
+        chunk[i],
+        true
+      );
+
+      offset += 2;
     }
   }
 
@@ -1017,8 +1002,6 @@ function connectWebSocket() {
       return;
     }
 
-    // Reset the worklet buffer on every (re)connect so stale audio from the
-    // previous session can never play after reconnect.
     resetAudioBuffer();
 
     start.disabled = true;
@@ -1109,7 +1092,7 @@ function connectWebSocket() {
       return;
     }
 
-    playPCM24(event.data);
+    playPCM16(event.data);
   };
 
   socket.onerror = () => {
