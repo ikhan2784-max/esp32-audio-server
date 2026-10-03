@@ -9,7 +9,7 @@
 :root{--bg:#0b0f14;--card:#151b23;--card2:#10161d;--border:#28313d;--text:#f2f5f8;--muted:#9aa7b5;--green:#35d07f;--red:#ff5d67;--yellow:#f5c451;--blue:#5aa7ff;}
 *{box-sizing:border-box}
 body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text);}
-.container{width:min(900px,calc(100% - 28px));margin:24px auto 50px;}
+.container{width:min(1200px,calc(100% - 28px));margin:24px auto 50px;}
 h1{margin:0 0 5px;font-size:30px;}
 .subtitle{color:var(--muted);margin-bottom:22px;}
 .section{margin-top:18px;padding:20px;background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.18);}
@@ -37,8 +37,43 @@ input[type=range]{width:100%;accent-color:var(--blue);}
 .record-box{background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:14px;}
 .record-value{margin-top:8px;font-weight:700;}
 .small{color:var(--muted);font-size:13px;line-height:1.5;}
+
+/* Side-by-side layout */
+.split{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:18px;
+  margin-top:18px;
+}
+.split > .section{
+  margin-top:0;
+  min-width:0;
+}
+
+/* Compact cards in side-by-side mode */
+.split .card{
+  padding:10px 12px;
+  min-height:62px;
+}
+.split .value{
+  font-size:15px;
+}
+.split .label{
+  font-size:12px;
+  margin-bottom:6px;
+}
+.split .grid{
+  gap:8px;
+}
+
+@media(max-width:850px){
+  .split{
+    grid-template-columns:1fr;
+  }
+}
+
 @media(max-width:650px){
-  .container{width:min(100% - 18px,900px);margin-top:14px;}
+  .container{width:min(100% - 18px,1200px);margin-top:14px;}
   h1{font-size:25px}
   .grid,.record-grid{grid-template-columns:1fr;}
   .section{padding:16px;}
@@ -54,7 +89,7 @@ input[type=range]{width:100%;accent-color:var(--blue);}
   <div class="subtitle">Secure Live Audio Listener</div>
 
   <!-- ============================================================ -->
-  <!-- LISTENER ACCESS (moved to top)                               -->
+  <!-- 1. LISTENER ACCESS                                           -->
   <!-- ============================================================ -->
   <div class="section">
     <div class="section-title">Listener Access</div>
@@ -67,53 +102,7 @@ input[type=range]{width:100%;accent-color:var(--blue);}
   </div>
 
   <!-- ============================================================ -->
-  <!-- ESP32 STATUS                                                 -->
-  <!-- ============================================================ -->
-  <div class="section">
-    <div class="section-title">ESP32 Status</div>
-    <div class="grid">
-      <div class="card"><div class="label">Device</div><div id="deviceStatus" class="value offline">🔴 OFFLINE</div></div>
-      <div class="card"><div class="label">Audio</div><div id="audioState" class="value idle">IDLE</div></div>
-      <div class="card"><div class="label">Streaming</div><div id="streamingState" class="value idle">OFF</div></div>
-      <div class="card"><div class="label">Listeners</div><div id="listenerCount" class="value">0</div></div>
-      <div class="card"><div class="label">Render / WSS</div><div id="renderState" class="value idle">Checking...</div></div>
-      <div class="card"><div class="label">Last Seen</div><div id="lastSeen" class="value">Never</div></div>
-      <div class="card"><div class="label">Last Reboot</div><div id="lastReboot" class="value">Never</div></div>
-      <div class="card"><div class="label">ESP32 Uptime</div><div id="uptime" class="value">—</div></div>
-      <div class="card"><div class="label">Connection Since</div><div id="connectedAt" class="value">—</div></div>
-    </div>
-  </div>
-
-  <!-- ============================================================ -->
-  <!-- ESP32 HARDWARE HEALTH                                        -->
-  <!-- ============================================================ -->
-  <div class="section">
-    <div class="section-title">ESP32 Hardware Health</div>
-    <div class="grid">
-      <div class="card"><div class="label">MAC</div><div id="hwMac" class="value">—</div></div>
-      <div class="card"><div class="label">Chip</div><div id="hwChip" class="value">—</div></div>
-      <div class="card"><div class="label">Version</div><div id="hwVersion" class="value">—</div></div>
-      <div class="card"><div class="label">Uptime</div><div id="hwUptime" class="value">—</div></div>
-      <div class="card"><div class="label">Boot Reason</div><div id="hwBoot" class="value">—</div></div>
-      <div class="card"><div class="label">Total Reboots</div><div id="hwReboots" class="value">—</div></div>
-      <div class="card"><div class="label">Brownouts</div><div id="hwBrownouts" class="value">—</div></div>
-      <div class="card"><div class="label">Chip Temp</div><div id="hwTemp" class="value">—</div></div>
-      <div class="card"><div class="label">WiFi RSSI</div><div id="hwRssi" class="value">—</div></div>
-      <div class="card"><div class="label">WiFi Drops</div><div id="hwWifiDrops" class="value">—</div></div>
-      <div class="card"><div class="label">WS Connects</div><div id="hwWsConn" class="value">—</div></div>
-      <div class="card"><div class="label">WS Disconnects</div><div id="hwWsDisc" class="value">—</div></div>
-      <div class="card"><div class="label">Free Heap</div><div id="hwHeap" class="value">—</div></div>
-      <div class="card"><div class="label">Min Heap</div><div id="hwMinHeap" class="value">—</div></div>
-      <div class="card"><div class="label">Free PSRAM</div><div id="hwPsram" class="value">—</div></div>
-      <div class="card"><div class="label">Stacks (A/Tx/Mon)</div><div id="hwStack" class="value">—</div></div>
-      <div class="card"><div class="label">Packets / Bytes</div><div id="hwPackets" class="value">—</div></div>
-      <div class="card"><div class="label">Send Err / I2S Err</div><div id="hwErrors" class="value">—</div></div>
-      <div class="card"><div class="label">TX Max / Slow</div><div id="hwTx" class="value">—</div></div>
-    </div>
-  </div>
-
-  <!-- ============================================================ -->
-  <!-- LIVE AUDIO                                                   -->
+  <!-- 2. LIVE AUDIO                                                -->
   <!-- ============================================================ -->
   <div class="section">
     <div class="section-title">Live Audio</div>
@@ -128,7 +117,7 @@ input[type=range]{width:100%;accent-color:var(--blue);}
   </div>
 
   <!-- ============================================================ -->
-  <!-- RECORDING                                                    -->
+  <!-- 3. RECORDING                                                 -->
   <!-- ============================================================ -->
   <div class="section">
     <div class="section-title">Recording</div>
@@ -141,7 +130,56 @@ input[type=range]{width:100%;accent-color:var(--blue);}
   </div>
 
   <!-- ============================================================ -->
-  <!-- EVENT LOG                                                    -->
+  <!-- 4. ESP32 STATUS + HARDWARE HEALTH (SIDE BY SIDE)             -->
+  <!-- ============================================================ -->
+  <div class="split">
+
+    <!-- ESP32 Status -->
+    <div class="section">
+      <div class="section-title">ESP32 Status</div>
+      <div class="grid">
+        <div class="card"><div class="label">Device</div><div id="deviceStatus" class="value offline">🔴 OFFLINE</div></div>
+        <div class="card"><div class="label">Audio</div><div id="audioState" class="value idle">IDLE</div></div>
+        <div class="card"><div class="label">Streaming</div><div id="streamingState" class="value idle">OFF</div></div>
+        <div class="card"><div class="label">Listeners</div><div id="listenerCount" class="value">0</div></div>
+        <div class="card"><div class="label">Render / WSS</div><div id="renderState" class="value idle">Checking...</div></div>
+        <div class="card"><div class="label">Last Seen</div><div id="lastSeen" class="value">Never</div></div>
+        <div class="card"><div class="label">Last Reboot</div><div id="lastReboot" class="value">Never</div></div>
+        <div class="card"><div class="label">ESP32 Uptime</div><div id="uptime" class="value">—</div></div>
+        <div class="card"><div class="label">Connection Since</div><div id="connectedAt" class="value">—</div></div>
+      </div>
+    </div>
+
+    <!-- ESP32 Hardware Health -->
+    <div class="section">
+      <div class="section-title">ESP32 Hardware Health</div>
+      <div class="grid">
+        <div class="card"><div class="label">MAC</div><div id="hwMac" class="value">—</div></div>
+        <div class="card"><div class="label">Chip</div><div id="hwChip" class="value">—</div></div>
+        <div class="card"><div class="label">Version</div><div id="hwVersion" class="value">—</div></div>
+        <div class="card"><div class="label">Uptime</div><div id="hwUptime" class="value">—</div></div>
+        <div class="card"><div class="label">Boot Reason</div><div id="hwBoot" class="value">—</div></div>
+        <div class="card"><div class="label">Total Reboots</div><div id="hwReboots" class="value">—</div></div>
+        <div class="card"><div class="label">Brownouts</div><div id="hwBrownouts" class="value">—</div></div>
+        <div class="card"><div class="label">Chip Temp</div><div id="hwTemp" class="value">—</div></div>
+        <div class="card"><div class="label">WiFi RSSI</div><div id="hwRssi" class="value">—</div></div>
+        <div class="card"><div class="label">WiFi Drops</div><div id="hwWifiDrops" class="value">—</div></div>
+        <div class="card"><div class="label">WS Connects</div><div id="hwWsConn" class="value">—</div></div>
+        <div class="card"><div class="label">WS Disconnects</div><div id="hwWsDisc" class="value">—</div></div>
+        <div class="card"><div class="label">Free Heap</div><div id="hwHeap" class="value">—</div></div>
+        <div class="card"><div class="label">Min Heap</div><div id="hwMinHeap" class="value">—</div></div>
+        <div class="card"><div class="label">Free PSRAM</div><div id="hwPsram" class="value">—</div></div>
+        <div class="card"><div class="label">Stacks (A/Tx/Mon)</div><div id="hwStack" class="value">—</div></div>
+        <div class="card"><div class="label">Packets / Bytes</div><div id="hwPackets" class="value">—</div></div>
+        <div class="card"><div class="label">Send / I2S Err</div><div id="hwErrors" class="value">—</div></div>
+        <div class="card"><div class="label">TX Max / Slow</div><div id="hwTx" class="value">—</div></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- 5. EVENT LOG                                                 -->
   <!-- ============================================================ -->
   <div class="section">
     <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
