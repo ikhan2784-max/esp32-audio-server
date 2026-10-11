@@ -62,7 +62,7 @@ try{
 const response=await fetch("/api/auth",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify({pin:pin})});
 let data=null;
 try{data=await response.json();}catch{data=null;}
-if(response.ok&&data&&data.ok){showMessage("Access granted. Opening listener...","success");window.location.href="/listener";return;}
+if(response.ok&&data&&data.ok){showMessage("Access granted. Opening Phase 5 WebRTC listener...","success");window.location.href="/phase5-listener";return;}
 if(response.status===401){showMessage("Incorrect PIN.","error");}
 else{showMessage("Authentication failed. Please try again.","error");}
 }catch(error){
