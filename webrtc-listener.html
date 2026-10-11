@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Phase 5 WebRTC Listener</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background:#0b1020; color:#e9eefc; }
+    body { margin:0; padding:24px; min-height:100vh; display:grid; place-items:center; }
+    main { width:min(100%, 620px); background:#131c33; border:1px solid #263553; border-radius:18px; padding:24px; box-shadow:0 18px 55px #0006; }
+    h1 { margin:0 0 6px; font-size:1.4rem; } p { color:#aab7d0; line-height:1.5; }
+    .state { border:1px solid #314264; border-radius:12px; padding:14px; margin:18px 0; }
+    .state strong { color:#83b7ff; } .hint { font-size:.9rem; }
+    .actions { display:flex; flex-wrap:wrap; gap:10px; margin:18px 0; }
+    button { border:0; border-radius:10px; padding:11px 16px; font:inherit; font-weight:650; color:#071120; background:#78adff; cursor:pointer; }
+    button.secondary { background:#344463; color:#eef3ff; } button:disabled { opacity:.45; cursor:not-allowed; }
+    audio { width:100%; margin-top:12px; }
+    #error { color:#ff9292; min-height:1.4em; }
+    footer { border-top:1px solid #263553; margin-top:20px; padding-top:14px; color:#8797b4; font-size:.82rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>WebRTC audio listener</h1>
+    <p>Phase 5 connection check. Audio is received over a one-way WebRTC peer connection. Recording, when started, stays in this browser.</p>
+    <div class="state" aria-live="polite">Connection: <strong id="state">Stopped</strong></div>
+    <div class="actions">
+      <button id="start">Start listening</button>
+      <button class="secondary" id="stop" disabled>Stop</button>
+      <button class="secondary" id="record" disabled>Record on this device</button>
+      <button class="secondary" id="stopRecord" disabled>Stop recording</button>
+    </div>
+    <audio id="audio" controls autoplay playsinline></audio>
+    <p id="error" role="status"></p>
+    <p class="hint">If the browser blocks playback, press play above. Some networks require a TURN relay; this Render signaling path currently uses direct ICE connectivity.</p>
+    <footer>ESP32 microphone → WebRTC/Opus → this listener · no listener microphone is requested</footer>
+  </main>
+<script>
+"use strict";
+
+const stateEl = document.getElementById("state");
+const errorEl = document.getElementById("error");
+const audioEl = document.getElementById("audio");
+const startButton = document.getElementById("start");
+const stopButton = document.getElementById("stop");
+const recordButton = document.getElementById("record");
+const stopRecordButton = document.getElementById("stopRecord");
+
+let socket = null;
+let peer = null;
+let remoteStream = null;
+let sessionId = null;
+let listenerActive = false;
+let manualStop = false;
+let reconnectTimer = null;
+let reconnectAttempt = 0;
+let pendingCandidates = [];
+let pendingLocalCandidates = [];
+let localDescriptionSent = false;
+let localIceComplete = false;
+let recorder = null;
+let recordedChunks = [];
+let recordedBytes = 0;
+const MAX_PENDING_CANDIDATES = 32;
+const MAX_RECONNECT_MS = 15000;
+const MAX_RECORDING_BYTES = 128 * 1024 * 1024;
+
+function setState(value) { stateEl.textContent = value; }
+
+function send(message) {
+  if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+  socket.send(JSON.stringify(message));
+  return true;
+}
+
+function closePeer() {
+  if (recorder && recorder.state !== "inactive") stopRecording();
+  if (peer) {
+    try { peer.ontrack = null; peer.onicecandidate = null; peer.close(); } catch {}
+  }
+  peer = null;
+  remoteStream = null;
+  audioEl.srcObject = null;
+  recordButton.disabled = true;
+  stopRecordButton.disabled = true;
+  pendingCandidates = [];
+  pendingLocalCandidates = [];
+  localDescriptionSent = false;
+  localIceComplete = false;
+}
+
+function scheduleReconnect() {
+  if (!listenerActive || manualStop || reconnectTimer) return;
+  reconnectAttempt++;
+  const delay = Math.min(1000 * (2 ** Math.min(reconnectAttempt - 1, 4)), MAX_RECONNECT_MS);
+  setState(`Reconnecting in ${Math.ceil(delay / 1000)}s`);
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connectSocket();
+  }, delay);
+}
+
+function connectSocket() {
+  if (!listenerActive || manualStop) return;
+  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+  const scheme = location.protocol === "https:" ? "wss:" : "ws:";
+  const current = new WebSocket(`${scheme}//${location.host}/ws`);
+  socket = current;
+  setState("Connecting to Render signaling");
+  current.onopen = () => {
+    current.send(JSON.stringify({ type: "webrtc_listener_hello" }));
+  };
+  current.onmessage = async (event) => {
+    if (typeof event.data !== "string") return;
+    let message;
+    try { message = JSON.parse(event.data); } catch { return; }
+    if (message.type === "webrtc_error") {
+      errorEl.textContent = message.reason || "Signaling rejected";
+      if (message.reason === "listener_session_required") {
+        listenerActive = false;
+        startButton.disabled = false;
+        stopButton.disabled = true;
+      }
+      return;
+    }
+    if (message.type === "webrtc_listener_ready") {
+      setState("Waiting for ESP32");
+      return;
+    }
+    if (message.type === "webrtc_waiting_for_device") {
+      setState("Waiting for ESP32");
+      return;
+    }
+    if (message.type === "webrtc_session_ready") {
+      sessionId = message.session_id;
+      reconnectAttempt = 0;
+      errorEl.textContent = "";
+      try { await createPeer(); }
+      catch (error) {
+        errorEl.textContent = `Could not create WebRTC peer: ${error.message}`;
+        setState("Peer setup failed");
+        closePeer();
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.close(1012, "WebRTC peer setup failed");
+        }
+      }
+      return;
+    }
+    if (message.type === "webrtc_session_end") {
+      closePeer();
+      sessionId = null;
+      setState("Waiting for ESP32");
+      return;
+    }
+    if (message.type === "webrtc_signal" && message.session_id === sessionId) {
+      await handleSignal(message);
+    }
+  };
+  current.onerror = () => { setState("Signaling error"); };
+  current.onclose = () => {
+    if (socket === current) socket = null;
+    sessionId = null;
+    closePeer();
+    if (!manualStop) scheduleReconnect();
+  };
+}
+
+async function createPeer() {
+  closePeer();
+  const peerSessionId = sessionId;
+  peer = new RTCPeerConnection({
+    iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+  });
+  peer.addTransceiver("audio", { direction: "recvonly" });
+  peer.onicecandidate = (event) => {
+    if (sessionId !== peerSessionId || !socket || socket.readyState !== WebSocket.OPEN) return;
+    if (!event.candidate) {
+      localIceComplete = true;
+      if (localDescriptionSent) {
+        send({ type: "webrtc_signal", session_id: peerSessionId, kind: "end-of-candidates" });
+      }
+      return;
+    }
+    const signal = {
+      type: "webrtc_signal",
+      session_id: peerSessionId,
+      kind: "candidate",
+      candidate: event.candidate.candidate
+    };
+    if (localDescriptionSent) {
+      send(signal);
+    } else {
+      if (pendingLocalCandidates.length >= MAX_PENDING_CANDIDATES) pendingLocalCandidates.shift();
+      pendingLocalCandidates.push(signal);
+    }
+  };
+  peer.ontrack = async (event) => {
+    remoteStream = event.streams && event.streams[0]
+      ? event.streams[0]
+      : new MediaStream([event.track]);
+    audioEl.srcObject = remoteStream;
+    recordButton.disabled = false;
+    try { await audioEl.play(); } catch { setState("Audio ready — press play"); }
+  };
+  peer.onconnectionstatechange = () => {
+    if (!peer) return;
+    setState(`Peer ${peer.connectionState}`);
+    if (peer.connectionState === "failed") {
+      errorEl.textContent = "Direct ICE connection failed. This network may require TURN.";
+      if (socket && socket.readyState === WebSocket.OPEN) socket.close(1012, "ICE failed; reconnect");
+    }
+  };
+  peer.oniceconnectionstatechange = () => {
+    if (peer && peer.iceConnectionState === "disconnected") {
+      setState("Peer disconnected — checking connection");
+    }
+  };
+}
+
+async function handleSignal(message) {
+  if (!peer) return;
+  try {
+    if (message.kind === "offer") {
+      await peer.setRemoteDescription({ type: "offer", sdp: message.sdp });
+      const answer = await peer.createAnswer();
+      await peer.setLocalDescription(answer);
+      if (sessionId !== message.session_id || !send({
+        type: "webrtc_signal", session_id: message.session_id,
+        kind: "answer", sdp: peer.localDescription.sdp
+      })) throw new Error("Could not send the WebRTC answer");
+      localDescriptionSent = true;
+      for (const candidate of pendingLocalCandidates) send(candidate);
+      pendingLocalCandidates = [];
+      if (localIceComplete || peer.iceGatheringState === "complete") {
+        send({ type: "webrtc_signal", session_id: message.session_id, kind: "end-of-candidates" });
+      }
+      for (const candidate of pendingCandidates) await peer.addIceCandidate(candidate);
+      pendingCandidates = [];
+    } else if (message.kind === "candidate") {
+      const candidate = new RTCIceCandidate({ candidate: message.candidate, sdpMid: "0", sdpMLineIndex: 0 });
+      if (peer.remoteDescription) await peer.addIceCandidate(candidate);
+      else {
+        if (pendingCandidates.length >= MAX_PENDING_CANDIDATES) pendingCandidates.shift();
+        pendingCandidates.push(candidate);
+      }
+    } else if (message.kind === "end-of-candidates") {
+      if (peer.remoteDescription) await peer.addIceCandidate(null);
+      else {
+        if (pendingCandidates.length >= MAX_PENDING_CANDIDATES) pendingCandidates.shift();
+        pendingCandidates.push(null);
+      }
+    }
+  } catch (error) {
+    errorEl.textContent = `WebRTC signaling failed: ${error.message}`;
+    if (socket && socket.readyState === WebSocket.OPEN) socket.close(1012, "WebRTC signaling failed");
+  }
+}
+
+function startRecording() {
+  if (!remoteStream || !remoteStream.getAudioTracks().length) return;
+  if (typeof MediaRecorder === "undefined") {
+    errorEl.textContent = "This browser does not support local audio recording.";
+    return;
+  }
+  const mimeType = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4"]
+    .find((candidate) => MediaRecorder.isTypeSupported(candidate));
+  recordedChunks = [];
+  recordedBytes = 0;
+  try {
+    recorder = new MediaRecorder(remoteStream, mimeType ? { mimeType } : {});
+    recorder.ondataavailable = (event) => {
+      if (event.data && event.data.size) {
+        if (recordedBytes + event.data.size > MAX_RECORDING_BYTES) {
+          errorEl.textContent = "Recording stopped at the local storage limit.";
+          stopRecording();
+          return;
+        }
+        recordedBytes += event.data.size;
+        recordedChunks.push(event.data);
+      }
+    };
+    recorder.onstop = () => {
+      if (!recordedChunks.length) {
+        errorEl.textContent = "No recorded audio data was produced.";
+        return;
+      }
+      const recordingType = recorder.mimeType || mimeType || "application/octet-stream";
+      const blob = new Blob(recordedChunks, { type: recordingType });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      const suffix = recordingType.includes("mp4") ? "m4a" : recordingType.includes("ogg") ? "ogg" : "webm";
+      link.download = `ESP32-audio-${new Date().toISOString().replace(/[:.]/g, "-")}.${suffix}`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      recordedChunks = [];
+    };
+    recorder.start(1000);
+    recordButton.disabled = true;
+    stopRecordButton.disabled = false;
+  } catch (error) {
+    errorEl.textContent = `Recording unavailable: ${error.message}`;
+  }
+}
+
+function stopRecording() {
+  if (recorder && recorder.state !== "inactive") recorder.stop();
+  recordButton.disabled = !remoteStream;
+  stopRecordButton.disabled = true;
+}
+
+startButton.onclick = () => {
+  manualStop = false;
+  listenerActive = true;
+  errorEl.textContent = "";
+  startButton.disabled = true;
+  stopButton.disabled = false;
+  connectSocket();
+};
+
+stopButton.onclick = () => {
+  manualStop = true;
+  listenerActive = false;
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  if (recorder && recorder.state !== "inactive") stopRecording();
+  if (socket) socket.close(1000, "Listener stopped");
+  socket = null;
+  sessionId = null;
+  closePeer();
+  startButton.disabled = false;
+  stopButton.disabled = true;
+  setState("Stopped");
+};
+
+recordButton.onclick = startRecording;
+stopRecordButton.onclick = stopRecording;
+window.addEventListener("pagehide", () => {
+  manualStop = true;
+  listenerActive = false;
+  if (socket) socket.close(1000, "Page closed");
+  closePeer();
+});
+</script>
+</body>
+</html>

@@ -2,6 +2,7 @@ const express = require("express");
 const http = require("http");
 const WebSocket = require("ws");
 const crypto = require("crypto");
+const { createWebRtcSignaling } = require("./webrtc_signaling");
 
 const PORT = process.env.PORT || 10000;
 
@@ -118,6 +119,12 @@ const wss = new WebSocket.Server({
     perMessageDeflate: false,
     clientTracking: true
 });
+const webrtcSignaling = createWebRtcSignaling({
+    WebSocket,
+    sourceToken: SOURCE_TOKEN,
+    isListenerSessionValid: (ws) => ws.sessionAuthenticated &&
+        typeof ws.sessionValid === "function" && ws.sessionValid()
+});
 
 const listeners = new Set();
 const sources = new Set();
@@ -225,6 +232,11 @@ app.get("/listener", requireHttps, (req, res) => {
     res.sendFile(__dirname + "/listener.html");
 });
 
+app.get("/phase5-listener", requireHttps, (req, res) => {
+    if (!isAuthenticatedRequest(req)) return res.redirect("/");
+    res.sendFile(__dirname + "/webrtc-listener.html");
+});
+
 app.get("/api/device-status", requireHttps, (req, res) => {
     if (!isAuthenticatedRequest(req)) {
         return res.status(401).json({ ok: false, error: "Unauthorized" });
@@ -300,6 +312,7 @@ wss.on("connection", (ws, req) => {
 
     ws.role = "unknown";
     ws.authenticated = false;
+    ws.sessionValid = () => !!getSession(req);
     ws.sessionAuthenticated = !!getSession(req);
     ws.isAlive = true;
     ws.pingOutstanding = false;
@@ -330,6 +343,7 @@ wss.on("connection", (ws, req) => {
 
     ws.on("message", (data, isBinary) => {
         if (isBinary) {
+            if (webrtcSignaling.handleBinary(ws)) return;
             if (ws.role !== "source" || !ws.authenticated) return;
             const frame = Buffer.isBuffer(data) ? data : Buffer.from(data);
             if (frame.length < 16 ||
@@ -385,6 +399,8 @@ wss.on("connection", (ws, req) => {
         let message;
         try { message = JSON.parse(data.toString()); }
         catch { console.log("Rejected invalid JSON WS message."); return; }
+
+        if (webrtcSignaling.handleMessage(ws, message)) return;
 
         if (message.type === "health_response" &&
             ws.role === "source" && ws.authenticated) {
@@ -511,6 +527,7 @@ wss.on("connection", (ws, req) => {
     });
 
     ws.on("close", (code, reason) => {
+        webrtcSignaling.handleClose(ws);
         console.log(
             `WS closed from ${ip}: code=${code}, reason=${reason.toString() || "(none)"}, ` +
             `role=${ws.role}, authenticated=${ws.authenticated}, ` +
