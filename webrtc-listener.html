@@ -89,7 +89,7 @@ let recordedChunks = [];
 let recordedBytes = 0;
 let sessionRedirectTimer = null;
 let audioContext = null;
-let audioElementSource = null;
+let remoteAudioSource = null;
 let inputAnalyser = null;
 let outputAnalyser = null;
 let latestInputDbfs = null;
@@ -101,6 +101,7 @@ let gtcrnWasmBinary = null;
 let gtcrnWorkletLoaded = false;
 let gtcrnNode = null;
 let noiseSuppressionActive = false;
+let silentInputSinceMs = null;
 let audioProcessingStatus = "GTCRN will activate when listening starts.";
 const MAX_PENDING_CANDIDATES = 32;
 const MAX_RECONNECT_MS = 15000;
@@ -155,7 +156,6 @@ async function prepareAudioOutput() {
     }
 
     try {
-      const source = context.createMediaElementSource(audioEl);
       const inputMeter = context.createAnalyser();
       const outputMeter = context.createAnalyser();
       const gain = context.createGain();
@@ -165,17 +165,15 @@ async function prepareAudioOutput() {
       inputMeter.smoothingTimeConstant = 0;
       outputMeter.smoothingTimeConstant = 0;
       gain.gain.value = audioEl.muted ? 0 : audioEl.volume;
-      source.connect(inputMeter);
       inputMeter.connect(outputMeter);
       outputMeter.connect(gain);
-      gain.connect(context.destination);
       gain.connect(destination);
       audioContext = context;
-      audioElementSource = source;
       inputAnalyser = inputMeter;
       outputAnalyser = outputMeter;
       playbackGain = gain;
       processedDestination = destination;
+      audioEl.srcObject = destination.stream;
       audioEl.addEventListener("volumechange", () => {
         if (playbackGain) playbackGain.gain.value = audioEl.muted ? 0 : audioEl.volume;
       });
@@ -186,6 +184,18 @@ async function prepareAudioOutput() {
   }
 
   if (audioContext.state === "suspended") await audioContext.resume();
+}
+
+function connectRemoteAudioStream(stream) {
+  if (!audioContext || !inputAnalyser || !stream) {
+    throw new Error("Web Audio input is not ready");
+  }
+  if (remoteAudioSource) {
+    remoteAudioSource.disconnect();
+    remoteAudioSource = null;
+  }
+  remoteAudioSource = audioContext.createMediaStreamSource(stream);
+  remoteAudioSource.connect(inputAnalyser);
 }
 
 async function enableNoiseSuppression() {
@@ -206,42 +216,60 @@ async function enableNoiseSuppression() {
     const node = gtcrnNode;
     node.addEventListener("processorerror", () => {
       if (gtcrnNode !== node) return;
-      inputAnalyser?.disconnect();
-      try { inputAnalyser?.connect(outputAnalyser); } catch {}
-      try { node.disconnect(); node.destroy(); } catch {}
-      gtcrnNode = null;
-      noiseSuppressionActive = false;
-      noiseSuppressionEl.checked = false;
-      if (recorder && recorder.state !== "inactive" && recordingSourceLabel === "filtered") {
-        recordingSourceLabel = "direct-fallback";
-      }
-      setAudioProcessingStatus("GTCRN processor failed; direct audio restored");
-      errorEl.textContent = "GTCRN processing failed. Direct WebRTC audio has been restored; noise suppression is off.";
+      restoreDirectAudio("GTCRN processing failed. Direct WebRTC audio has been restored; noise suppression is off.");
     });
   }
 
   if (!inputAnalyser || !outputAnalyser || !playbackGain) {
     throw new Error("GTCRN audio graph is not ready");
   }
+  if (remoteStream && !remoteAudioSource) connectRemoteAudioStream(remoteStream);
   inputAnalyser.disconnect();
   inputAnalyser.connect(gtcrnNode);
   gtcrnNode.connect(outputAnalyser);
+  audioEl.srcObject = processedDestination.stream;
+  audioEl.muted = false;
+  playbackGain.gain.value = audioEl.volume;
+  try { await audioEl.play(); } catch { setState("Audio ready — press play"); }
   noiseSuppressionActive = true;
+  silentInputSinceMs = null;
   refreshAudioProcessingStatus();
 }
 
 function disableNoiseSuppression() {
+  if (remoteAudioSource) {
+    try { remoteAudioSource.disconnect(); } catch {}
+    remoteAudioSource = null;
+  }
+  if (inputAnalyser) inputAnalyser.disconnect();
   if (inputAnalyser && outputAnalyser) {
-    inputAnalyser.disconnect();
     if (gtcrnNode) {
-      gtcrnNode.disconnect();
-      gtcrnNode.destroy();
+      try { gtcrnNode.disconnect(); } catch {}
+      try { gtcrnNode.destroy(); } catch {}
       gtcrnNode = null;
     }
-    inputAnalyser.connect(outputAnalyser);
   }
   noiseSuppressionActive = false;
+  silentInputSinceMs = null;
+  if (remoteStream) {
+    audioEl.srcObject = remoteStream;
+    void audioEl.play().catch(() => setState("Audio ready — press play"));
+  }
   refreshAudioProcessingStatus();
+}
+
+function restoreDirectAudio(message) {
+  noiseSuppressionEl.checked = false;
+  disableNoiseSuppression();
+  if (remoteStream) {
+    audioEl.srcObject = remoteStream;
+    void audioEl.play().catch(() => setState("Audio ready — press play"));
+  }
+  if (recorder && recorder.state !== "inactive" && recordingSourceLabel === "filtered") {
+    recordingSourceLabel = "direct-fallback";
+  }
+  setAudioProcessingStatus("Direct WebRTC audio restored; noise suppression is off");
+  errorEl.textContent = message;
 }
 
 async function updateMediaStatus(targetPeer) {
@@ -294,7 +322,7 @@ async function updateMediaStatus(targetPeer) {
   const playbackState = `player ${playback}, volume ${Math.round(audioEl.volume * 100)}%`;
   latestInputDbfs = readAudioLevelDbfs(inputAnalyser);
   latestOutputDbfs = readAudioLevelDbfs(outputAnalyser);
-  const graphLevels = inputAnalyser && outputAnalyser
+  const graphLevels = noiseSuppressionActive && inputAnalyser && outputAnalyser
     ? `; Web Audio input ${formatAudioLevelDbfs(latestInputDbfs)}, output ${formatAudioLevelDbfs(latestOutputDbfs)}`
     : "";
   const silentFilterWarning = noiseSuppressionActive && packets > 0
@@ -309,6 +337,18 @@ async function updateMediaStatus(targetPeer) {
       || (Number.isFinite(latestInputDbfs) && latestInputDbfs < -85))
     ? "; Web Audio input is silent despite received audio"
     : "";
+  const inboundSignalPresent = Number.isFinite(inboundAudio?.audioLevel) && inboundAudio.audioLevel > 0.002;
+  const webAudioInputSilent = latestInputDbfs === Number.NEGATIVE_INFINITY
+    || (Number.isFinite(latestInputDbfs) && latestInputDbfs < -85);
+  const webAudioOutputSilent = latestOutputDbfs === Number.NEGATIVE_INFINITY
+    || (Number.isFinite(latestOutputDbfs) && latestOutputDbfs < -85);
+  const graphHasSignalMismatch = noiseSuppressionActive && packets > 0
+    && (inboundSignalPresent && webAudioInputSilent
+      || Number.isFinite(latestInputDbfs) && latestInputDbfs > -80 && webAudioOutputSilent);
+  silentInputSinceMs = graphHasSignalMismatch ? (silentInputSinceMs ?? Date.now()) : null;
+  if (silentInputSinceMs !== null && Date.now() - silentInputSinceMs >= 5000) {
+    restoreDirectAudio("GTCRN audio path stayed silent while WebRTC audio was arriving. Direct playback is restored; noise suppression is off.");
+  }
   const receiveState = packets > 0
     ? `${codecLabel}; RTP ${packets} packets / ${bytes} bytes${packetLoss}${packetDiscard}${jitterMs === null ? "" : `, jitter ${jitterMs} ms`}; ${decodedSamples}${concealment}${silentConcealment}${concealmentEvents}${level === null ? "" : `, level ${level}`}`
     : "no inbound audio RTP packets";
@@ -338,6 +378,11 @@ function closePeer() {
     try { peer.ontrack = null; peer.onicecandidate = null; peer.close(); } catch {}
   }
   peer = null;
+  if (remoteAudioSource) {
+    try { remoteAudioSource.disconnect(); } catch {}
+    remoteAudioSource = null;
+  }
+  silentInputSinceMs = null;
   remoteStream = null;
   audioEl.pause();
   audioEl.srcObject = null;
@@ -467,8 +512,18 @@ async function createPeer() {
     refreshAudioProcessingStatus();
     void updateMediaStatus(peer);
     recordButton.disabled = false;
-    audioEl.srcObject = remoteStream;
-    try { await audioEl.play(); } catch { setState("Audio ready — press play"); }
+    try {
+      if (noiseSuppressionActive) {
+        connectRemoteAudioStream(remoteStream);
+        audioEl.srcObject = processedDestination.stream;
+      } else {
+        audioEl.srcObject = remoteStream;
+      }
+      audioEl.muted = false;
+      await audioEl.play();
+    } catch (error) {
+      restoreDirectAudio(`Processed playback could not start (${error.message}); direct WebRTC audio restored.`);
+    }
   };
   peer.onconnectionstatechange = () => {
     if (!peer) return;
