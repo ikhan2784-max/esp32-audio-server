@@ -297,6 +297,33 @@ async function updateMediaStatus(targetPeer) {
   const jitterMs = Number.isFinite(inboundAudio?.jitter) ? Math.round(inboundAudio.jitter * 1000) : null;
   const level = Number.isFinite(inboundAudio?.audioLevel) ? inboundAudio.audioLevel.toFixed(3) : null;
   const codec = inboundAudio?.codecId ? codecsById.get(inboundAudio.codecId) : null;
+  const audioReceiver = targetPeer.getReceivers()
+    .find((receiver) => receiver.track?.kind === "audio");
+  const jitterEmitted = inboundAudio?.jitterBufferEmittedCount;
+  const jitterDelayMs = Number.isFinite(jitterEmitted) && jitterEmitted > 0
+    && Number.isFinite(inboundAudio?.jitterBufferDelay)
+    ? Math.round(inboundAudio.jitterBufferDelay * 1000 / jitterEmitted)
+    : null;
+  const jitterTargetDelayMs = Number.isFinite(jitterEmitted) && jitterEmitted > 0
+    && Number.isFinite(inboundAudio?.jitterBufferTargetDelay)
+    ? Math.round(inboundAudio.jitterBufferTargetDelay * 1000 / jitterEmitted)
+    : null;
+  const jitterMinimumDelayMs = Number.isFinite(jitterEmitted) && jitterEmitted > 0
+    && Number.isFinite(inboundAudio?.jitterBufferMinimumDelay)
+    ? Math.round(inboundAudio.jitterBufferMinimumDelay * 1000 / jitterEmitted)
+    : null;
+  const jitterTarget = Number.isFinite(audioReceiver?.jitterBufferTarget)
+    ? Math.round(audioReceiver.jitterBufferTarget) + " ms"
+    : "browser default";
+  const jitterBuffer = Number.isFinite(jitterEmitted)
+    ? "; jitter buffer emitted " + jitterEmitted + " samples (avg "
+      + (jitterDelayMs ?? "n/a") + " ms, target "
+      + (jitterTargetDelayMs ?? "n/a") + " ms, min "
+      + (jitterMinimumDelayMs ?? "n/a") + " ms; configured " + jitterTarget + ")"
+    : "";
+  const decoderStatus = inboundAudio?.decoderImplementation
+    ? "; decoder " + inboundAudio.decoderImplementation
+    : "";
   const codecLabel = codec
     ? `${codec.mimeType || "codec"}${Number.isFinite(codec.clockRate) ? `/${codec.clockRate} Hz` : ""}${Number.isFinite(codec.channels) ? `/${codec.channels} ch` : ""}`
     : "codec unavailable";
@@ -355,7 +382,7 @@ async function updateMediaStatus(targetPeer) {
   const processing = noiseSuppressionActive
     ? (packets > 0 ? "GTCRN enabled" : "GTCRN ready; no audio packets received")
     : "noise suppression off";
-  mediaStatusEl.textContent = `Audio: track ${trackState}; ${receiveState}; ${playbackState}; ${processing}${graphLevels}${silentFilterWarning}${silentInputWarning}.`;
+  mediaStatusEl.textContent = `Audio: track ${trackState}; ${receiveState}; ${playbackState}; ${processing}${graphLevels}${silentFilterWarning}${silentInputWarning}${jitterBuffer}${decoderStatus}.`;
 }
 
 function startMediaStats(targetPeer) {
