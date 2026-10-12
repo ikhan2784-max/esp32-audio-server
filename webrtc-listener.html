@@ -12,6 +12,7 @@
     h1 { margin:0 0 6px; font-size:1.4rem; } p { color:#aab7d0; line-height:1.5; }
     .state { border:1px solid #314264; border-radius:12px; padding:14px; margin:18px 0; }
     .state strong { color:#83b7ff; } .hint { font-size:.9rem; }
+    #mediaStatus { color:#aab7d0; font-size:.9rem; overflow-wrap:anywhere; }
     .actions { display:flex; flex-wrap:wrap; gap:10px; margin:18px 0; }
     button { border:0; border-radius:10px; padding:11px 16px; font:inherit; font-weight:650; color:#071120; background:#78adff; cursor:pointer; }
     button.secondary { background:#344463; color:#eef3ff; } button:disabled { opacity:.45; cursor:not-allowed; }
@@ -32,6 +33,7 @@
       <button class="secondary" id="stopRecord" disabled>Stop recording</button>
     </div>
     <audio id="audio" controls autoplay playsinline></audio>
+    <p id="mediaStatus" role="status" aria-live="polite">Audio: waiting for a remote track.</p>
     <p id="error" role="status"></p>
     <p class="hint">If the browser blocks playback, press play above. Some networks require a TURN relay; this Render signaling path currently uses direct ICE connectivity.</p>
     <footer>ESP32 microphone → WebRTC/Opus → this listener · no listener microphone is requested</footer>
@@ -41,6 +43,7 @@
 
 const stateEl = document.getElementById("state");
 const errorEl = document.getElementById("error");
+const mediaStatusEl = document.getElementById("mediaStatus");
 const audioEl = document.getElementById("audio");
 const startButton = document.getElementById("start");
 const stopButton = document.getElementById("stop");
@@ -55,6 +58,7 @@ let listenerActive = false;
 let manualStop = false;
 let reconnectTimer = null;
 let reconnectAttempt = 0;
+let statsTimer = null;
 let pendingCandidates = [];
 let pendingLocalCandidates = [];
 let localDescriptionSent = false;
@@ -68,6 +72,42 @@ const MAX_RECORDING_BYTES = 128 * 1024 * 1024;
 
 function setState(value) { stateEl.textContent = value; }
 
+async function updateMediaStatus(targetPeer) {
+  if (!targetPeer || peer !== targetPeer) return;
+  const tracks = remoteStream ? remoteStream.getAudioTracks() : [];
+  let inboundAudio = null;
+  try {
+    const report = await targetPeer.getStats();
+    report.forEach((stat) => {
+      if (stat.type === "inbound-rtp" && (stat.kind === "audio" || stat.mediaType === "audio")) {
+        inboundAudio = stat;
+      }
+    });
+  } catch {
+    mediaStatusEl.textContent = "Audio stats unavailable in this browser.";
+    return;
+  }
+
+  const track = tracks[0];
+  const trackState = track ? `${track.readyState}${track.muted ? ", muted" : ", unmuted"}` : "not received";
+  const packets = inboundAudio?.packetsReceived ?? 0;
+  const bytes = inboundAudio?.bytesReceived ?? 0;
+  const jitterMs = Number.isFinite(inboundAudio?.jitter) ? Math.round(inboundAudio.jitter * 1000) : null;
+  const level = Number.isFinite(inboundAudio?.audioLevel) ? inboundAudio.audioLevel.toFixed(3) : null;
+  const playback = audioEl.paused ? "paused" : "playing";
+  const playbackState = `player ${playback}, volume ${Math.round(audioEl.volume * 100)}%`;
+  const receiveState = packets > 0
+    ? `RTP ${packets} packets / ${bytes} bytes${jitterMs === null ? "" : `, jitter ${jitterMs} ms`}${level === null ? "" : `, level ${level}`}`
+    : "no inbound audio RTP packets";
+  mediaStatusEl.textContent = `Audio: track ${trackState}; ${receiveState}; ${playbackState}.`;
+}
+
+function startMediaStats(targetPeer) {
+  if (statsTimer) clearInterval(statsTimer);
+  void updateMediaStatus(targetPeer);
+  statsTimer = setInterval(() => { void updateMediaStatus(targetPeer); }, 2000);
+}
+
 function send(message) {
   if (!socket || socket.readyState !== WebSocket.OPEN) return false;
   socket.send(JSON.stringify(message));
@@ -75,6 +115,8 @@ function send(message) {
 }
 
 function closePeer() {
+  if (statsTimer) clearInterval(statsTimer);
+  statsTimer = null;
   if (recorder && recorder.state !== "inactive") stopRecording();
   if (peer) {
     try { peer.ontrack = null; peer.onicecandidate = null; peer.close(); } catch {}
@@ -82,6 +124,7 @@ function closePeer() {
   peer = null;
   remoteStream = null;
   audioEl.srcObject = null;
+  mediaStatusEl.textContent = "Audio: waiting for a remote track.";
   recordButton.disabled = true;
   stopRecordButton.disabled = true;
   pendingCandidates = [];
@@ -200,6 +243,7 @@ async function createPeer() {
       ? event.streams[0]
       : new MediaStream([event.track]);
     audioEl.srcObject = remoteStream;
+    void updateMediaStatus(peer);
     recordButton.disabled = false;
     try { await audioEl.play(); } catch { setState("Audio ready — press play"); }
   };
@@ -216,6 +260,7 @@ async function createPeer() {
       setState("Peer disconnected — checking connection");
     }
   };
+  startMediaStats(peer);
 }
 
 async function handleSignal(message) {
