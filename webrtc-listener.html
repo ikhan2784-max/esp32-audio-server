@@ -17,6 +17,8 @@
     .processing { display:flex; flex-wrap:wrap; align-items:center; gap:8px 14px; margin-top:14px; color:#aab7d0; font-size:.92rem; }
     .processing label { display:flex; align-items:center; gap:8px; color:#e9eefc; }
     .processing input { accent-color:#78adff; }
+    .recording-source { display:flex; flex-direction:column; gap:6px; margin:12px 0; color:#e9eefc; font-size:.92rem; }
+    .recording-source select { width:100%; border:1px solid #314264; border-radius:8px; padding:9px; color:#e9eefc; background:#0b1020; font:inherit; }
     #processingStatus { color:#aab7d0; }
     button { border:0; border-radius:10px; padding:11px 16px; font:inherit; font-weight:650; color:#071120; background:#78adff; cursor:pointer; }
     button.secondary { background:#344463; color:#eef3ff; } button:disabled { opacity:.45; cursor:not-allowed; }
@@ -36,6 +38,13 @@
       <button class="secondary" id="record" disabled>Record on this device</button>
       <button class="secondary" id="stopRecord" disabled>Stop recording</button>
     </div>
+    <label class="recording-source" for="recordSource">Recording source
+      <select id="recordSource">
+        <option value="raw" selected>Raw incoming WebRTC audio (before GTCRN)</option>
+        <option value="filtered">Listener output (GTCRN when enabled)</option>
+      </select>
+    </label>
+    <p class="hint">Raw recording is selected for noise diagnosis. It does not change filtered listener playback.</p>
     <audio id="audio" controls autoplay playsinline></audio>
     <div class="processing">
       <label><input id="noiseSuppression" type="checkbox" checked> AI noise suppression (GTCRN)</label>
@@ -59,6 +68,7 @@ const startButton = document.getElementById("start");
 const stopButton = document.getElementById("stop");
 const recordButton = document.getElementById("record");
 const stopRecordButton = document.getElementById("stopRecord");
+const recordSourceEl = document.getElementById("recordSource");
 
 let socket = null;
 let peer = null;
@@ -74,6 +84,7 @@ let pendingLocalCandidates = [];
 let localDescriptionSent = false;
 let localIceComplete = false;
 let recorder = null;
+let recordingSourceLabel = "raw";
 let recordedChunks = [];
 let recordedBytes = 0;
 let sessionRedirectTimer = null;
@@ -455,7 +466,11 @@ async function handleSignal(message) {
 }
 
 function startRecording() {
-  if (!remoteStream || !remoteStream.getAudioTracks().length) return;
+  const liveTracks = remoteStream ? remoteStream.getAudioTracks().filter((track) => track.readyState === "live") : [];
+  if (!liveTracks.length) {
+    errorEl.textContent = "No live incoming WebRTC audio track is available to record.";
+    return;
+  }
   if (typeof MediaRecorder === "undefined") {
     errorEl.textContent = "This browser does not support local audio recording.";
     return;
@@ -465,7 +480,13 @@ function startRecording() {
   recordedChunks = [];
   recordedBytes = 0;
   try {
-    const recordingStream = processedDestination ? processedDestination.stream : remoteStream;
+    const useFilteredOutput = recordSourceEl.value === "filtered";
+    recordingSourceLabel = useFilteredOutput ? (noiseSuppressionActive ? "filtered" : "listener-output") : "raw";
+    if (useFilteredOutput && !processedDestination) {
+      errorEl.textContent = "Filtered output is not ready. Start listening again, or select raw incoming audio.";
+      return;
+    }
+    const recordingStream = useFilteredOutput ? processedDestination.stream : new MediaStream(liveTracks);
     recorder = new MediaRecorder(recordingStream, mimeType ? { mimeType } : {});
     recorder.ondataavailable = (event) => {
       if (event.data && event.data.size) {
@@ -489,12 +510,13 @@ function startRecording() {
       const link = document.createElement("a");
       link.href = url;
       const suffix = recordingType.includes("mp4") ? "m4a" : recordingType.includes("ogg") ? "ogg" : "webm";
-      link.download = `ESP32-audio-${new Date().toISOString().replace(/[:.]/g, "-")}.${suffix}`;
+      link.download = `ESP32-audio-${recordingSourceLabel}-${new Date().toISOString().replace(/[:.]/g, "-")}.${suffix}`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       recordedChunks = [];
     };
     recorder.start(1000);
+    recordSourceEl.disabled = true;
     recordButton.disabled = true;
     stopRecordButton.disabled = false;
   } catch (error) {
@@ -504,7 +526,8 @@ function startRecording() {
 
 function stopRecording() {
   if (recorder && recorder.state !== "inactive") recorder.stop();
-  recordButton.disabled = !remoteStream;
+  recordSourceEl.disabled = false;
+  recordButton.disabled = !(remoteStream && remoteStream.getAudioTracks().some((track) => track.readyState === "live"));
   stopRecordButton.disabled = true;
 }
 
