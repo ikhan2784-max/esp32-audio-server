@@ -14,6 +14,10 @@
     .state strong { color:#83b7ff; } .hint { font-size:.9rem; }
     #mediaStatus { color:#aab7d0; font-size:.9rem; overflow-wrap:anywhere; }
     .actions { display:flex; flex-wrap:wrap; gap:10px; margin:18px 0; }
+    .processing { display:flex; flex-wrap:wrap; align-items:center; gap:8px 14px; margin-top:14px; color:#aab7d0; font-size:.92rem; }
+    .processing label { display:flex; align-items:center; gap:8px; color:#e9eefc; }
+    .processing input { accent-color:#78adff; }
+    #processingStatus { color:#aab7d0; }
     button { border:0; border-radius:10px; padding:11px 16px; font:inherit; font-weight:650; color:#071120; background:#78adff; cursor:pointer; }
     button.secondary { background:#344463; color:#eef3ff; } button:disabled { opacity:.45; cursor:not-allowed; }
     audio { width:100%; margin-top:12px; }
@@ -33,6 +37,10 @@
       <button class="secondary" id="stopRecord" disabled>Stop recording</button>
     </div>
     <audio id="audio" controls autoplay playsinline></audio>
+    <div class="processing">
+      <label><input id="noiseSuppression" type="checkbox" checked> AI noise suppression (GTCRN)</label>
+      <span id="processingStatus" role="status" aria-live="polite">GTCRN will activate when listening starts.</span>
+    </div>
     <p id="mediaStatus" role="status" aria-live="polite">Audio: waiting for a remote track.</p>
     <p id="error" role="status"></p>
     <p class="hint">If the browser blocks playback, press play above. Some networks require a TURN relay; this Render signaling path currently uses direct ICE connectivity.</p>
@@ -45,6 +53,8 @@ const stateEl = document.getElementById("state");
 const errorEl = document.getElementById("error");
 const mediaStatusEl = document.getElementById("mediaStatus");
 const audioEl = document.getElementById("audio");
+const noiseSuppressionEl = document.getElementById("noiseSuppression");
+const processingStatusEl = document.getElementById("processingStatus");
 const startButton = document.getElementById("start");
 const stopButton = document.getElementById("stop");
 const recordButton = document.getElementById("record");
@@ -66,12 +76,100 @@ let localIceComplete = false;
 let recorder = null;
 let recordedChunks = [];
 let recordedBytes = 0;
+let audioContext = null;
+let audioSource = null;
+let playbackGain = null;
+let processedDestination = null;
+let gtcrnApi = null;
+let gtcrnWasmBinary = null;
+let gtcrnWorkletLoaded = false;
+let gtcrnNode = null;
+let noiseSuppressionActive = false;
+let audioProcessingStatus = "GTCRN will activate when listening starts.";
 const MAX_PENDING_CANDIDATES = 32;
 const MAX_RECONNECT_MS = 15000;
 const MAX_RECORDING_BYTES = 128 * 1024 * 1024;
 const WS_RECONNECT_CLOSE_CODE = 3000;
 
 function setState(value) { stateEl.textContent = value; }
+
+function setAudioProcessingStatus(value) {
+  audioProcessingStatus = value;
+  processingStatusEl.textContent = value;
+}
+
+async function prepareAudioOutput() {
+  if (!audioContext) {
+    const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextConstructor) throw new Error("Web Audio is not supported in this browser");
+
+    const context = new AudioContextConstructor({ latencyHint: "interactive", sampleRate: 48000 });
+    if (context.sampleRate !== 48000 && context.sampleRate !== 16000) {
+      await context.close();
+      throw new Error(`GTCRN does not support ${context.sampleRate} Hz playback`);
+    }
+
+    try {
+      const source = context.createMediaElementSource(audioEl);
+      const gain = context.createGain();
+      const destination = context.createMediaStreamDestination();
+      gain.gain.value = audioEl.muted ? 0 : audioEl.volume;
+      source.connect(gain);
+      gain.connect(context.destination);
+      gain.connect(destination);
+      audioContext = context;
+      audioSource = source;
+      playbackGain = gain;
+      processedDestination = destination;
+      audioEl.addEventListener("volumechange", () => {
+        if (playbackGain) playbackGain.gain.value = audioEl.muted ? 0 : audioEl.volume;
+      });
+    } catch (error) {
+      await context.close();
+      throw error;
+    }
+  }
+
+  if (audioContext.state === "suspended") await audioContext.resume();
+}
+
+async function enableNoiseSuppression() {
+  await prepareAudioOutput();
+  if (!gtcrnApi) gtcrnApi = await import("/audio-suppressor/index.js");
+  if (!gtcrnWasmBinary) {
+    gtcrnWasmBinary = await gtcrnApi.loadGtcrn({ url: "/audio-suppressor/gtcrn.wasm" });
+  }
+  if (!gtcrnWorkletLoaded) {
+    await audioContext.audioWorklet.addModule("/audio-suppressor/gtcrn/workletProcessor.js");
+    gtcrnWorkletLoaded = true;
+  }
+  if (!gtcrnNode) {
+    gtcrnNode = new gtcrnApi.GtcrnWorkletNode(audioContext, {
+      wasmBinary: gtcrnWasmBinary,
+      maxChannels: 1
+    });
+  }
+
+  audioSource.disconnect();
+  audioSource.connect(gtcrnNode);
+  gtcrnNode.connect(playbackGain);
+  noiseSuppressionActive = true;
+  setAudioProcessingStatus(`GTCRN on · ${audioContext.sampleRate / 1000} kHz playback`);
+}
+
+function disableNoiseSuppression() {
+  if (audioSource && playbackGain) {
+    audioSource.disconnect();
+    if (gtcrnNode) {
+      gtcrnNode.disconnect();
+      gtcrnNode.destroy();
+      gtcrnNode = null;
+    }
+    audioSource.connect(playbackGain);
+  }
+  noiseSuppressionActive = false;
+  setAudioProcessingStatus("AI noise suppression off · direct WebRTC audio");
+}
 
 async function updateMediaStatus(targetPeer) {
   if (!targetPeer || peer !== targetPeer) return;
@@ -124,7 +222,8 @@ async function updateMediaStatus(targetPeer) {
   const receiveState = packets > 0
     ? `${codecLabel}; RTP ${packets} packets / ${bytes} bytes${packetLoss}${packetDiscard}${jitterMs === null ? "" : `, jitter ${jitterMs} ms`}; ${decodedSamples}${concealment}${silentConcealment}${concealmentEvents}${level === null ? "" : `, level ${level}`}`
     : "no inbound audio RTP packets";
-  mediaStatusEl.textContent = `Audio: track ${trackState}; ${receiveState}; ${playbackState}.`;
+  const processing = noiseSuppressionActive ? "GTCRN noise suppression on" : "noise suppression off";
+  mediaStatusEl.textContent = `Audio: track ${trackState}; ${receiveState}; ${playbackState}; ${processing}.`;
 }
 
 function startMediaStats(targetPeer) {
@@ -148,6 +247,7 @@ function closePeer() {
   }
   peer = null;
   remoteStream = null;
+  audioEl.pause();
   audioEl.srcObject = null;
   mediaStatusEl.textContent = "Audio: waiting for a remote track.";
   recordButton.disabled = true;
@@ -342,7 +442,8 @@ function startRecording() {
   recordedChunks = [];
   recordedBytes = 0;
   try {
-    recorder = new MediaRecorder(remoteStream, mimeType ? { mimeType } : {});
+    const recordingStream = processedDestination ? processedDestination.stream : remoteStream;
+    recorder = new MediaRecorder(recordingStream, mimeType ? { mimeType } : {});
     recorder.ondataavailable = (event) => {
       if (event.data && event.data.size) {
         if (recordedBytes + event.data.size > MAX_RECORDING_BYTES) {
@@ -384,14 +485,40 @@ function stopRecording() {
   stopRecordButton.disabled = true;
 }
 
-startButton.onclick = () => {
+startButton.onclick = async () => {
   manualStop = false;
   listenerActive = true;
   errorEl.textContent = "";
   startButton.disabled = true;
   stopButton.disabled = false;
+  try {
+    await prepareAudioOutput();
+    if (noiseSuppressionEl.checked) await enableNoiseSuppression();
+    else disableNoiseSuppression();
+  } catch (error) {
+    noiseSuppressionEl.checked = false;
+    disableNoiseSuppression();
+    errorEl.textContent = `AI noise suppression unavailable; continuing with direct audio. ${error.message}`;
+  }
   connectSocket();
 };
+
+noiseSuppressionEl.addEventListener("change", async () => {
+  if (!audioContext) {
+    setAudioProcessingStatus(noiseSuppressionEl.checked
+      ? "GTCRN will activate when listening starts."
+      : "AI noise suppression off · direct WebRTC audio");
+    return;
+  }
+  try {
+    if (noiseSuppressionEl.checked) await enableNoiseSuppression();
+    else disableNoiseSuppression();
+  } catch (error) {
+    noiseSuppressionEl.checked = false;
+    disableNoiseSuppression();
+    errorEl.textContent = `AI noise suppression unavailable; continuing with direct audio. ${error.message}`;
+  }
+});
 
 stopButton.onclick = () => {
   manualStop = true;
@@ -403,6 +530,7 @@ stopButton.onclick = () => {
   socket = null;
   sessionId = null;
   closePeer();
+  disableNoiseSuppression();
   startButton.disabled = false;
   stopButton.disabled = true;
   setState("Stopped");
@@ -415,6 +543,7 @@ window.addEventListener("pagehide", () => {
   listenerActive = false;
   if (socket) socket.close(1000, "Page closed");
   closePeer();
+  if (audioContext && audioContext.state !== "closed") void audioContext.close();
 });
 </script>
 </body>

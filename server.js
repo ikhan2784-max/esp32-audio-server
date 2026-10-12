@@ -2,6 +2,7 @@ const express = require("express");
 const http = require("http");
 const WebSocket = require("ws");
 const crypto = require("crypto");
+const path = require("path");
 const { createWebRtcSignaling } = require("./webrtc_signaling");
 
 const PORT = process.env.PORT || 10000;
@@ -21,6 +22,10 @@ const app = express();
 const server = http.createServer(app);
 
 app.use(express.json({ limit: "4kb" }));
+app.use("/audio-suppressor", requireHttps, express.static(
+    path.join(__dirname, "node_modules", "@sapphi-red", "web-noise-suppressor", "dist"),
+    { fallthrough: false, index: false, maxAge: "1h" }
+));
 
 if (!SOURCE_TOKEN) console.error("ERROR: SOURCE_TOKEN not set.");
 if (!LISTENER_PIN) console.error("ERROR: LISTENER_PIN not set.");
