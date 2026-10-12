@@ -69,6 +69,7 @@ let recordedBytes = 0;
 const MAX_PENDING_CANDIDATES = 32;
 const MAX_RECONNECT_MS = 15000;
 const MAX_RECORDING_BYTES = 128 * 1024 * 1024;
+const WS_RECONNECT_CLOSE_CODE = 3000;
 
 function setState(value) { stateEl.textContent = value; }
 
@@ -103,13 +104,25 @@ async function updateMediaStatus(targetPeer) {
   const decodedSamples = Number.isFinite(inboundAudio?.totalSamplesReceived)
     ? `decoded ${inboundAudio.totalSamplesReceived} samples`
     : "decoded sample count unavailable";
-  const concealedSamples = Number.isFinite(inboundAudio?.concealedSamples)
+  const packetLoss = Number.isFinite(inboundAudio?.packetsLost)
+    ? `, ${inboundAudio.packetsLost} lost`
+    : "";
+  const packetDiscard = Number.isFinite(inboundAudio?.packetsDiscarded)
+    ? `, ${inboundAudio.packetsDiscarded} discarded`
+    : "";
+  const concealment = Number.isFinite(inboundAudio?.concealedSamples)
     ? `, concealed ${inboundAudio.concealedSamples}`
+    : "";
+  const silentConcealment = Number.isFinite(inboundAudio?.silentConcealedSamples)
+    ? ` (${inboundAudio.silentConcealedSamples} silent)`
+    : "";
+  const concealmentEvents = Number.isFinite(inboundAudio?.concealmentEvents)
+    ? `, ${inboundAudio.concealmentEvents} concealment events`
     : "";
   const playback = audioEl.paused ? "paused" : "playing";
   const playbackState = `player ${playback}, volume ${Math.round(audioEl.volume * 100)}%`;
   const receiveState = packets > 0
-    ? `${codecLabel}; RTP ${packets} packets / ${bytes} bytes${jitterMs === null ? "" : `, jitter ${jitterMs} ms`}; ${decodedSamples}${concealedSamples}${level === null ? "" : `, level ${level}`}`
+    ? `${codecLabel}; RTP ${packets} packets / ${bytes} bytes${packetLoss}${packetDiscard}${jitterMs === null ? "" : `, jitter ${jitterMs} ms`}; ${decodedSamples}${concealment}${silentConcealment}${concealmentEvents}${level === null ? "" : `, level ${level}`}`
     : "no inbound audio RTP packets";
   mediaStatusEl.textContent = `Audio: track ${trackState}; ${receiveState}; ${playbackState}.`;
 }
@@ -197,7 +210,7 @@ function connectSocket() {
         setState("Peer setup failed");
         closePeer();
         if (socket && socket.readyState === WebSocket.OPEN) {
-          socket.close(1012, "WebRTC peer setup failed");
+          socket.close(WS_RECONNECT_CLOSE_CODE, "WebRTC peer setup failed");
         }
       }
       return;
@@ -264,7 +277,9 @@ async function createPeer() {
     setState(`Peer ${peer.connectionState}`);
     if (peer.connectionState === "failed") {
       errorEl.textContent = "Direct ICE connection failed. This network may require TURN.";
-      if (socket && socket.readyState === WebSocket.OPEN) socket.close(1012, "ICE failed; reconnect");
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.close(WS_RECONNECT_CLOSE_CODE, "ICE failed; reconnect");
+      }
     }
   };
   peer.oniceconnectionstatechange = () => {
@@ -310,7 +325,9 @@ async function handleSignal(message) {
     }
   } catch (error) {
     errorEl.textContent = `WebRTC signaling failed: ${error.message}`;
-    if (socket && socket.readyState === WebSocket.OPEN) socket.close(1012, "WebRTC signaling failed");
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.close(WS_RECONNECT_CLOSE_CODE, "WebRTC signaling failed");
+    }
   }
 }
 
