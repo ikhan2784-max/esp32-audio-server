@@ -76,6 +76,7 @@ let localIceComplete = false;
 let recorder = null;
 let recordedChunks = [];
 let recordedBytes = 0;
+let sessionRedirectTimer = null;
 let audioContext = null;
 let audioSource = null;
 let playbackGain = null;
@@ -96,6 +97,20 @@ function setState(value) { stateEl.textContent = value; }
 function setAudioProcessingStatus(value) {
   audioProcessingStatus = value;
   processingStatusEl.textContent = value;
+}
+
+function refreshAudioProcessingStatus() {
+  const hasLiveTrack = remoteStream && remoteStream.getAudioTracks().some((track) => track.readyState === "live");
+  const sampleRate = audioContext ? `${audioContext.sampleRate / 1000} kHz` : "";
+  if (!hasLiveTrack) {
+    setAudioProcessingStatus(noiseSuppressionActive
+      ? `GTCRN ready · ${sampleRate}; waiting for audio`
+      : "Noise suppression off · waiting for audio");
+    return;
+  }
+  setAudioProcessingStatus(noiseSuppressionActive
+    ? `GTCRN filtering · ${sampleRate} playback`
+    : "Noise suppression off · direct WebRTC audio");
 }
 
 async function prepareAudioOutput() {
@@ -154,7 +169,7 @@ async function enableNoiseSuppression() {
   audioSource.connect(gtcrnNode);
   gtcrnNode.connect(playbackGain);
   noiseSuppressionActive = true;
-  setAudioProcessingStatus(`GTCRN on · ${audioContext.sampleRate / 1000} kHz playback`);
+  refreshAudioProcessingStatus();
 }
 
 function disableNoiseSuppression() {
@@ -168,7 +183,7 @@ function disableNoiseSuppression() {
     audioSource.connect(playbackGain);
   }
   noiseSuppressionActive = false;
-  setAudioProcessingStatus("AI noise suppression off · direct WebRTC audio");
+  refreshAudioProcessingStatus();
 }
 
 async function updateMediaStatus(targetPeer) {
@@ -222,7 +237,9 @@ async function updateMediaStatus(targetPeer) {
   const receiveState = packets > 0
     ? `${codecLabel}; RTP ${packets} packets / ${bytes} bytes${packetLoss}${packetDiscard}${jitterMs === null ? "" : `, jitter ${jitterMs} ms`}; ${decodedSamples}${concealment}${silentConcealment}${concealmentEvents}${level === null ? "" : `, level ${level}`}`
     : "no inbound audio RTP packets";
-  const processing = noiseSuppressionActive ? "GTCRN noise suppression on" : "noise suppression off";
+  const processing = noiseSuppressionActive
+    ? (packets > 0 ? "GTCRN filtering received audio" : "GTCRN ready; no audio packets received")
+    : "noise suppression off";
   mediaStatusEl.textContent = `Audio: track ${trackState}; ${receiveState}; ${playbackState}; ${processing}.`;
 }
 
@@ -250,6 +267,7 @@ function closePeer() {
   audioEl.pause();
   audioEl.srcObject = null;
   mediaStatusEl.textContent = "Audio: waiting for a remote track.";
+  refreshAudioProcessingStatus();
   recordButton.disabled = true;
   stopRecordButton.disabled = true;
   pendingCandidates = [];
@@ -285,10 +303,14 @@ function connectSocket() {
     try { message = JSON.parse(event.data); } catch { return; }
     if (message.type === "webrtc_error") {
       errorEl.textContent = message.reason || "Signaling rejected";
-      if (message.reason === "listener_session_required") {
+      if (message.reason === "listener_session_required" || message.reason === "listener_session_expired") {
         listenerActive = false;
         startButton.disabled = false;
         stopButton.disabled = true;
+        setState("Sign-in required");
+        errorEl.textContent = "Your listener session expired. Returning to sign-in…";
+        if (sessionRedirectTimer) clearTimeout(sessionRedirectTimer);
+        sessionRedirectTimer = setTimeout(() => { window.location.replace("/"); }, 600);
       }
       return;
     }
@@ -368,6 +390,7 @@ async function createPeer() {
       ? event.streams[0]
       : new MediaStream([event.track]);
     audioEl.srcObject = remoteStream;
+    refreshAudioProcessingStatus();
     void updateMediaStatus(peer);
     recordButton.disabled = false;
     try { await audioEl.play(); } catch { setState("Audio ready — press play"); }
@@ -507,7 +530,7 @@ noiseSuppressionEl.addEventListener("change", async () => {
   if (!audioContext) {
     setAudioProcessingStatus(noiseSuppressionEl.checked
       ? "GTCRN will activate when listening starts."
-      : "AI noise suppression off · direct WebRTC audio");
+      : "Noise suppression off · waiting for audio");
     return;
   }
   try {
