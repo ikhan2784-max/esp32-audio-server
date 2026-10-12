@@ -89,7 +89,10 @@ let recordedChunks = [];
 let recordedBytes = 0;
 let sessionRedirectTimer = null;
 let audioContext = null;
-let audioSource = null;
+let inputAnalyser = null;
+let outputAnalyser = null;
+let latestInputDbfs = null;
+let latestOutputDbfs = null;
 let playbackGain = null;
 let processedDestination = null;
 let gtcrnApi = null;
@@ -110,6 +113,21 @@ function setAudioProcessingStatus(value) {
   processingStatusEl.textContent = value;
 }
 
+function readAudioLevelDbfs(analyser) {
+  if (!analyser) return null;
+  const samples = new Float32Array(analyser.fftSize);
+  analyser.getFloatTimeDomainData(samples);
+  let sumSquares = 0;
+  for (const sample of samples) sumSquares += sample * sample;
+  const rms = Math.sqrt(sumSquares / samples.length);
+  return rms === 0 ? Number.NEGATIVE_INFINITY : 20 * Math.log10(rms);
+}
+
+function formatAudioLevelDbfs(value) {
+  if (value === null) return "unavailable";
+  return Number.isFinite(value) ? `${value.toFixed(1)} dBFS` : "digital silence";
+}
+
 function refreshAudioProcessingStatus() {
   const hasLiveTrack = remoteStream && remoteStream.getAudioTracks().some((track) => track.readyState === "live");
   const sampleRate = audioContext ? `${audioContext.sampleRate / 1000} kHz` : "";
@@ -120,7 +138,7 @@ function refreshAudioProcessingStatus() {
     return;
   }
   setAudioProcessingStatus(noiseSuppressionActive
-    ? `GTCRN filtering · ${sampleRate} playback`
+    ? `GTCRN enabled · ${sampleRate}; checking signal levels`
     : "Noise suppression off · direct WebRTC audio");
 }
 
@@ -137,14 +155,23 @@ async function prepareAudioOutput() {
 
     try {
       const source = context.createMediaElementSource(audioEl);
+      const inputMeter = context.createAnalyser();
+      const outputMeter = context.createAnalyser();
       const gain = context.createGain();
       const destination = context.createMediaStreamDestination();
+      inputMeter.fftSize = 2048;
+      outputMeter.fftSize = 2048;
+      inputMeter.smoothingTimeConstant = 0;
+      outputMeter.smoothingTimeConstant = 0;
       gain.gain.value = audioEl.muted ? 0 : audioEl.volume;
-      source.connect(gain);
+      source.connect(inputMeter);
+      inputMeter.connect(outputMeter);
+      outputMeter.connect(gain);
       gain.connect(context.destination);
       gain.connect(destination);
       audioContext = context;
-      audioSource = source;
+      inputAnalyser = inputMeter;
+      outputAnalyser = outputMeter;
       playbackGain = gain;
       processedDestination = destination;
       audioEl.addEventListener("volumechange", () => {
@@ -174,24 +201,42 @@ async function enableNoiseSuppression() {
       wasmBinary: gtcrnWasmBinary,
       maxChannels: 2
     });
+    const node = gtcrnNode;
+    node.addEventListener("processorerror", () => {
+      if (gtcrnNode !== node) return;
+      inputAnalyser?.disconnect();
+      try { inputAnalyser?.connect(outputAnalyser); } catch {}
+      try { node.disconnect(); node.destroy(); } catch {}
+      gtcrnNode = null;
+      noiseSuppressionActive = false;
+      noiseSuppressionEl.checked = false;
+      if (recorder && recorder.state !== "inactive" && recordingSourceLabel === "filtered") {
+        recordingSourceLabel = "direct-fallback";
+      }
+      setAudioProcessingStatus("GTCRN processor failed; direct audio restored");
+      errorEl.textContent = "GTCRN processing failed. Direct WebRTC audio has been restored; noise suppression is off.";
+    });
   }
 
-  audioSource.disconnect();
-  audioSource.connect(gtcrnNode);
-  gtcrnNode.connect(playbackGain);
+  if (!inputAnalyser || !outputAnalyser || !playbackGain) {
+    throw new Error("GTCRN audio graph is not ready");
+  }
+  inputAnalyser.disconnect();
+  inputAnalyser.connect(gtcrnNode);
+  gtcrnNode.connect(outputAnalyser);
   noiseSuppressionActive = true;
   refreshAudioProcessingStatus();
 }
 
 function disableNoiseSuppression() {
-  if (audioSource && playbackGain) {
-    audioSource.disconnect();
+  if (inputAnalyser && outputAnalyser) {
+    inputAnalyser.disconnect();
     if (gtcrnNode) {
       gtcrnNode.disconnect();
       gtcrnNode.destroy();
       gtcrnNode = null;
     }
-    audioSource.connect(playbackGain);
+    inputAnalyser.connect(outputAnalyser);
   }
   noiseSuppressionActive = false;
   refreshAudioProcessingStatus();
@@ -245,13 +290,24 @@ async function updateMediaStatus(targetPeer) {
     : "";
   const playback = audioEl.paused ? "paused" : "playing";
   const playbackState = `player ${playback}, volume ${Math.round(audioEl.volume * 100)}%`;
+  latestInputDbfs = readAudioLevelDbfs(inputAnalyser);
+  latestOutputDbfs = readAudioLevelDbfs(outputAnalyser);
+  const graphLevels = inputAnalyser && outputAnalyser
+    ? `; Web Audio input ${formatAudioLevelDbfs(latestInputDbfs)}, output ${formatAudioLevelDbfs(latestOutputDbfs)}`
+    : "";
+  const silentFilterWarning = noiseSuppressionActive && packets > 0
+    && Number.isFinite(latestInputDbfs) && latestInputDbfs > -80
+    && (latestOutputDbfs === Number.NEGATIVE_INFINITY
+      || (Number.isFinite(latestOutputDbfs) && latestOutputDbfs < -85))
+    ? "; GTCRN output is near silence despite input"
+    : "";
   const receiveState = packets > 0
     ? `${codecLabel}; RTP ${packets} packets / ${bytes} bytes${packetLoss}${packetDiscard}${jitterMs === null ? "" : `, jitter ${jitterMs} ms`}; ${decodedSamples}${concealment}${silentConcealment}${concealmentEvents}${level === null ? "" : `, level ${level}`}`
     : "no inbound audio RTP packets";
   const processing = noiseSuppressionActive
-    ? (packets > 0 ? "GTCRN filtering received audio" : "GTCRN ready; no audio packets received")
+    ? (packets > 0 ? "GTCRN enabled" : "GTCRN ready; no audio packets received")
     : "noise suppression off";
-  mediaStatusEl.textContent = `Audio: track ${trackState}; ${receiveState}; ${playbackState}; ${processing}.`;
+  mediaStatusEl.textContent = `Audio: track ${trackState}; ${receiveState}; ${playbackState}; ${processing}${graphLevels}${silentFilterWarning}.`;
 }
 
 function startMediaStats(targetPeer) {
