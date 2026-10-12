@@ -146,7 +146,7 @@ async function enableNoiseSuppression() {
   if (!gtcrnNode) {
     gtcrnNode = new gtcrnApi.GtcrnWorkletNode(audioContext, {
       wasmBinary: gtcrnWasmBinary,
-      maxChannels: 1
+      maxChannels: 2
     });
   }
 
