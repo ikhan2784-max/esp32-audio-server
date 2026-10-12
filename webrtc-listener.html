@@ -76,9 +76,11 @@ async function updateMediaStatus(targetPeer) {
   if (!targetPeer || peer !== targetPeer) return;
   const tracks = remoteStream ? remoteStream.getAudioTracks() : [];
   let inboundAudio = null;
+  const codecsById = new Map();
   try {
     const report = await targetPeer.getStats();
     report.forEach((stat) => {
+      if (stat.type === "codec") codecsById.set(stat.id, stat);
       if (stat.type === "inbound-rtp" && (stat.kind === "audio" || stat.mediaType === "audio")) {
         inboundAudio = stat;
       }
@@ -94,10 +96,20 @@ async function updateMediaStatus(targetPeer) {
   const bytes = inboundAudio?.bytesReceived ?? 0;
   const jitterMs = Number.isFinite(inboundAudio?.jitter) ? Math.round(inboundAudio.jitter * 1000) : null;
   const level = Number.isFinite(inboundAudio?.audioLevel) ? inboundAudio.audioLevel.toFixed(3) : null;
+  const codec = inboundAudio?.codecId ? codecsById.get(inboundAudio.codecId) : null;
+  const codecLabel = codec
+    ? `${codec.mimeType || "codec"}${Number.isFinite(codec.clockRate) ? `/${codec.clockRate} Hz` : ""}${Number.isFinite(codec.channels) ? `/${codec.channels} ch` : ""}`
+    : "codec unavailable";
+  const decodedSamples = Number.isFinite(inboundAudio?.totalSamplesReceived)
+    ? `decoded ${inboundAudio.totalSamplesReceived} samples`
+    : "decoded sample count unavailable";
+  const concealedSamples = Number.isFinite(inboundAudio?.concealedSamples)
+    ? `, concealed ${inboundAudio.concealedSamples}`
+    : "";
   const playback = audioEl.paused ? "paused" : "playing";
   const playbackState = `player ${playback}, volume ${Math.round(audioEl.volume * 100)}%`;
   const receiveState = packets > 0
-    ? `RTP ${packets} packets / ${bytes} bytes${jitterMs === null ? "" : `, jitter ${jitterMs} ms`}${level === null ? "" : `, level ${level}`}`
+    ? `${codecLabel}; RTP ${packets} packets / ${bytes} bytes${jitterMs === null ? "" : `, jitter ${jitterMs} ms`}; ${decodedSamples}${concealedSamples}${level === null ? "" : `, level ${level}`}`
     : "no inbound audio RTP packets";
   mediaStatusEl.textContent = `Audio: track ${trackState}; ${receiveState}; ${playbackState}.`;
 }
