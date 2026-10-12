@@ -89,7 +89,7 @@ let recordedChunks = [];
 let recordedBytes = 0;
 let sessionRedirectTimer = null;
 let audioContext = null;
-let remoteAudioSource = null;
+let audioElementSource = null;
 let inputAnalyser = null;
 let outputAnalyser = null;
 let latestInputDbfs = null;
@@ -155,6 +155,7 @@ async function prepareAudioOutput() {
     }
 
     try {
+      const source = context.createMediaElementSource(audioEl);
       const inputMeter = context.createAnalyser();
       const outputMeter = context.createAnalyser();
       const gain = context.createGain();
@@ -163,15 +164,21 @@ async function prepareAudioOutput() {
       outputMeter.fftSize = 2048;
       inputMeter.smoothingTimeConstant = 0;
       outputMeter.smoothingTimeConstant = 0;
-      gain.gain.value = 1;
+      gain.gain.value = audioEl.muted ? 0 : audioEl.volume;
+      source.connect(inputMeter);
+      inputMeter.connect(outputMeter);
       outputMeter.connect(gain);
+      gain.connect(context.destination);
       gain.connect(destination);
       audioContext = context;
+      audioElementSource = source;
       inputAnalyser = inputMeter;
       outputAnalyser = outputMeter;
       playbackGain = gain;
       processedDestination = destination;
-      audioEl.srcObject = destination.stream;
+      audioEl.addEventListener("volumechange", () => {
+        if (playbackGain) playbackGain.gain.value = audioEl.muted ? 0 : audioEl.volume;
+      });
     } catch (error) {
       await context.close();
       throw error;
@@ -179,18 +186,6 @@ async function prepareAudioOutput() {
   }
 
   if (audioContext.state === "suspended") await audioContext.resume();
-}
-
-function connectRemoteAudioStream(stream) {
-  if (!audioContext || !inputAnalyser || !stream) {
-    throw new Error("Web Audio input is not ready");
-  }
-  if (remoteAudioSource) {
-    remoteAudioSource.disconnect();
-    remoteAudioSource = null;
-  }
-  remoteAudioSource = audioContext.createMediaStreamSource(stream);
-  remoteAudioSource.connect(inputAnalyser);
 }
 
 async function enableNoiseSuppression() {
@@ -342,10 +337,6 @@ function closePeer() {
   if (peer) {
     try { peer.ontrack = null; peer.onicecandidate = null; peer.close(); } catch {}
   }
-  if (remoteAudioSource) {
-    try { remoteAudioSource.disconnect(); } catch {}
-    remoteAudioSource = null;
-  }
   peer = null;
   remoteStream = null;
   audioEl.pause();
@@ -476,19 +467,7 @@ async function createPeer() {
     refreshAudioProcessingStatus();
     void updateMediaStatus(peer);
     recordButton.disabled = false;
-    try {
-      await prepareAudioOutput();
-      connectRemoteAudioStream(remoteStream);
-      audioEl.srcObject = processedDestination.stream;
-    } catch (error) {
-      if (remoteAudioSource) {
-        try { remoteAudioSource.disconnect(); } catch {}
-        remoteAudioSource = null;
-      }
-      disableNoiseSuppression();
-      audioEl.srcObject = remoteStream;
-      errorEl.textContent = `Web Audio processing unavailable; playing direct WebRTC audio. ${error.message}`;
-    }
+    audioEl.srcObject = remoteStream;
     try { await audioEl.play(); } catch { setState("Audio ready — press play"); }
   };
   peer.onconnectionstatechange = () => {
@@ -567,7 +546,7 @@ function startRecording() {
   try {
     const useFilteredOutput = recordSourceEl.value === "filtered";
     recordingSourceLabel = useFilteredOutput ? (noiseSuppressionActive ? "filtered" : "listener-output") : "raw";
-    if (useFilteredOutput && (!processedDestination || !remoteAudioSource)) {
+    if (useFilteredOutput && !processedDestination) {
       errorEl.textContent = "Filtered output is not ready. Start listening again, or select raw incoming audio.";
       return;
     }
