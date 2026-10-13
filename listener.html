@@ -1548,7 +1548,7 @@
         <div class="meter-wrap">
           <div class="meter-header">
             <span>AUDIO LEVEL</span>
-            <span class="meter-value" id="dbValue">-18 dB</span>
+            <span class="meter-value" id="dbValue">— dB</span>
           </div>
           <div class="meter-bars" id="meterBars"></div>
           <div class="meter-track">
@@ -1591,7 +1591,7 @@
           </div>
           <div class="info-pill">
             <svg viewBox="0 0 24 24"><path d="M12 2v6M12 16v6M4.93 4.93l4.24 4.24M14.83 14.83l4.24 4.24"/></svg>
-            <span class="pv">WebRTC</span>
+            <span class="pv">WSS Audio</span>
             <span class="pl" style="color:var(--green);">Connected</span>
           </div>
           <div class="info-pill">
@@ -2836,11 +2836,11 @@ refreshDeviceStatus();
 </script>
 <script>
 const vAudio=document.getElementById("audioBtn"),vAudioText=document.getElementById("audioBtnText"),vMic=document.getElementById("micOuter"),vBadge=document.getElementById("listeningBadge"),vRec=document.getElementById("recBtn"),vRecText=document.getElementById("recBtnText");
-function toggleListening(){const a=document.getElementById("start"),b=document.getElementById("stop");(b.disabled?a:b).click()}function toggleRecording(){const a=document.getElementById("record"),b=document.getElementById("stopRecord");(b.disabled?a:b).click()}function sendProjectAction(id){document.getElementById(id).click()}function clearProjectLogs(){document.getElementById("logClear").click()}function copyProjectLogs(){document.getElementById("logCopy").click()}
+function toggleListening(){if(listenerActive){document.getElementById("stop").click()}else{const start=document.getElementById("start");start.disabled=false;start.click()}}function toggleRecording(){const a=document.getElementById("record"),b=document.getElementById("stopRecord");(b.disabled?a:b).click()}function sendProjectAction(id){document.getElementById(id).click()}function clearProjectLogs(){document.getElementById("logClear").click()}function copyProjectLogs(){document.getElementById("logCopy").click()}
 function toast(msg){const n=document.getElementById("toast");n.textContent=msg;n.classList.add("show");clearTimeout(n._hideTimer);n._hideTimer=setTimeout(()=>n.classList.remove("show"),2600)}function toggleDeviceDropdown(){toast("This page is connected to the configured ESP32 device.")}function closeDeviceDropdown(){}function addDevice(){toast("Additional device selection is not configured.")}function confirmFactoryReset(){toast("Factory reset is not configured.")}function openSessionModal(){toast("Session timeout is managed by the server.")}function closeSessionModal(){}function saveSessionTimeout(){toast("Session timeout is managed by the server.")}function toggleHotspotPassword(){toast("Hotspot credentials are not shown here.")}function toggleHotspot(){toast("Hotspot control is not configured.")}function setQuality(){toast("This device streams mono PCM24 at 16 kHz.")}function updateGain(){toast("Microphone gain is set in ESP32 firmware.")}function setGainPreset(){toast("Microphone gain is set in ESP32 firmware.")}
 document.querySelectorAll(".tab-btn").forEach(t=>t.addEventListener("click",()=>{const k=t.dataset.tab;document.querySelectorAll(".tab-btn").forEach(x=>x.classList.toggle("active",x===t));document.querySelectorAll(".panel").forEach(p=>p.classList.toggle("active",p.id===`panel-${k}`))}));document.querySelectorAll('input[name="micMode"]').forEach((x,i)=>{x.disabled=true;x.checked=i===0});document.querySelectorAll('input[name="quality"]').forEach((x,i)=>{x.disabled=true;x.checked=i===0});document.querySelectorAll('input[name="timeout"],input[name="ledMode"]').forEach(x=>x.disabled=true);document.querySelectorAll('#panel-system .switch input').forEach(x=>x.disabled=true);
 const ledGroup=document.querySelector("#panel-system .radio-group");let vLed=null;if(ledGroup){const row=document.createElement("div");row.className="switch-row";row.innerHTML='<span class="sw-label">Blue RGB LED</span><label class="switch"><input id="blueLedToggle" type="checkbox" disabled><span class="slider-sw"></span></label>';ledGroup.replaceWith(row);vLed=row.querySelector("input")}
-function syncDesign(){const start=document.getElementById("start"),stop=document.getElementById("stop"),rec=document.getElementById("record"),stopRec=document.getElementById("stopRecord"),on=!stop.disabled,recording=!stopRec.disabled;vAudio.classList.toggle("stop",on);vAudio.classList.toggle("start",!on);vAudioText.textContent=on?"Stop Listening":"Start Listening";vMic.classList.toggle("active",on);vBadge.textContent=on?"Listening":"Not listening";vBadge.classList.toggle("active",on);vAudio.disabled=start.disabled&&!on;vRec.disabled=rec.disabled&&stopRec.disabled;vRec.classList.toggle("record",!recording);vRec.classList.toggle("recording",recording);vRecText.textContent=recording?"Stop Recording":"Start Recording";const led=document.getElementById("rgbLedBtn");if(vLed){vLed.disabled=led.disabled;vLed.checked=/off/i.test(led.textContent)}const online=document.getElementById("deviceStatus").textContent.includes("ONLINE"),head=document.getElementById("topStatus");head.textContent=online?"● ONLINE":"● OFFLINE";head.classList.toggle("online",online);head.classList.toggle("offline",!online);const s=document.getElementById("status").textContent;if(s&&/error|disconnected|offline/i.test(s))vBadge.title=s}
+function syncDesign(){const start=document.getElementById("start"),stop=document.getElementById("stop"),rec=document.getElementById("record"),stopRec=document.getElementById("stopRecord"),on=!!listenerActive,recording=!stopRec.disabled;start.disabled=on;stop.disabled=!on;vAudio.classList.toggle("stop",on);vAudio.classList.toggle("start",!on);vAudioText.textContent=on?"Stop Listening":"Start Listening";vMic.classList.toggle("active",on);vBadge.textContent=on?"Listening":"Not listening";vBadge.classList.toggle("active",on);vAudio.disabled=false;vRec.disabled=rec.disabled&&stopRec.disabled;vRec.classList.toggle("record",!recording);vRec.classList.toggle("recording",recording);vRecText.textContent=recording?"Stop Recording":"Start Recording";const led=document.getElementById("rgbLedBtn");if(vLed){vLed.disabled=led.disabled;vLed.checked=/off/i.test(led.textContent)}const online=document.getElementById("deviceStatus").textContent.includes("ONLINE"),head=document.getElementById("topStatus");head.textContent=online?"● ONLINE":"● OFFLINE";head.classList.toggle("online",online);head.classList.toggle("offline",!online);const s=document.getElementById("status").textContent;if(s&&/error|disconnected|offline/i.test(s))vBadge.title=s}
 if(vLed)vLed.addEventListener("change",()=>document.getElementById("rgbLedBtn").click());setInterval(syncDesign,300);syncDesign();
 </script>
 
@@ -2858,8 +2858,33 @@ if(vLed)vLed.addEventListener("change",()=>document.getElementById("rgbLedBtn").
  const ledCard=ledTitle?.nextElementSibling;ledCard?.querySelector(".switch-row")?.remove();
 })();
 </script>
+<script>
+(()=>{
+ const bars=document.getElementById("meterBars");
+ if(bars && !bars.children.length){for(let i=0;i<28;i++){const bar=document.createElement("span");bar.className="meter-bar";bars.appendChild(bar)}}
+ const quick=[...document.querySelectorAll("#panel-listener .info-pills[style*=margin-bottom] .info-pill .pl")];
+ const quickLabels=[...document.querySelectorAll("#panel-listener .info-pills[style*=margin-bottom] .info-pill .pv")];
+ const mic=document.getElementById("micOuter");if(mic){mic.style.cursor="pointer";mic.title="Tap to start or stop listening";mic.addEventListener("click",toggleListening)}
+ function syncListenerPage(){
+  const device=document.getElementById("deviceStatus").textContent.replace(/[🔴🟢●]/g,"").trim();
+  const render=document.getElementById("renderState").textContent.trim();
+  const audio=document.getElementById("audioState").textContent.trim();
+  const rssi=document.getElementById("hwRssi").textContent.trim();
+  const values=[device,listenerActive?(render||"CONNECTING"):(audio||"IDLE"),render,(rssi&&rssi!=="-"?"Connected":"Not reported")];
+  quick.forEach((node,i)=>{if(values[i]){node.textContent=values[i];node.style.color=/offline|unavailable|not reported|disconnected/i.test(values[i])?"var(--red)":"var(--green)"}});
+  if(quickLabels[1])quickLabels[1].textContent="WSS Audio";
+  const pct=parseFloat(document.getElementById("level").style.width)||0;
+  const ratio=Math.max(0,Math.min(1,pct/100));
+  const db=document.getElementById("dbValue");if(db)db.textContent=ratio>0?Math.max(-90,Math.round(20*Math.log10(ratio/2.2)))+" dB":"— dB";
+  const onBars=Math.round(ratio*bars.children.length);
+  [...bars.children].forEach((bar,i)=>{bar.className="meter-bar";if(i<onBars)bar.classList.add(i>bars.children.length*.88?"on-3":i>bars.children.length*.70?"on-2":"on-1")});
+ }
+ setInterval(syncListenerPage,120);syncListenerPage();
+})();
+</script>
 </body>
 </html>
+
 
 
 
