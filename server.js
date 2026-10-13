@@ -178,7 +178,7 @@ function requireSameOrigin(req, res, next) {
 }
 
 app.get("/", requireHttps, (req, res) => {
-    if (isAuthenticatedRequest(req)) return res.redirect("/phase5-listener");
+    if (isAuthenticatedRequest(req)) return res.redirect("/listener");
     res.sendFile(__dirname + "/index.html");
 });
 
