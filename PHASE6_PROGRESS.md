@@ -12,12 +12,14 @@
 - Added tests for IPv4/IPv6 forwarding, spoofed `X-Forwarded-For`, malformed proxy data, and fallback behavior.
 - Listener sessions now expire after 30 minutes without activity and still have a 24-hour absolute lifetime. User interaction refreshes the idle expiry, and active legacy/WebRTC listening sends a bounded five-minute heartbeat. Expired listener WebSockets are closed by the server; browser pages return to sign-in after expiry.
 - Added idle refresh and absolute lifetime tests; the activity endpoint only renews a currently valid same-origin session.
+- Authenticated POST endpoints and cookie-authenticated WebSocket connections now require an exact same-origin match, including behind Render's HTTPS proxy. This blocks cross-origin requests to reboot/forget-Wi-Fi controls and signaling.
 
 ## Still open
 
 - Sessions, rate limits, device state, and WebRTC pairing are process-local. They are not shared across instances and do not survive restarts.
 - The current WebRTC signaling contract supports one device and one listener at a time. There is no persistent device registry or per-device authorization policy.
 - Confirm Render's trusted client-IP header behavior with an authenticated edge request before treating IP-based rate limiting as fully verified.
+- Verify browser login, logout, listener WebSocket, and control requests from the staging origin; foreign/missing origins are covered by helper tests.
 - Verify idle session timeout and active WebRTC listener expiry against the deployed browser flow; automated state tests cover expiry and renewal.
 - Add authenticated per-device health/status/control APIs, multi-device isolation, and bounded concurrent listener behavior.
 - Validate signaling and media across separate networks; the current peer path is STUN-only and has no TURN relay.

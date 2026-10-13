@@ -6,6 +6,7 @@ const path = require("path");
 const { createWebRtcSignaling } = require("./webrtc_signaling");
 const { createAuthState, constantTimeStringEqual } = require("./auth_state");
 const { getClientIp } = require("./client_ip");
+const { isSameOriginRequest } = require("./request_security");
 
 const PORT = process.env.PORT || 10000;
 
@@ -167,6 +168,11 @@ function requireHttps(req, res, next) {
     return res.redirect(`https://${host}${req.originalUrl}`);
 }
 
+function requireSameOrigin(req, res, next) {
+    if (isSameOriginRequest(req)) return next();
+    return res.status(403).json({ ok: false, error: "Invalid origin" });
+}
+
 app.get("/", requireHttps, (req, res) => {
     if (isAuthenticatedRequest(req)) return res.redirect("/phase5-listener");
     res.sendFile(__dirname + "/index.html");
@@ -174,7 +180,7 @@ app.get("/", requireHttps, (req, res) => {
 
 app.get("/health", (req, res) => res.status(200).send("OK"));
 
-app.post("/api/auth", requireHttps, (req, res) => {
+app.post("/api/auth", requireHttps, requireSameOrigin, (req, res) => {
     const clientIp = getClientIp(req);
     if (authState.isAuthRateLimited(clientIp)) {
         return res.status(429).json({ ok: false, error: "Too many attempts." });
@@ -191,7 +197,7 @@ app.post("/api/auth", requireHttps, (req, res) => {
     return res.json({ ok: true });
 });
 
-app.post("/api/logout", requireHttps, (req, res) => {
+app.post("/api/logout", requireHttps, requireSameOrigin, (req, res) => {
     const sessionId = getCookie(req, SESSION_COOKIE_NAME);
     if (sessionId) authState.deleteSession(sessionId);
     res.setHeader("Set-Cookie",
@@ -199,12 +205,8 @@ app.post("/api/logout", requireHttps, (req, res) => {
     res.json({ ok: true });
 });
 
-app.post("/api/session/activity", requireHttps, (req, res) => {
+app.post("/api/session/activity", requireHttps, requireSameOrigin, (req, res) => {
     res.setHeader("Cache-Control", "no-store");
-    const expectedOrigin = `${isHttpsRequest(req) ? "https" : "http"}://${req.headers.host || ""}`;
-    if (!req.headers.origin || req.headers.origin !== expectedOrigin) {
-        return res.status(403).json({ ok: false, error: "Invalid origin" });
-    }
     const sessionId = getCookie(req, SESSION_COOKIE_NAME);
     if (!authState.touchSession(sessionId)) {
         return res.status(401).json({ ok: false, error: "Session expired" });
@@ -259,7 +261,7 @@ app.get("/api/esp32-health", requireHttps, async (req, res) => {
     }
 });
 
-app.post("/api/esp32/reboot", requireHttps, (req, res) => {
+app.post("/api/esp32/reboot", requireHttps, requireSameOrigin, (req, res) => {
     if (!isAuthenticatedRequest(req)) {
         return res.status(401).json({ ok: false, error: "Unauthorized" });
     }
@@ -278,7 +280,7 @@ app.post("/api/esp32/reboot", requireHttps, (req, res) => {
     return res.json({ ok: true, source_connected: forwarded });
 });
 
-app.post("/api/esp32/forget-wifi", requireHttps, (req, res) => {
+app.post("/api/esp32/forget-wifi", requireHttps, requireSameOrigin, (req, res) => {
     if (!isAuthenticatedRequest(req)) {
         return res.status(401).json({ ok: false, error: "Unauthorized" });
     }
@@ -296,6 +298,11 @@ app.post("/api/esp32/forget-wifi", requireHttps, (req, res) => {
 
 wss.on("connection", (ws, req) => {
     const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown";
+
+    if (getCookie(req, SESSION_COOKIE_NAME) && !isSameOriginRequest(req)) {
+        try { ws.close(1008, "Invalid listener origin"); } catch {}
+        return;
+    }
 
     if (ws._socket && typeof ws._socket.setNoDelay === "function") ws._socket.setNoDelay(true);
     if (ws._socket && typeof ws._socket.setKeepAlive === "function") ws._socket.setKeepAlive(true, 30000);
