@@ -89,7 +89,7 @@ let recordedChunks = [];
 let recordedBytes = 0;
 let sessionRedirectTimer = null;
 let audioContext = null;
-let remoteAudioSource = null;
+let mediaElementSource = null;
 let inputAnalyser = null;
 let outputAnalyser = null;
 let latestInputDbfs = null;
@@ -159,32 +159,21 @@ async function prepareAudioOutput() {
       const inputMeter = context.createAnalyser();
       const outputMeter = context.createAnalyser();
       const gain = context.createGain();
-      const silentPlaybackSink = context.createGain();
       const destination = context.createMediaStreamDestination();
       inputMeter.fftSize = 2048;
       outputMeter.fftSize = 2048;
       inputMeter.smoothingTimeConstant = 0;
       outputMeter.smoothingTimeConstant = 0;
-      gain.gain.value = audioEl.muted ? 0 : audioEl.volume;
+      gain.gain.value = 1;
       inputMeter.connect(outputMeter);
       outputMeter.connect(gain);
       gain.connect(destination);
-      /* Keep the Web Audio graph attached to the active device output while the
-       * processed MediaStream is played by audioEl. Without a destination sink,
-       * some browsers suspend the remote-track/worklet graph and GTCRN receives
-       * silence even though WebRTC continues decoding audio. */
-      silentPlaybackSink.gain.value = 0;
-      gain.connect(silentPlaybackSink);
-      silentPlaybackSink.connect(context.destination);
+      gain.connect(context.destination);
       audioContext = context;
       inputAnalyser = inputMeter;
       outputAnalyser = outputMeter;
       playbackGain = gain;
       processedDestination = destination;
-      audioEl.srcObject = destination.stream;
-      audioEl.addEventListener("volumechange", () => {
-        if (playbackGain) playbackGain.gain.value = audioEl.muted ? 0 : audioEl.volume;
-      });
     } catch (error) {
       await context.close();
       throw error;
@@ -198,12 +187,14 @@ function connectRemoteAudioStream(stream) {
   if (!audioContext || !inputAnalyser || !stream) {
     throw new Error("Web Audio input is not ready");
   }
-  if (remoteAudioSource) {
-    remoteAudioSource.disconnect();
-    remoteAudioSource = null;
+  audioEl.srcObject = stream;
+  // Route the same playable track through the element source and Web Audio graph.
+  if (!mediaElementSource) {
+    mediaElementSource = audioContext.createMediaElementSource(audioEl);
+  } else {
+    mediaElementSource.disconnect();
   }
-  remoteAudioSource = audioContext.createMediaStreamSource(stream);
-  remoteAudioSource.connect(inputAnalyser);
+  mediaElementSource.connect(inputAnalyser);
 }
 
 async function enableNoiseSuppression() {
@@ -231,13 +222,12 @@ async function enableNoiseSuppression() {
   if (!inputAnalyser || !outputAnalyser || !playbackGain) {
     throw new Error("GTCRN audio graph is not ready");
   }
-  if (remoteStream && !remoteAudioSource) connectRemoteAudioStream(remoteStream);
+  if (remoteStream) connectRemoteAudioStream(remoteStream);
   inputAnalyser.disconnect();
   inputAnalyser.connect(gtcrnNode);
   gtcrnNode.connect(outputAnalyser);
-  audioEl.srcObject = processedDestination.stream;
   audioEl.muted = false;
-  playbackGain.gain.value = audioEl.volume;
+  playbackGain.gain.value = 1;
   try { await audioEl.play(); } catch { setState("Audio ready — press play"); }
   noiseSuppressionActive = true;
   silentInputSinceMs = null;
@@ -245,11 +235,8 @@ async function enableNoiseSuppression() {
 }
 
 function disableNoiseSuppression() {
-  if (remoteAudioSource) {
-    try { remoteAudioSource.disconnect(); } catch {}
-    remoteAudioSource = null;
-  }
   if (inputAnalyser) inputAnalyser.disconnect();
+  if (inputAnalyser && outputAnalyser) inputAnalyser.connect(outputAnalyser);
   if (inputAnalyser && outputAnalyser) {
     if (gtcrnNode) {
       try { gtcrnNode.disconnect(); } catch {}
@@ -260,7 +247,8 @@ function disableNoiseSuppression() {
   noiseSuppressionActive = false;
   silentInputSinceMs = null;
   if (remoteStream) {
-    audioEl.srcObject = remoteStream;
+    if (mediaElementSource) connectRemoteAudioStream(remoteStream);
+    else audioEl.srcObject = remoteStream;
     void audioEl.play().catch(() => setState("Audio ready — press play"));
   }
   refreshAudioProcessingStatus();
@@ -413,10 +401,6 @@ function closePeer() {
     try { peer.ontrack = null; peer.onicecandidate = null; peer.close(); } catch {}
   }
   peer = null;
-  if (remoteAudioSource) {
-    try { remoteAudioSource.disconnect(); } catch {}
-    remoteAudioSource = null;
-  }
   silentInputSinceMs = null;
   remoteStream = null;
   audioEl.pause();
@@ -550,7 +534,8 @@ async function createPeer() {
     try {
       if (noiseSuppressionActive) {
         connectRemoteAudioStream(remoteStream);
-        audioEl.srcObject = processedDestination.stream;
+      } else if (mediaElementSource) {
+        connectRemoteAudioStream(remoteStream);
       } else {
         audioEl.srcObject = remoteStream;
       }
