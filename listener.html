@@ -1416,7 +1416,7 @@
   .content { flex:none; overflow:visible; }
 </style>
 <style>.project-compat{display:none!important}.toast.show{opacity:1;visibility:visible}#logBox{overflow:auto;white-space:pre-wrap}.listening-badge.active{color:#32df9b}</style>
-<style>.add-device-top{display:inline-flex;align-items:center;justify-content:center;gap:6px;flex-shrink:0;padding:9px 12px;border:1px solid #2b4b77;border-radius:10px;background:rgba(59,130,246,.12);color:#bfdbfe;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer}.add-device-top:hover{background:rgba(59,130,246,.2)}.volume-presets{position:relative;display:block;height:34px;margin:0 68px 6px 44px;padding:4px 0 12px;overflow:visible}.volume-preset{position:absolute;left:var(--preset-position);top:2px;transform:translateX(-50%);min-width:0;padding:4px 2px;border:0;border-radius:6px;background:transparent;color:var(--text-dim);font-family:inherit;font-size:11px;font-weight:600;line-height:18px;white-space:nowrap;cursor:pointer}.volume-preset[data-volume="50"]{transform:none}.volume-preset[data-volume="300"]{transform:translateX(-100%)}.volume-preset.active,.volume-preset:hover{color:#fff;background:rgba(59,130,246,.24)}@media(max-width:360px){.volume-presets{margin-right:64px;margin-left:42px}.volume-preset{font-size:10px}}.add-device-modal{position:fixed;inset:0;z-index:300;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(2,6,23,.78);backdrop-filter:blur(5px)}.add-device-modal.show{display:flex}.add-device-dialog{width:min(100%,420px);padding:22px;border:1px solid var(--border);border-radius:18px;background:var(--bg-card);box-shadow:0 24px 70px #0009}.add-device-dialog h2{margin:0 0 10px;font-size:18px}.add-device-dialog p{margin:0 0 16px;color:var(--text-dim);font-size:13px;line-height:1.55}.add-device-dialog button{padding:9px 15px;border:0;border-radius:9px;background:var(--blue);color:white;font-weight:650;cursor:pointer}@media(max-width:420px){.add-device-top{padding:8px 9px;font-size:11px}.volume-presets{gap:4px}.volume-preset{min-width:38px;padding:6px}}</style>
+<style>.add-device-top{display:inline-flex;align-items:center;justify-content:center;gap:6px;flex-shrink:0;padding:9px 12px;border:1px solid #2b4b77;border-radius:10px;background:rgba(59,130,246,.12);color:#bfdbfe;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer}.add-device-top:hover{background:rgba(59,130,246,.2)}.capacity-note{margin:-7px 4px 12px;color:var(--text-dim);font-size:11px;line-height:1.45}.capacity-note.busy{color:var(--amber)}.volume-presets{position:relative;display:block;height:34px;margin:0 68px 6px 44px;padding:4px 0 12px;overflow:visible}.volume-preset{position:absolute;left:var(--preset-position);top:2px;transform:translateX(-50%);min-width:0;padding:4px 2px;border:0;border-radius:6px;background:transparent;color:var(--text-dim);font-family:inherit;font-size:11px;font-weight:600;line-height:18px;white-space:nowrap;cursor:pointer}.volume-preset[data-volume="0"]{transform:none}.volume-preset[data-volume="300"]{transform:translateX(-100%)}.volume-preset.active,.volume-preset:hover{color:#fff;background:rgba(59,130,246,.24)}@media(max-width:360px){.volume-presets{margin-right:64px;margin-left:42px}.volume-preset{font-size:10px}}.add-device-modal{position:fixed;inset:0;z-index:300;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(2,6,23,.78);backdrop-filter:blur(5px)}.add-device-modal.show{display:flex}.add-device-dialog{width:min(100%,420px);padding:22px;border:1px solid var(--border);border-radius:18px;background:var(--bg-card);box-shadow:0 24px 70px #0009}.add-device-dialog h2{margin:0 0 10px;font-size:18px}.add-device-dialog p{margin:0 0 16px;color:var(--text-dim);font-size:13px;line-height:1.55}.add-device-dialog button{padding:9px 15px;border:0;border-radius:9px;background:var(--blue);color:white;font-weight:650;cursor:pointer}@media(max-width:420px){.add-device-top{padding:8px 9px;font-size:11px}.volume-presets{gap:4px}.volume-preset{min-width:38px;padding:6px}}</style>
 </head>
 <body>
 
@@ -1501,6 +1501,7 @@
             </div>
             <div class="listening-badge" id="listeningBadge">Not listening</div>
           </div>
+          <p class="capacity-note" id="capacityNote" role="status">Live audio supports one listener at a time. If someone else is listening, wait until they stop and try again.</p>
 
           <div class="mic-visual">
             <div class="mic-ring"></div>
@@ -1557,10 +1558,10 @@
 
         <div class="slider-row">
           <svg viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-          <input type="range" class="slider" min="0.5" max="3" step="0.01" value="1.5" id="volume" aria-label="Playback volume, 50 to 300 percent" >
+          <input type="range" class="slider" min="0" max="3" step="0.01" value="1.5" id="volume" aria-label="Playback volume, 0 to 300 percent" >
           <span class="slider-value" id="volumeValue">150%</span>
         </div>
-        <div class="volume-presets" id="volumePresets" aria-label="Playback volume presets"><button class="volume-preset" style="--preset-position:0%" type="button" data-volume="50" aria-label="Set volume to 50 percent">50</button><button class="volume-preset" style="--preset-position:20%" type="button" data-volume="100" aria-label="Set volume to 100 percent">100</button><button class="volume-preset active" style="--preset-position:40%" type="button" data-volume="150" aria-label="Set volume to 150 percent">150</button><button class="volume-preset" style="--preset-position:60%" type="button" data-volume="200" aria-label="Set volume to 200 percent">200</button><button class="volume-preset" style="--preset-position:80%" type="button" data-volume="250" aria-label="Set volume to 250 percent">250</button><button class="volume-preset" style="--preset-position:100%" type="button" data-volume="300" aria-label="Set volume to 300 percent">300</button></div>
+        <div class="volume-presets" id="volumePresets" aria-label="Playback volume presets"><button class="volume-preset" style="--preset-position:0%" type="button" data-volume="0" aria-label="Set volume to 0 percent">0</button><button class="volume-preset" style="--preset-position:16.6667%" type="button" data-volume="50" aria-label="Set volume to 50 percent">50</button><button class="volume-preset" style="--preset-position:33.3333%" type="button" data-volume="100" aria-label="Set volume to 100 percent">100</button><button class="volume-preset active" style="--preset-position:50%" type="button" data-volume="150" aria-label="Set volume to 150 percent">150</button><button class="volume-preset" style="--preset-position:66.6667%" type="button" data-volume="200" aria-label="Set volume to 200 percent">200</button><button class="volume-preset" style="--preset-position:83.3333%" type="button" data-volume="250" aria-label="Set volume to 250 percent">250</button><button class="volume-preset" style="--preset-position:100%" type="button" data-volume="300" aria-label="Set volume to 300 percent">300</button></div>
 
         <div class="record-card">
           <div class="record-header">
@@ -2131,7 +2132,7 @@ function syncPlaybackGain() {
   if (!audioContext || !playbackGain) return;
   const playing = remoteStream && !audioEl.paused;
   const requestedGain = Number(document.getElementById("volume").value);
-  const targetGain = playing && !audioEl.muted ? Math.max(0.5, Math.min(3, requestedGain)) : 0;
+  const targetGain = playing ? Math.max(0, Math.min(3, requestedGain)) : 0;
   playbackGain.gain.setTargetAtTime(targetGain, audioContext.currentTime, 0.015);
 }
 
@@ -2209,6 +2210,7 @@ function connectRemoteAudioStream(stream) {
     throw new Error("Web Audio input is not ready");
   }
   audioEl.srcObject = stream;
+  audioEl.muted = true;
   if (mediaStreamSource) {
     try { mediaStreamSource.disconnect(); } catch {}
   }
@@ -2249,7 +2251,7 @@ async function enableNoiseSuppression() {
   inputAnalyser.disconnect();
   inputAnalyser.connect(gtcrnNode);
   gtcrnNode.connect(outputAnalyser);
-  audioEl.muted = false;
+  audioEl.muted = true;
   syncPlaybackGain();
   // Do not wait for playback until the remote track exists: signaling starts
   // only after this initializer returns, and play() can remain pending with no source.
@@ -2589,7 +2591,7 @@ async function createPeer() {
       } else {
         audioEl.srcObject = remoteStream;
       }
-      audioEl.muted = false;
+      audioEl.muted = true;
       await audioEl.play();
     } catch (error) {
       restoreDirectAudio(`Processed playback could not start (${error.message}); direct WebRTC audio restored.`);
@@ -2792,8 +2794,8 @@ window.addEventListener("pagehide", () => {
 
 </script>
 <script>
-let esp32Online=false,serverReachable=false,uiRecordingWasActive=false,uiRecordingStartedAt=0,uiRecordingElapsed=0;
-async function refreshEsp32Status(){try{const response=await fetch("/api/webrtc/device-status",{credentials:"same-origin",cache:"no-store"});if(!response.ok)throw new Error("HTTP "+response.status);const data=await response.json();esp32Online=!!data.online;serverReachable=true}catch{esp32Online=false;serverReachable=false}syncListenerDesign()}
+let esp32Online=false,serverReachable=false,serverListenerConnected=false,uiRecordingWasActive=false,uiRecordingStartedAt=0,uiRecordingElapsed=0;
+async function refreshEsp32Status(){try{const response=await fetch("/api/webrtc/device-status",{credentials:"same-origin",cache:"no-store"});if(!response.ok)throw new Error("HTTP "+response.status);const data=await response.json();esp32Online=!!data.online;serverListenerConnected=!!data.listener_connected;serverReachable=true}catch{esp32Online=false;serverListenerConnected=false;serverReachable=false}syncListenerDesign()}
 const uiAudio=document.getElementById("audioBtn"),uiAudioText=document.getElementById("audioBtnText"),uiMic=document.getElementById("micOuter"),uiBadge=document.getElementById("listeningBadge"),uiRec=document.getElementById("recBtn"),uiRecText=document.getElementById("recBtnText"),uiVolume=document.getElementById("volume"),uiVolumeValue=document.getElementById("volumeValue"),uiLevel=document.getElementById("level"),uiDb=document.getElementById("dbValue");
 function toggleListening(){(listenerActive?stopButton:startButton).click()}function toggleRecording(){(stopRecordButton.disabled?recordButton:stopRecordButton).click()}
 function clearProjectLogs(){const n=document.getElementById("logBox");if(n)n.replaceChildren()}function copyProjectLogs(){const n=document.getElementById("logBox");if(n&&navigator.clipboard)navigator.clipboard.writeText(n.innerText).catch(()=>{})}
@@ -2816,7 +2818,7 @@ function syncListenerDesign(){
  if(recording&&!uiRecordingWasActive){uiRecordingStartedAt=Date.now();uiRecordingElapsed=0}if(!recording&&uiRecordingWasActive){uiRecordingElapsed=Date.now()-uiRecordingStartedAt;uiRecordingStartedAt=0}uiRecordingWasActive=recording;const elapsed=Math.floor((recording?Date.now()-uiRecordingStartedAt:uiRecordingElapsed)/1000),hours=Math.floor(elapsed/3600),minutes=Math.floor((elapsed%3600)/60),seconds=elapsed%60;document.getElementById("duration").textContent=[hours,minutes,seconds].map(n=>String(n).padStart(2,"0")).join(":");
  uiAudio.disabled=false;uiAudio.classList.toggle("stop",active);uiAudio.classList.toggle("start",!active);uiAudioText.textContent=active?"Stop Listening":"Start Listening";uiMic.classList.toggle("active",active);uiBadge.textContent=active?"Listening":"Not listening";uiBadge.classList.toggle("active",active);
  uiRec.disabled=recordButton.disabled&&stopRecordButton.disabled;uiRec.classList.toggle("record",!recording);uiRec.classList.toggle("recording",recording);uiRecText.textContent=recording?"Stop Recording":"Start Recording";document.getElementById("recordStatus").textContent=recording?"Recording":(uiRecordingElapsed>0?"Saved":"Not recording");
- const head=document.getElementById("topStatus"),state=deviceReady?"Connected":(active&&peer?.connectionState!=="failed"?"Connecting":"Not connected");head.textContent=state;head.classList.toggle("online",deviceReady);head.classList.toggle("offline",!deviceReady);
+ const head=document.getElementById("topStatus"),state=deviceReady?"Connected":(active&&peer?.connectionState!=="failed"?"Connecting":"Not connected");head.textContent=state;head.classList.toggle("online",deviceReady);head.classList.toggle("offline",!deviceReady);const capacityNote=document.getElementById("capacityNote");if(capacityNote){const busy=serverListenerConnected&&!active;capacityNote.textContent=busy?"Live audio is currently in use by another listener. Only one listener can connect at a time; try again when they stop.":"Live audio supports one listener at a time. If someone else is listening, wait until they stop and try again.";capacityNote.classList.toggle("busy",busy)}
  const media=mediaStatusEl.textContent;uiBadge.title=errorEl.textContent||media;const codec=media.match(/(?:^|;\s*)(opus|pcmu|pcma|g722|ilbc|isac)(?:\/([^;]+))?/i),rate=media.match(/\/(\d+)\s*Hz/i),channels=media.match(/\/(\d+)\s*ch/i),settings=track?.getSettings?.()||{};
  const rateNode=document.getElementById("pillRate"),codecNode=document.getElementById("pillBits"),channelNode=document.getElementById("pillChannels"),inputNode=document.getElementById("pillInput");
  rateNode.textContent=peerConnected?(rate?(Number(rate[1])/1000)+" kHz":(audioContext?(audioContext.sampleRate/1000)+" kHz":"Live")):"—";codecNode.textContent=peerConnected?(codec?codec[1].toUpperCase():"WebRTC"):"—";channelNode.textContent=peerConnected?((Number(channels?.[1]||settings.channelCount||1)===1)?"Mono":(channels?.[1]||settings.channelCount)+" ch"):"—";inputNode.textContent=peerConnected?(track.muted?"No signal":"Live"):"Waiting";
@@ -2825,7 +2827,7 @@ function syncListenerDesign(){
  const qvalues=[deviceReady?"Connected":(active?"Connecting":"Not connected"),peerConnected?"Connected":(active?(peer?.connectionState||"Connecting"):"Not connected"),serverReachable?"Connected":"Not connected",deviceReady?"Connected":"Not connected"];quickLabels.forEach((n,i)=>{n.textContent=qvalues[i];n.style.color=/connected|live/i.test(qvalues[i])?"var(--green)":qvalues[i]==="Connecting"?"var(--amber)":"var(--red)"});
  const menu=document.getElementById("deviceMenuStatus");if(menu)menu.textContent=deviceReady?"Connected":(active?"Connecting":"Not connected");if(uiLed)uiLed.disabled=true;
 }
-uiVolume.addEventListener("input",()=>{uiVolumeValue.textContent=Math.round(Number(uiVolume.value)*100)+"%";if(typeof syncPlaybackGain==="function")syncPlaybackGain();document.querySelectorAll(".volume-preset").forEach(b=>b.classList.toggle("active",Math.abs(Number(b.dataset.volume)/100-Number(uiVolume.value))<0.005))});document.querySelectorAll(".volume-preset").forEach(b=>b.addEventListener("click",()=>{uiVolume.value=Number(b.dataset.volume)/100;uiVolume.dispatchEvent(new Event("input",{bubbles:true}));syncListenerDesign()}));uiMic.addEventListener("click",toggleListening);
+uiVolume.addEventListener("input",()=>{uiVolumeValue.textContent=Math.round(Number(uiVolume.value)*100)+"%";if(audioContext?.state==="suspended")void audioContext.resume().then(syncPlaybackGain).catch(()=>{});else if(typeof syncPlaybackGain==="function")syncPlaybackGain();document.querySelectorAll(".volume-preset").forEach(b=>b.classList.toggle("active",Math.abs(Number(b.dataset.volume)/100-Number(uiVolume.value))<0.005))});document.querySelectorAll(".volume-preset").forEach(b=>b.addEventListener("click",()=>{uiVolume.value=Number(b.dataset.volume)/100;uiVolume.dispatchEvent(new Event("input",{bubbles:true}));syncListenerDesign()}));uiMic.addEventListener("click",toggleListening);
 const actionRows=[...document.querySelectorAll("#panel-system .action-row")],restart=actionRows.find(x=>x.textContent.includes("Restart ESP32")),wifi=actionRows.find(x=>x.textContent.includes("Forget Wi-Fi"));if(restart)restart.onclick=()=>toast("Restart control is unavailable through the current WebRTC device protocol.");if(wifi)wifi.onclick=()=>toast("Wi-Fi reset control is unavailable through the current WebRTC device protocol.");actionRows.find(x=>x.textContent.includes("Factory Reset"))?.remove();
 document.querySelector("#panel-system .update-banner")?.remove();document.querySelectorAll("#panel-system .btn-pill").forEach(b=>b.remove());const otaTitle=document.querySelector("#panel-system .section-title");if(otaTitle){const note=document.createElement("div");note.className="card flat small";note.textContent="Firmware updates are not configured on this service.";otaTitle.after(note)}
 document.getElementById("deviceList").innerHTML='<div class="device-item selected"><div class="device-item-logo online"></div><div class="device-item-text"><h4>ESP32 INMP441</h4><p id="deviceMenuStatus">Checking connection…</p></div><span class="device-item-badge">Current</span></div>';
