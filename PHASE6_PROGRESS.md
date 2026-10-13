@@ -13,6 +13,8 @@
 - Listener sessions now expire after 30 minutes without activity and still have a 24-hour absolute lifetime. User interaction refreshes the idle expiry, and active legacy/WebRTC listening sends a bounded five-minute heartbeat. Expired listener WebSockets are closed by the server; browser pages return to sign-in after expiry.
 - Added idle refresh and absolute lifetime tests; the activity endpoint only renews a currently valid same-origin session.
 - Authenticated POST endpoints and cookie-authenticated WebSocket connections now require an exact same-origin match, including behind Render's HTTPS proxy. This blocks cross-origin requests to reboot/forget-Wi-Fi controls and signaling.
+- WebSocket admission is capped at 64 total connections, legacy audio listeners at four, and WebRTC remains one listener per device; a second WebRTC listener is rejected without displacing the active one.
+- Added tests for listener capacity and WebRTC single-listener isolation.
 
 ## Still open
 
@@ -21,6 +23,6 @@
 - Confirm Render's trusted client-IP header behavior with an authenticated edge request before treating IP-based rate limiting as fully verified.
 - Verify browser login, logout, listener WebSocket, and control requests from the staging origin; foreign/missing origins are covered by helper tests.
 - Verify idle session timeout and active WebRTC listener expiry against the deployed browser flow; automated state tests cover expiry and renewal.
-- Add authenticated per-device health/status/control APIs, multi-device isolation, and bounded concurrent listener behavior.
+- Add per-device identity/authentication and authenticated per-device health/status/control APIs. The current firmware sends a shared fixed device name and one source token, so it cannot safely claim multiple independent device identities yet.
 - Validate signaling and media across separate networks; the current peer path is STUN-only and has no TURN relay.
 - Run staging soak, restart/reconnect, logout/expiry, and concurrent-client tests before calling Phase 6 complete.

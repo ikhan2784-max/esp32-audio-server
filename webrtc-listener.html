@@ -476,6 +476,15 @@ function connectSocket() {
     try { message = JSON.parse(event.data); } catch { return; }
     if (message.type === "webrtc_error") {
       errorEl.textContent = message.reason || "Signaling rejected";
+      if (message.reason === "listener_busy") {
+        listenerActive = false;
+        window.setListenerActive(false);
+        startButton.disabled = false;
+        stopButton.disabled = true;
+        setState("Another listener is already active");
+        errorEl.textContent = "This device already has an active WebRTC listener.";
+        return;
+      }
       if (message.reason === "listener_session_required" || message.reason === "listener_session_expired") {
         listenerActive = false;
         window.setListenerActive(false);

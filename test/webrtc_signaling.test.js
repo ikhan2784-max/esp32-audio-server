@@ -90,6 +90,21 @@ test("pairs authorized peers and relays only the expected offer, answer and ICE"
     assert.equal(signaling.getStatus().session_active, true);
 });
 
+test("rejects a second WebRTC listener without displacing the active listener", () => {
+    const harness = makeHarness();
+    const { signaling, listener } = harness;
+    const sessionId = joinBoth(harness);
+    const secondListener = new MockSocket(true);
+
+    signaling.handleMessage(secondListener, { type: "webrtc_listener_hello" });
+
+    assert.equal(secondListener.last("webrtc_error").reason, "listener_busy");
+    assert.equal(secondListener.closeCode, 1008);
+    assert.equal(listener.readyState, WebSocket.OPEN);
+    assert.equal(listener.last("webrtc_session_ready").session_id, sessionId);
+    assert.equal(signaling.getStatus().listener_connected, true);
+});
+
 test("rejects wrong-direction and oversized SDP", () => {
     const harness = makeHarness();
     const { signaling, listener } = harness;

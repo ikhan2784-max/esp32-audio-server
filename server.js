@@ -7,6 +7,7 @@ const { createWebRtcSignaling } = require("./webrtc_signaling");
 const { createAuthState, constantTimeStringEqual } = require("./auth_state");
 const { getClientIp } = require("./client_ip");
 const { isSameOriginRequest } = require("./request_security");
+const { addListenerWithinLimit } = require("./listener_capacity");
 
 const PORT = process.env.PORT || 10000;
 
@@ -17,6 +18,8 @@ const SESSION_COOKIE_NAME = "esp32_listener_session";
 const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
 const SESSION_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const MAX_SESSIONS = 4096;
+const MAX_WEBSOCKET_CLIENTS = 64;
+const MAX_LEGACY_LISTENERS = 4;
 
 const WS_CLIENT_PING_MS            = 45000;
 const DEVICE_HEARTBEAT_INTERVAL_MS = 5000;
@@ -299,6 +302,10 @@ app.post("/api/esp32/forget-wifi", requireHttps, requireSameOrigin, (req, res) =
 wss.on("connection", (ws, req) => {
     const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown";
 
+    if (wss.clients.size > MAX_WEBSOCKET_CLIENTS) {
+        try { ws.close(1013, "Server connection capacity reached"); } catch {}
+        return;
+    }
     if (getCookie(req, SESSION_COOKIE_NAME) && !isSameOriginRequest(req)) {
         try { ws.close(1008, "Invalid listener origin"); } catch {}
         return;
@@ -461,9 +468,13 @@ wss.on("connection", (ws, req) => {
                 try { ws.close(1008); } catch {}
                 return;
             }
+            if (!addListenerWithinLimit(listeners, ws, MAX_LEGACY_LISTENERS)) {
+                sendJson(ws, { type: "auth_failed", reason: "listener_limit" });
+                try { ws.close(1013, "Listener capacity reached"); } catch {}
+                return;
+            }
             ws.role = "listener";
             ws.authenticated = true;
-            listeners.add(ws);
             console.log(`Listener authenticated. Active listeners: ${listeners.size}`);
             sendJson(ws, {
                 type: "listener_ready",

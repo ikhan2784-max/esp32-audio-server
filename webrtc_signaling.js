@@ -86,8 +86,8 @@ function createWebRtcSignaling({ WebSocket, sourceToken, isListenerSessionValid 
                 return true;
             }
             if (listener && listener !== ws) {
-                endSession("listener_replaced", listener);
-                closeClient(listener, 1012, "Listener session replaced");
+                fail(ws, "listener_busy");
+                return true;
             }
             listener = ws;
             ws.role = "webrtc_listener";

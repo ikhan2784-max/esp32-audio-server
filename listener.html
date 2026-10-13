@@ -765,8 +765,13 @@ function connectWebSocket() {
           }
           reconnectInProgress = false;
           resetReconnectState();
-          setStatus("Access denied — listener authentication failed");
-          logAdd("Auth failed: " + (message.reason || "unknown"), "error");
+          if (message.reason === "listener_limit") {
+            setStatus("The maximum number of listeners is already connected.");
+            logAdd("Listener capacity reached; close another listener and retry.", "warn");
+          } else {
+            setStatus("Access denied — listener authentication failed");
+            logAdd("Auth failed: " + (message.reason || "unknown"), "error");
+          }
           start.disabled = !deviceOnline;
           stop.disabled = true;
           record.disabled = true;
