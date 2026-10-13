@@ -123,6 +123,56 @@ test("rejects wrong-direction and oversized SDP", () => {
     assert.equal(second.device.closeCode, 1008);
 });
 
+test("relays bounded session-only microphone gain controls and device acknowledgements", () => {
+    const harness = makeHarness();
+    const { signaling, device, listener } = harness;
+    const sessionId = joinBoth(harness);
+
+    signaling.handleMessage(listener, {
+        type: "webrtc_audio_control", session_id: sessionId,
+        command: "mic_gain", gain_percent: 125
+    });
+    assert.deepEqual(device.last("webrtc_audio_control"), {
+        type: "webrtc_audio_control", session_id: sessionId,
+        command: "mic_gain", gain_percent: 125
+    });
+
+    signaling.handleMessage(device, {
+        type: "webrtc_audio_control_ack", session_id: sessionId,
+        command: "mic_gain", gain_percent: 125, ok: true
+    });
+    assert.deepEqual(listener.last("webrtc_audio_control_ack"), {
+        type: "webrtc_audio_control_ack", session_id: sessionId,
+        command: "mic_gain", gain_percent: 125, ok: true
+    });
+});
+
+test("rejects stale, out-of-range, and wrong-direction microphone gain controls", () => {
+    const stale = makeHarness();
+    const staleSession = joinBoth(stale);
+    stale.signaling.handleMessage(stale.listener, {
+        type: "webrtc_audio_control", session_id: `${staleSession}x`,
+        command: "mic_gain", gain_percent: 100
+    });
+    assert.equal(stale.listener.closeCode, 1008);
+
+    const invalid = makeHarness();
+    const invalidSession = joinBoth(invalid);
+    invalid.signaling.handleMessage(invalid.listener, {
+        type: "webrtc_audio_control", session_id: invalidSession,
+        command: "mic_gain", gain_percent: 151
+    });
+    assert.equal(invalid.listener.closeCode, 1008);
+
+    const wrongDirection = makeHarness();
+    const directionSession = joinBoth(wrongDirection);
+    wrongDirection.signaling.handleMessage(wrongDirection.listener, {
+        type: "webrtc_audio_control_ack", session_id: directionSession,
+        command: "mic_gain", gain_percent: 100, ok: true
+    });
+    assert.equal(wrongDirection.listener.closeCode, 1008);
+});
+
 test("rejects binary audio from WebRTC peers and ends paired session on disconnect", () => {
     const harness = makeHarness();
     const { signaling, device, listener } = harness;

@@ -6,6 +6,8 @@ The existing `/listener` route and PCM relay remain unchanged. After PIN login, 
 
 The listener status reports Web Audio input and output RMS levels in dBFS to distinguish a quiet remote track from a silent GTCRN output. If the GTCRN worklet raises a processor error, the page bypasses it, restores direct audio, and marks noise suppression off.
 
+The listener's ESP32 microphone gain control is session-only and defaults to 100%. It accepts integer values from 50% to 150%, routes them through the authenticated WebRTC signaling session, and applies a smooth gain ramp to processed PCM immediately before Opus encoding. Render validates the listener role, active session, range, and control rate before forwarding the command. The ESP32 acknowledges the applied value. It is separate from browser playback volume and is never saved to NVS; increasing gain can clip the PCM signal.
+
 WebRTC media is direct peer-to-peer in this implementation. Render provides signaling only; it does not relay Opus media. The device and page use STUN for direct ICE, and no TURN server is configured, so some NAT/firewall combinations will fail. This branch is not a production deployment or end-to-end acceptance result until the ESP32 firmware is integrated and tested with the listener.
 
 Run the local signaling checks with:

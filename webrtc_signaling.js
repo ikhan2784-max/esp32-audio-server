@@ -6,6 +6,9 @@ const MAX_SDP_CHARS = 12 * 1024;
 const MAX_CANDIDATE_CHARS = 2048;
 const SIGNAL_WINDOW_MS = 60 * 1000;
 const MAX_SIGNALS_PER_WINDOW = 120;
+const MAX_CONTROL_MESSAGES_PER_WINDOW = 60;
+const MIC_GAIN_MIN_PERCENT = 50;
+const MIC_GAIN_MAX_PERCENT = 150;
 const MAX_SIGNAL_BUFFERED_BYTES = 64 * 1024;
 const DEVICE_NAME = "ESP32-S3-INMP441";
 
@@ -164,9 +167,87 @@ function createWebRtcSignaling({ WebSocket, sourceToken, isListenerSessionValid 
         return true;
     }
 
+    function controlRateAllowed(ws) {
+        const now = Date.now();
+        if (!ws.controlWindowStart || now - ws.controlWindowStart >= SIGNAL_WINDOW_MS) {
+            ws.controlWindowStart = now;
+            ws.controlCount = 0;
+        }
+        ws.controlCount = (ws.controlCount || 0) + 1;
+        return ws.controlCount <= MAX_CONTROL_MESSAGES_PER_WINDOW;
+    }
+
+    function handleAudioControl(ws, message) {
+        if (message.type !== "webrtc_audio_control") return false;
+        const senderIsListener = ws === listener && ws.role === "webrtc_listener" && ws.authenticated;
+        if (!senderIsListener || sessionId === null || message.session_id !== sessionId) {
+            fail(ws, "invalid_signaling_session");
+            return true;
+        }
+        if (typeof isListenerSessionValid !== "function" || !isListenerSessionValid(ws)) {
+            fail(ws, "listener_session_expired");
+            return true;
+        }
+        if (!controlRateAllowed(ws)) {
+            fail(ws, "control_rate_limited");
+            return true;
+        }
+        if (message.command !== "mic_gain" || !Number.isInteger(message.gain_percent) ||
+            message.gain_percent < MIC_GAIN_MIN_PERCENT ||
+            message.gain_percent > MIC_GAIN_MAX_PERCENT) {
+            fail(ws, "invalid_audio_control");
+            return true;
+        }
+
+        const forwarded = {
+            type: "webrtc_audio_control",
+            session_id: sessionId,
+            command: "mic_gain",
+            gain_percent: message.gain_percent
+        };
+        if (!send(device, forwarded)) {
+            endSession("peer_unavailable");
+            if (device && device.readyState === WebSocket.OPEN) {
+                closeClient(device, 1013, "Audio control peer overloaded");
+            }
+        }
+        return true;
+    }
+
+    function handleAudioControlAck(ws, message) {
+        if (message.type !== "webrtc_audio_control_ack") return false;
+        const senderIsDevice = ws === device && ws.role === "webrtc_device" && ws.authenticated;
+        if (!senderIsDevice || sessionId === null || message.session_id !== sessionId) {
+            fail(ws, "invalid_signaling_session");
+            return true;
+        }
+        if (!controlRateAllowed(ws)) {
+            fail(ws, "control_rate_limited");
+            return true;
+        }
+        if (message.command !== "mic_gain" || typeof message.ok !== "boolean" ||
+            !Number.isInteger(message.gain_percent) ||
+            message.gain_percent < MIC_GAIN_MIN_PERCENT ||
+            message.gain_percent > MIC_GAIN_MAX_PERCENT) {
+            fail(ws, "invalid_audio_control_ack");
+            return true;
+        }
+        if (!send(listener, {
+            type: "webrtc_audio_control_ack",
+            session_id: sessionId,
+            command: "mic_gain",
+            gain_percent: message.gain_percent,
+            ok: message.ok
+        })) {
+            endSession("peer_unavailable");
+        }
+        return true;
+    }
+
     function handleMessage(ws, message) {
         if (!message || typeof message !== "object" || Array.isArray(message)) return false;
-        return handleJoin(ws, message) || handleSignal(ws, message);
+        return handleJoin(ws, message) || handleSignal(ws, message) ||
+            handleAudioControl(ws, message) || handleAudioControlAck(ws, message);
     }
 
     function handleBinary(ws) {
