@@ -19,8 +19,6 @@
     .processing input { accent-color:#78adff; }
     .recording-source { display:flex; flex-direction:column; gap:6px; margin:12px 0; color:#e9eefc; font-size:.92rem; }
     .recording-source select { width:100%; border:1px solid #314264; border-radius:8px; padding:9px; color:#e9eefc; background:#0b1020; font:inherit; }
-    .device-source { display:flex; flex-direction:column; gap:6px; margin:12px 0; color:#e9eefc; font-size:.92rem; }
-    .device-source select { width:100%; border:1px solid #314264; border-radius:8px; padding:9px; color:#e9eefc; background:#0b1020; font:inherit; }
     .gain-control { border:1px solid #314264; border-radius:12px; padding:14px; margin:16px 0; }
     .gain-heading { display:flex; justify-content:space-between; gap:12px; font-weight:650; }
     #micGain { width:100%; accent-color:#78adff; margin:12px 0 4px; }
@@ -38,13 +36,8 @@
     <h1>WebRTC audio listener</h1>
     <p>Phase 5 connection check. Audio is received over a one-way WebRTC peer connection. Recording, when started, stays in this browser.</p>
     <div class="state" aria-live="polite">Connection: <strong id="state">Stopped</strong></div>
-    <label class="device-source" for="deviceSelect">ESP32 device
-      <select id="deviceSelect" disabled>
-        <option value="">Loading devices…</option>
-      </select>
-    </label>
     <div class="actions">
-      <button id="start" disabled>Start listening</button>
+      <button id="start">Start listening</button>
       <button class="secondary" id="stop" disabled>Stop</button>
       <button class="secondary" id="record" disabled>Record on this device</button>
       <button class="secondary" id="stopRecord" disabled>Stop recording</button>
@@ -93,7 +86,6 @@ const stopButton = document.getElementById("stop");
 const recordButton = document.getElementById("record");
 const stopRecordButton = document.getElementById("stopRecord");
 const recordSourceEl = document.getElementById("recordSource");
-const deviceSelectEl = document.getElementById("deviceSelect");
 
 let socket = null;
 let peer = null;
@@ -135,44 +127,6 @@ const MAX_RECORDING_BYTES = 128 * 1024 * 1024;
 const WS_RECONNECT_CLOSE_CODE = 3000;
 
 function setState(value) { stateEl.textContent = value; }
-
-async function loadConfiguredDevices() {
-  try {
-    const response = await fetch("/api/devices?_=" + Date.now(), { cache: "no-store" });
-    if (!response.ok) throw new Error("HTTP " + response.status);
-    const data = await response.json();
-    const devices = Array.isArray(data.devices) ? data.devices : [];
-    deviceSelectEl.replaceChildren();
-    for (const device of devices) {
-      if (!device || typeof device.device_id !== "string") continue;
-      const option = document.createElement("option");
-      option.value = device.device_id;
-      option.textContent = `${device.device_id} · ${device.device_connected ? "online" : "offline"}`;
-      deviceSelectEl.append(option);
-    }
-    const requestedId = new URLSearchParams(location.search).get("device_id");
-    if (requestedId && Array.from(deviceSelectEl.options).some((option) => option.value === requestedId)) {
-      deviceSelectEl.value = requestedId;
-    }
-    deviceSelectEl.disabled = devices.length === 0;
-    startButton.disabled = devices.length === 0;
-    if (devices.length === 0) {
-      const option = document.createElement("option");
-      option.value = "";
-      option.textContent = "No device credentials configured";
-      deviceSelectEl.append(option);
-      errorEl.textContent = "No ESP32 devices are configured on this Render service yet.";
-    } else {
-      const params = new URLSearchParams(location.search);
-      params.set("device_id", deviceSelectEl.value);
-      history.replaceState(null, "", `${location.pathname}?${params.toString()}`);
-    }
-  } catch (error) {
-    deviceSelectEl.disabled = true;
-    startButton.disabled = true;
-    errorEl.textContent = `Could not load the configured ESP32 devices: ${error.message}`;
-  }
-}
 
 function refreshMicGainAvailability() {
   const connected = !!sessionId && !!peer && peer.connectionState === "connected" &&
@@ -569,7 +523,7 @@ function connectSocket() {
   socket = current;
   setState("Connecting to Render signaling");
   current.onopen = () => {
-    current.send(JSON.stringify({ type: "webrtc_listener_hello", device_id: deviceSelectEl.value }));
+    current.send(JSON.stringify({ type: "webrtc_listener_hello" }));
   };
   current.onmessage = async (event) => {
     if (typeof event.data !== "string") return;
@@ -599,11 +553,11 @@ function connectSocket() {
       return;
     }
     if (message.type === "webrtc_listener_ready") {
-      setState(`Waiting for ${message.device_id || deviceSelectEl.value}`);
+      setState("Waiting for ESP32");
       return;
     }
     if (message.type === "webrtc_waiting_for_device") {
-      setState(`Waiting for ${message.device_id || deviceSelectEl.value}`);
+      setState("Waiting for ESP32");
       return;
     }
     if (message.type === "webrtc_session_ready") {
@@ -825,14 +779,12 @@ function stopRecording() {
 }
 
 startButton.onclick = async () => {
-  if (!deviceSelectEl.value) return;
   manualStop = false;
   listenerActive = true;
   window.setListenerActive(true);
   errorEl.textContent = "";
   startButton.disabled = true;
   stopButton.disabled = false;
-  deviceSelectEl.disabled = true;
   try {
     await prepareAudioOutput();
     if (noiseSuppressionEl.checked) await enableNoiseSuppression();
@@ -881,19 +833,11 @@ stopButton.onclick = () => {
   disableNoiseSuppression();
   startButton.disabled = false;
   stopButton.disabled = true;
-  deviceSelectEl.disabled = false;
   setState("Stopped");
 };
 
-deviceSelectEl.addEventListener("change", () => {
-  const params = new URLSearchParams(location.search);
-  params.set("device_id", deviceSelectEl.value);
-  history.replaceState(null, "", `${location.pathname}?${params.toString()}`);
-});
-
 recordButton.onclick = startRecording;
 stopRecordButton.onclick = stopRecording;
-void loadConfiguredDevices();
 window.addEventListener("pagehide", () => {
   manualStop = true;
   listenerActive = false;

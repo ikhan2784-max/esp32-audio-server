@@ -3,7 +3,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { createWebRtcSignaling, MAX_SDP_CHARS } = require("../webrtc_signaling");
-const { createDeviceCredentialRegistry } = require("../device_registry");
 const WebSocket = { OPEN: 1, CLOSED: 3 };
 
 class MockSocket {
@@ -57,86 +56,6 @@ test("requires device token and authenticated listener session", () => {
         listener_connected: false,
         session_active: false
     });
-});
-
-test("isolates signaling sessions by authenticated device identity", () => {
-    const signaling = createWebRtcSignaling({
-        WebSocket,
-        sourceToken: "default-token",
-        deviceRegistry: createDeviceCredentialRegistry({
-            sourceToken: "default-token",
-            deviceCredentialsJson: JSON.stringify({ kitchen: "kitchen-token", office: "office-token" }),
-        }),
-        isListenerSessionValid: (ws) => ws.sessionValid,
-    });
-    const devices = [new MockSocket(), new MockSocket()];
-    const listeners = [new MockSocket(true), new MockSocket(true)];
-
-    signaling.handleMessage(devices[0], {
-        type: "webrtc_device_hello", device: "ESP32-S3-INMP441", source_token: "kitchen-token"
-    });
-    signaling.handleMessage(devices[1], {
-        type: "webrtc_device_hello", device: "ESP32-S3-INMP441", source_token: "office-token"
-    });
-    signaling.handleMessage(listeners[0], { type: "webrtc_listener_hello", device_id: "kitchen" });
-    signaling.handleMessage(listeners[1], { type: "webrtc_listener_hello", device_id: "office" });
-
-    const kitchenSession = devices[0].last("webrtc_session_ready").session_id;
-    const officeSession = devices[1].last("webrtc_session_ready").session_id;
-    assert.ok(kitchenSession);
-    assert.ok(officeSession);
-    assert.notEqual(kitchenSession, officeSession);
-    assert.equal(listeners[0].last("webrtc_session_ready").device_id, "kitchen");
-    assert.equal(listeners[1].last("webrtc_session_ready").device_id, "office");
-
-    const kitchenOffer = "v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n";
-    signaling.handleMessage(devices[0], {
-        type: "webrtc_signal", session_id: kitchenSession, kind: "offer", sdp: kitchenOffer
-    });
-    assert.equal(listeners[0].last("webrtc_signal").sdp, kitchenOffer);
-    assert.equal(listeners[1].last("webrtc_signal"), undefined);
-
-    const wrongDeviceSignal = listeners[1].messages.length;
-    signaling.handleMessage(listeners[1], {
-        type: "webrtc_signal", session_id: kitchenSession, kind: "answer",
-        sdp: "v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n"
-    });
-    assert.equal(listeners[1].closeCode, 1008);
-    assert.equal(listeners[1].messages.length, wrongDeviceSignal + 1);
-    assert.equal(listeners[1].last("webrtc_error").reason, "invalid_signaling_session");
-
-    assert.deepEqual(signaling.getStatus("kitchen"), {
-        device_connected: true, listener_connected: true, session_active: true
-    });
-    assert.equal(signaling.getStatuses().length, 3);
-});
-
-test("enforces listener capacity independently for each device and applies device authorization", () => {
-    const signaling = createWebRtcSignaling({
-        WebSocket,
-        deviceRegistry: createDeviceCredentialRegistry({
-            deviceCredentialsJson: JSON.stringify({ kitchen: "kitchen-token", office: "office-token" }),
-        }),
-        isListenerSessionValid: (ws) => ws.sessionValid,
-        isListenerAuthorizedForDevice: (_ws, deviceId) => deviceId !== "office",
-    });
-    const kitchen = new MockSocket();
-    const office = new MockSocket();
-    const kitchenListener = new MockSocket(true);
-    const secondKitchenListener = new MockSocket(true);
-    const officeListener = new MockSocket(true);
-
-    signaling.handleMessage(kitchen, { type: "webrtc_device_hello", source_token: "kitchen-token" });
-    signaling.handleMessage(office, { type: "webrtc_device_hello", source_token: "office-token" });
-    signaling.handleMessage(kitchenListener, { type: "webrtc_listener_hello", device_id: "kitchen" });
-    signaling.handleMessage(secondKitchenListener, { type: "webrtc_listener_hello", device_id: "kitchen" });
-    signaling.handleMessage(officeListener, { type: "webrtc_listener_hello", device_id: "office" });
-
-    assert.equal(kitchenListener.last("webrtc_listener_ready").device_id, "kitchen");
-    assert.equal(secondKitchenListener.last("webrtc_error").reason, "listener_busy");
-    assert.equal(officeListener.last("webrtc_error").reason, "device_access_denied");
-    assert.equal(kitchen.readyState, WebSocket.OPEN);
-    assert.equal(office.readyState, WebSocket.OPEN);
 });
 
 test("pairs authorized peers and relays only the expected offer, answer and ICE", () => {
@@ -214,7 +133,7 @@ test("relays bounded session-only microphone gain controls and device acknowledg
         command: "mic_gain", gain_percent: 125
     });
     assert.deepEqual(device.last("webrtc_audio_control"), {
-        type: "webrtc_audio_control", device_id: "ESP32-S3-INMP441", session_id: sessionId,
+        type: "webrtc_audio_control", session_id: sessionId,
         command: "mic_gain", gain_percent: 125
     });
 
@@ -223,7 +142,7 @@ test("relays bounded session-only microphone gain controls and device acknowledg
         command: "mic_gain", gain_percent: 125, ok: true
     });
     assert.deepEqual(listener.last("webrtc_audio_control_ack"), {
-        type: "webrtc_audio_control_ack", device_id: "ESP32-S3-INMP441", session_id: sessionId,
+        type: "webrtc_audio_control_ack", session_id: sessionId,
         command: "mic_gain", gain_percent: 125, ok: true
     });
 });
