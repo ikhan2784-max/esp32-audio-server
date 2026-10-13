@@ -1768,7 +1768,7 @@
         </div>
         <div class="card flat">
           <div class="row"><span class="label">Device</span><span class="value mono" id="hwChip">—</span></div>
-          <div class="row"><span class="label">Firmware</span><span class="value mono">Not reported</span></div>
+          <div class="row"><span class="label">Firmware</span><span class="value mono" id="hwVersion">—</span></div>
           <div class="row"><span class="label">Uptime</span><span class="value mono" id="uptime">—</span></div>
           <div class="row"><span class="label">Boot Reason</span><span class="value" id="hwBoot">—</span></div>
           <div class="row"><span class="label">CPU Frequency</span><span class="value mono">—</span></div>
@@ -2001,7 +2001,7 @@
 </div>
 
 <div class="project-compat" aria-hidden="true">
-<button id="start">Start</button><button id="stop">Stop</button><button id="record">Record</button><button id="stopRecord">Stop recording</button><button id="rebootBtn">Reboot</button><button id="forgetWifiBtn">Forget Wi-Fi</button><button id="rgbLedBtn">Turn blue RGB LED on</button><button id="logToggle">Hide</button><button id="logClear">Clear</button><button id="logCopy">Copy</button>
+<button id="start" disabled>Start</button><button id="stop" disabled>Stop</button><button id="record" disabled>Record</button><button id="stopRecord" disabled>Stop recording</button><button id="rebootBtn">Reboot</button><button id="forgetWifiBtn">Forget Wi-Fi</button><button id="rgbLedBtn">Turn blue RGB LED on</button><button id="logToggle">Hide</button><button id="logClear">Clear</button><button id="logCopy">Copy</button>
 <div id="status"></div><div id="renderState"></div><div id="diagDevice"></div><div id="deviceStatus"></div><div id="audioState"></div><div id="streamingState"></div><div id="listenerCount"></div><div id="diagListeners"></div><div id="diagStreaming"></div><div id="lastSeen"></div><div id="lastReboot"></div><div id="connectedAt"></div><div id="hwMac"></div><div id="hwUptime"></div><div id="hwReboots"></div><div id="hwBrownouts"></div><div id="hwWifiDrops"></div><div id="hwWsConn"></div><div id="hwWsDisc"></div><div id="hwStack"></div><div id="hwPackets"></div><div id="hwErrors"></div><div id="hwTx"></div><div id="quickListening"></div><div id="quickRender"></div><div id="quickStreaming"></div><div id="quickDevice"></div><div id="quickAudio"></div><div id="quickWifi"></div>
 </div>
 <div class="toast" id="toast"></div>
@@ -2860,6 +2860,7 @@ if(vLed)vLed.addEventListener("change",()=>document.getElementById("rgbLedBtn").
 </script>
 </body>
 </html>
+
 
 
 
