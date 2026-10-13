@@ -364,8 +364,21 @@ wss.on("connection", (ws, req) => {
                 return;
             }
             const frameSamples = frame.readUInt16LE(6);
-            if (frameSamples === 0 || frameSamples > 2048 ||
-                frame.length !== 16 + frameSamples * 3) {
+            if (frameSamples === 0 || frameSamples > 2048) {
+                console.warn(`Rejected invalid ESP32 frame sample count: ${frameSamples}`);
+                return;
+            }
+            let forwardFrame = frame;
+            if (frame.length === 16 + frameSamples * 2) {
+                // Legacy ESP32 firmware sends signed PCM16. The existing browser
+                // listener decodes PCM24, so expand each sample without changing
+                // its amplitude or the 16-byte frame header.
+                forwardFrame = Buffer.allocUnsafe(16 + frameSamples * 3);
+                frame.copy(forwardFrame, 0, 0, 16);
+                for (let i = 0; i < frameSamples; i++) {
+                    forwardFrame.writeIntLE(frame.readInt16LE(16 + i * 2) * 256, 16 + i * 3, 3);
+                }
+            } else if (frame.length !== 16 + frameSamples * 3) {
                 console.warn(`Rejected invalid ESP32 frame length: ${frame.length}`);
                 return;
             }
@@ -396,7 +409,7 @@ wss.on("connection", (ws, req) => {
                         try { listener.terminate(); } catch {}
                         continue;
                     }
-                    try { listener.send(data, { binary: true }); }
+                    try { listener.send(forwardFrame, { binary: true }); }
                     catch (err) {
                         console.warn(`Audio forward error: ${err.message}`);
                         try { listener.terminate(); } catch {}
@@ -521,6 +534,25 @@ wss.on("connection", (ws, req) => {
             }
             sendJson(ws, { type: "reboot_requested", source_connected: forwarded });
             broadcastDeviceStatus();
+            return;
+        }
+
+        if (message.type === "rgb_led_set") {
+            if (ws.role !== "listener" || !ws.authenticated ||
+                typeof message.enabled !== "boolean") return;
+            let forwarded = false;
+            for (const source of sources) {
+                if (source.readyState === WebSocket.OPEN &&
+                    source.role === "source" && source.authenticated) {
+                    sendJson(source, { type: "rgb_led_set", enabled: message.enabled });
+                    forwarded = true;
+                }
+            }
+            sendJson(ws, {
+                type: "rgb_led_set_result",
+                enabled: message.enabled,
+                source_connected: forwarded
+            });
             return;
         }
 
