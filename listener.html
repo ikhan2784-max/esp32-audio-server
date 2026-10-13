@@ -1409,6 +1409,12 @@
   .toast.error   { border-left-color: var(--red); }
   .toast.warning { border-left-color: var(--amber); }
 </style>
+<style>
+  body { display:block; min-height:100vh; padding:0; }
+  .phone { width:100%; max-width:none; height:auto; max-height:none; padding:0; background:transparent; border:0; border-radius:0; box-shadow:none; position:static; }
+  .screen { width:100%; height:auto; min-height:100vh; border-radius:0; overflow:visible; }
+  .content { flex:none; overflow:visible; }
+</style>
 <style>.project-compat{display:none!important}.toast.show{opacity:1;visibility:visible}#logBox{overflow:auto;white-space:pre-wrap}.listening-badge.active{color:#32df9b}</style>
 </head>
 <body>
@@ -2884,6 +2890,7 @@ if(vLed)vLed.addEventListener("change",()=>document.getElementById("rgbLedBtn").
 </script>
 </body>
 </html>
+
 
 
 
