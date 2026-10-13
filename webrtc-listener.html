@@ -90,6 +90,7 @@ let recordedBytes = 0;
 let sessionRedirectTimer = null;
 let audioContext = null;
 let mediaElementSource = null;
+let mediaStreamSource = null;
 let inputAnalyser = null;
 let outputAnalyser = null;
 let latestInputDbfs = null;
@@ -130,6 +131,22 @@ function formatAudioLevelDbfs(value) {
   return Number.isFinite(value) ? `${value.toFixed(1)} dBFS` : "digital silence";
 }
 
+function syncPlaybackGain() {
+  if (!audioContext || !playbackGain) return;
+  const playing = remoteStream && !audioEl.paused;
+  playbackGain.gain.value = playing && !audioEl.muted ? audioEl.volume : 0;
+}
+
+audioEl.addEventListener("play", () => {
+  if (audioContext && audioContext.state === "suspended") {
+    void audioContext.resume().then(syncPlaybackGain).catch(() => {});
+  } else {
+    syncPlaybackGain();
+  }
+});
+audioEl.addEventListener("pause", syncPlaybackGain);
+audioEl.addEventListener("volumechange", syncPlaybackGain);
+
 function refreshAudioProcessingStatus() {
   const hasLiveTrack = remoteStream && remoteStream.getAudioTracks().some((track) => track.readyState === "live");
   const sampleRate = audioContext ? `${audioContext.sampleRate / 1000} kHz` : "";
@@ -169,11 +186,17 @@ async function prepareAudioOutput() {
       outputMeter.connect(gain);
       gain.connect(destination);
       gain.connect(context.destination);
+      // Keep the visible audio element as the source of its play/volume/mute controls,
+      // but do not use its MediaElementAudioSourceNode for RTP audio processing.
+      // WebRTC tracks are connected directly with createMediaStreamSource below.
+      const elementSource = context.createMediaElementSource(audioEl);
       audioContext = context;
+      mediaElementSource = elementSource;
       inputAnalyser = inputMeter;
       outputAnalyser = outputMeter;
       playbackGain = gain;
       processedDestination = destination;
+      syncPlaybackGain();
     } catch (error) {
       await context.close();
       throw error;
@@ -188,13 +211,15 @@ function connectRemoteAudioStream(stream) {
     throw new Error("Web Audio input is not ready");
   }
   audioEl.srcObject = stream;
-  // Route the same playable track through the element source and Web Audio graph.
-  if (!mediaElementSource) {
-    mediaElementSource = audioContext.createMediaElementSource(audioEl);
-  } else {
-    mediaElementSource.disconnect();
+  if (mediaStreamSource) {
+    try { mediaStreamSource.disconnect(); } catch {}
   }
-  mediaElementSource.connect(inputAnalyser);
+  // Feed the WebRTC track directly into Web Audio. The package's GTCRN worklet
+  // expects live AudioWorklet channel buffers; routing via the media element
+  // source can leave those buffers silent in this browser path.
+  mediaStreamSource = audioContext.createMediaStreamSource(stream);
+  mediaStreamSource.connect(inputAnalyser);
+  syncPlaybackGain();
 }
 
 async function enableNoiseSuppression() {
@@ -227,7 +252,7 @@ async function enableNoiseSuppression() {
   inputAnalyser.connect(gtcrnNode);
   gtcrnNode.connect(outputAnalyser);
   audioEl.muted = false;
-  playbackGain.gain.value = 1;
+  syncPlaybackGain();
   // Do not wait for playback until the remote track exists: signaling starts
   // only after this initializer returns, and play() can remain pending with no source.
   if (remoteStream) {
@@ -406,6 +431,10 @@ function closePeer() {
   }
   peer = null;
   silentInputSinceMs = null;
+  if (mediaStreamSource) {
+    try { mediaStreamSource.disconnect(); } catch {}
+    mediaStreamSource = null;
+  }
   remoteStream = null;
   audioEl.pause();
   audioEl.srcObject = null;
