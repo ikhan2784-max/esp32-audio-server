@@ -228,7 +228,11 @@ async function enableNoiseSuppression() {
   gtcrnNode.connect(outputAnalyser);
   audioEl.muted = false;
   playbackGain.gain.value = 1;
-  try { await audioEl.play(); } catch { setState("Audio ready — press play"); }
+  // Do not wait for playback until the remote track exists: signaling starts
+  // only after this initializer returns, and play() can remain pending with no source.
+  if (remoteStream) {
+    try { await audioEl.play(); } catch { setState("Audio ready — press play"); }
+  }
   noiseSuppressionActive = true;
   silentInputSinceMs = null;
   refreshAudioProcessingStatus();
