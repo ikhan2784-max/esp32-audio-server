@@ -1,6 +1,6 @@
-# Phase 6 — Render security and multi-device
+# Phase 6 — Render security and single-device reliability
 
-**Status:** In progress. This file records the first backend-hardening slice; it is not a completion claim.
+**Status:** In progress. The current scope is one ESP32 device, per the user's direction. Multi-device registration and selection are out of scope. This file is not a completion claim.
 
 ## Implemented in this slice
 
@@ -17,14 +17,17 @@
 - Added tests for listener capacity and WebRTC single-listener isolation.
 - Legacy listener authentication and every subsequent listener WebSocket message now recheck the live session, so an expired session cannot use the gap before the periodic socket sweep to issue controls. Legacy ESP32 source-token checks use the same timing-safe comparison helper as WebRTC.
 - Added tests for the live legacy-listener session guard.
+- WebRTC source-token comparison uses the shared timing-safe helper and rejects empty/unset credentials.
+- Added authenticated `GET /api/webrtc-status`, reporting the WebRTC device, listener, and session state separately from legacy PCM status. The response is marked `no-store`.
+- Added an HTTP integration test for unauthenticated rejection and authenticated WebRTC status.
 
 ## Still open
 
 - Sessions, rate limits, device state, and WebRTC pairing are process-local. They are not shared across instances and do not survive restarts.
-- The current WebRTC signaling contract supports one device and one listener at a time. There is no persistent device registry or per-device authorization policy.
+- The single-device WebRTC signaling state is process-local and resets on service restart; deployment must remain a single Render instance unless session/device state is moved to shared storage.
 - Confirm Render's trusted client-IP header behavior with an authenticated edge request before treating IP-based rate limiting as fully verified.
 - Verify browser login, logout, listener WebSocket, and control requests from the staging origin; foreign/missing origins are covered by helper tests.
 - Verify idle session timeout and active WebRTC listener expiry against the deployed browser flow; automated state tests cover expiry and renewal.
-- Add per-device identity/authentication and authenticated per-device health/status/control APIs. The current firmware sends a shared fixed device name and one source token, so it cannot safely claim multiple independent device identities yet.
+- Connect the single configured ESP32 and verify the authenticated WebRTC status endpoint tracks connect, disconnect, and listener session transitions.
 - Validate signaling and media across separate networks; the current peer path is STUN-only and has no TURN relay.
 - Run staging soak, restart/reconnect, logout/expiry, and concurrent-client tests before calling Phase 6 complete.

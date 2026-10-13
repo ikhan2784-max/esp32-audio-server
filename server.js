@@ -240,6 +240,14 @@ app.get("/api/device-status", requireHttps, (req, res) => {
     res.json(buildDeviceStatus());
 });
 
+app.get("/api/webrtc-status", requireHttps, (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    if (!isAuthenticatedRequest(req)) {
+        return res.status(401).json({ ok: false, error: "Unauthorized" });
+    }
+    return res.json({ ok: true, transport: "webrtc", ...webrtcSignaling.getStatus() });
+});
+
 app.get("/api/esp32-health", requireHttps, async (req, res) => {
     if (!isAuthenticatedRequest(req)) {
         return res.status(401).json({ ok: false, error: "Unauthorized" });

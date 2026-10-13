@@ -58,6 +58,26 @@ test("requires device token and authenticated listener session", () => {
     });
 });
 
+test("rejects an empty device token when server credentials are unset", () => {
+    const signaling = createWebRtcSignaling({
+        WebSocket,
+        sourceToken: "",
+        isListenerSessionValid: () => true,
+    });
+    const device = new MockSocket();
+    signaling.handleMessage(device, {
+        type: "webrtc_device_hello",
+        device: "ESP32-S3-INMP441",
+        source_token: "",
+    });
+    assert.equal(device.closeCode, 1008);
+    assert.deepEqual(signaling.getStatus(), {
+        device_connected: false,
+        listener_connected: false,
+        session_active: false,
+    });
+});
+
 test("pairs authorized peers and relays only the expected offer, answer and ICE", () => {
     const harness = makeHarness();
     const { signaling, device, listener } = harness;

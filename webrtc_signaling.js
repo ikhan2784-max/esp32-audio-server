@@ -1,6 +1,7 @@
 "use strict";
 
 const crypto = require("crypto");
+const { constantTimeStringEqual } = require("./auth_state");
 
 const MAX_SDP_CHARS = 12 * 1024;
 const MAX_CANDIDATE_CHARS = 2048;
@@ -16,9 +17,7 @@ function safeEqual(expected, actual) {
     if (typeof expected !== "string" || typeof actual !== "string" || !expected || !actual) {
         return false;
     }
-    const left = Buffer.from(expected, "utf8");
-    const right = Buffer.from(actual, "utf8");
-    return left.length === right.length && crypto.timingSafeEqual(left, right);
+    return constantTimeStringEqual(expected, actual);
 }
 
 function createWebRtcSignaling({ WebSocket, sourceToken, isListenerSessionValid }) {
