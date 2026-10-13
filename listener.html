@@ -1558,7 +1558,7 @@
 
         <div class="slider-row">
           <svg viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-          <input type="range" class="slider" min="0" max="200" value="150" id="volume" >
+          <input type="range" class="slider" min="0" max="3" step="0.01" value="1.5" id="volume" >
           <span class="slider-value" id="volumeValue">150%</span>
         </div>
 
@@ -1716,7 +1716,7 @@
         <div class="card flat">
           <div class="row">
             <span class="label">Connected to</span>
-            <span class="value good">MyHomeWiFi</span>
+            <span class="value good">Not reported</span>
           </div>
           <div class="row clickable" onclick="toast('Scanning networks…', 'info')">
             <span class="label">Scan Networks</span>
@@ -1768,10 +1768,10 @@
         </div>
         <div class="card flat">
           <div class="row"><span class="label">Device</span><span class="value mono" id="hwChip">—</span></div>
-          <div class="row"><span class="label">Firmware</span><span class="value mono">v2.0.0</span></div>
+          <div class="row"><span class="label">Firmware</span><span class="value mono">Not reported</span></div>
           <div class="row"><span class="label">Uptime</span><span class="value mono" id="uptime">—</span></div>
           <div class="row"><span class="label">Boot Reason</span><span class="value" id="hwBoot">—</span></div>
-          <div class="row"><span class="label">CPU Frequency</span><span class="value mono">240 MHz</span></div>
+          <div class="row"><span class="label">CPU Frequency</span><span class="value mono">—</span></div>
           <div class="row"><span class="label">Temperature</span><span class="value mono" id="hwTemp">—</span></div>
         </div>
 
@@ -1783,7 +1783,7 @@
           <div class="row"><span class="label">Free Heap</span><span class="value mono" id="hwHeap">—</span></div>
           <div class="row"><span class="label">Minimum Heap</span><span class="value mono" id="hwMinHeap">—</span></div>
           <div class="row"><span class="label">Free PSRAM</span><span class="value mono" id="hwPsram">—</span></div>
-          <div class="row"><span class="label">Total PSRAM</span><span class="value mono">8.0 MB</span></div>
+          <div class="row"><span class="label">Total PSRAM</span><span class="value mono">—</span></div>
         </div>
 
         <div class="section-title">
@@ -1791,7 +1791,7 @@
           NETWORK
         </div>
         <div class="card flat">
-          <div class="row"><span class="label">SSID</span><span class="value mono">MyHomeWiFi</span></div>
+          <div class="row"><span class="label">SSID</span><span class="value mono">Not reported</span></div>
           <div class="row">
             <span class="label">RSSI</span>
             <span class="value">
@@ -1838,8 +1838,8 @@
         </div>
 
         <div class="card flat" style="margin-bottom:10px;">
-          <div class="row"><span class="label">Current Version</span><span class="value mono">v2.0.0</span></div>
-          <div class="row"><span class="label">Latest Version</span><span class="value mono good">v2.0.1</span></div>
+          <div class="row"><span class="label">Current Version</span><span class="value mono">Not reported</span></div>
+          <div class="row"><span class="label">Latest Version</span><span class="value mono good">Not configured</span></div>
         </div>
 
         <div class="update-banner">
@@ -1854,7 +1854,7 @@
           <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
           Check for Update
         </button>
-        <button class="btn-pill secondary" style="margin-bottom:20px;" onclick="toast('Downloading update v2.0.1…', 'success')">
+        <button class="btn-pill secondary" style="margin-bottom:20px;" onclick="toast('Downloading update Not configured…', 'success')">
           <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Update Now
         </button>
@@ -2002,7 +2002,7 @@
 
 <div class="project-compat" aria-hidden="true">
 <button id="start">Start</button><button id="stop">Stop</button><button id="record">Record</button><button id="stopRecord">Stop recording</button><button id="rebootBtn">Reboot</button><button id="forgetWifiBtn">Forget Wi-Fi</button><button id="rgbLedBtn">Turn blue RGB LED on</button><button id="logToggle">Hide</button><button id="logClear">Clear</button><button id="logCopy">Copy</button>
-<div id="status"></div><div id="deviceStatus"></div><div id="audioState"></div><div id="streamingState"></div><div id="listenerCount"></div><div id="diagListeners"></div><div id="diagStreaming"></div><div id="lastSeen"></div><div id="lastReboot"></div><div id="connectedAt"></div><div id="hwMac"></div><div id="hwUptime"></div><div id="hwReboots"></div><div id="hwBrownouts"></div><div id="hwWifiDrops"></div><div id="hwWsConn"></div><div id="hwWsDisc"></div><div id="hwStack"></div><div id="hwPackets"></div><div id="hwErrors"></div><div id="hwTx"></div><div id="quickListening"></div><div id="quickRender"></div><div id="quickStreaming"></div><div id="quickDevice"></div><div id="quickAudio"></div><div id="quickWifi"></div>
+<div id="status"></div><div id="renderState"></div><div id="diagDevice"></div><div id="deviceStatus"></div><div id="audioState"></div><div id="streamingState"></div><div id="listenerCount"></div><div id="diagListeners"></div><div id="diagStreaming"></div><div id="lastSeen"></div><div id="lastReboot"></div><div id="connectedAt"></div><div id="hwMac"></div><div id="hwUptime"></div><div id="hwReboots"></div><div id="hwBrownouts"></div><div id="hwWifiDrops"></div><div id="hwWsConn"></div><div id="hwWsDisc"></div><div id="hwStack"></div><div id="hwPackets"></div><div id="hwErrors"></div><div id="hwTx"></div><div id="quickListening"></div><div id="quickRender"></div><div id="quickStreaming"></div><div id="quickDevice"></div><div id="quickAudio"></div><div id="quickWifi"></div>
 </div>
 <div class="toast" id="toast"></div>
 
@@ -2840,10 +2840,26 @@ function toggleListening(){const a=document.getElementById("start"),b=document.g
 function toast(msg){const n=document.getElementById("toast");n.textContent=msg;n.classList.add("show");clearTimeout(n._hideTimer);n._hideTimer=setTimeout(()=>n.classList.remove("show"),2600)}function toggleDeviceDropdown(){toast("This page is connected to the configured ESP32 device.")}function closeDeviceDropdown(){}function addDevice(){toast("Additional device selection is not configured.")}function confirmFactoryReset(){toast("Factory reset is not configured.")}function openSessionModal(){toast("Session timeout is managed by the server.")}function closeSessionModal(){}function saveSessionTimeout(){toast("Session timeout is managed by the server.")}function toggleHotspotPassword(){toast("Hotspot credentials are not shown here.")}function toggleHotspot(){toast("Hotspot control is not configured.")}function setQuality(){toast("This device streams mono PCM24 at 16 kHz.")}function updateGain(){toast("Microphone gain is set in ESP32 firmware.")}function setGainPreset(){toast("Microphone gain is set in ESP32 firmware.")}
 document.querySelectorAll(".tab-btn").forEach(t=>t.addEventListener("click",()=>{const k=t.dataset.tab;document.querySelectorAll(".tab-btn").forEach(x=>x.classList.toggle("active",x===t));document.querySelectorAll(".panel").forEach(p=>p.classList.toggle("active",p.id===`panel-${k}`))}));document.querySelectorAll('input[name="micMode"]').forEach((x,i)=>{x.disabled=true;x.checked=i===0});document.querySelectorAll('input[name="quality"]').forEach((x,i)=>{x.disabled=true;x.checked=i===0});document.querySelectorAll('input[name="timeout"],input[name="ledMode"]').forEach(x=>x.disabled=true);document.querySelectorAll('#panel-system .switch input').forEach(x=>x.disabled=true);
 const ledGroup=document.querySelector("#panel-system .radio-group");let vLed=null;if(ledGroup){const row=document.createElement("div");row.className="switch-row";row.innerHTML='<span class="sw-label">Blue RGB LED</span><label class="switch"><input id="blueLedToggle" type="checkbox" disabled><span class="slider-sw"></span></label>';ledGroup.replaceWith(row);vLed=row.querySelector("input")}
-function syncDesign(){const start=document.getElementById("start"),stop=document.getElementById("stop"),rec=document.getElementById("record"),stopRec=document.getElementById("stopRecord"),on=!stop.disabled,recording=!rec.disabled;vAudio.classList.toggle("stop",on);vAudio.classList.toggle("start",!on);vAudioText.textContent=on?"Stop Listening":"Start Listening";vMic.classList.toggle("active",on);vBadge.textContent=on?"Listening":"Not listening";vBadge.classList.toggle("active",on);vAudio.disabled=start.disabled&&!on;vRec.disabled=rec.disabled&&stopRec.disabled;vRec.classList.toggle("record",!recording);vRec.classList.toggle("recording",recording);vRecText.textContent=recording?"Stop Recording":"Start Recording";const led=document.getElementById("rgbLedBtn");if(vLed){vLed.disabled=led.disabled;vLed.checked=/off/i.test(led.textContent)}const online=document.getElementById("deviceStatus").textContent.includes("ONLINE"),head=document.getElementById("topStatus");head.textContent=online?"● ONLINE":"● OFFLINE";head.classList.toggle("online",online);head.classList.toggle("offline",!online);const s=document.getElementById("status").textContent;if(s&&/error|disconnected|offline/i.test(s))vBadge.title=s}
+function syncDesign(){const start=document.getElementById("start"),stop=document.getElementById("stop"),rec=document.getElementById("record"),stopRec=document.getElementById("stopRecord"),on=!stop.disabled,recording=!stopRec.disabled;vAudio.classList.toggle("stop",on);vAudio.classList.toggle("start",!on);vAudioText.textContent=on?"Stop Listening":"Start Listening";vMic.classList.toggle("active",on);vBadge.textContent=on?"Listening":"Not listening";vBadge.classList.toggle("active",on);vAudio.disabled=start.disabled&&!on;vRec.disabled=rec.disabled&&stopRec.disabled;vRec.classList.toggle("record",!recording);vRec.classList.toggle("recording",recording);vRecText.textContent=recording?"Stop Recording":"Start Recording";const led=document.getElementById("rgbLedBtn");if(vLed){vLed.disabled=led.disabled;vLed.checked=/off/i.test(led.textContent)}const online=document.getElementById("deviceStatus").textContent.includes("ONLINE"),head=document.getElementById("topStatus");head.textContent=online?"● ONLINE":"● OFFLINE";head.classList.toggle("online",online);head.classList.toggle("offline",!online);const s=document.getElementById("status").textContent;if(s&&/error|disconnected|offline/i.test(s))vBadge.title=s}
 vAudio.addEventListener("click",toggleListening);vRec.addEventListener("click",toggleRecording);if(vLed)vLed.addEventListener("change",()=>document.getElementById("rgbLedBtn").click());setInterval(syncDesign,300);syncDesign();
 </script>
 
+<script>
+(()=>{
+ const sys=document.getElementById("panel-system");
+ const ota=sys.querySelector(".section-title");
+ if(ota){const note=document.createElement("div");note.className="card flat small";note.textContent="OTA updates are not configured for this firmware.";ota.after(note);}
+ sys.querySelector(".update-banner")?.remove();
+ sys.querySelectorAll(".btn-pill").forEach(button=>button.remove());
+ const factory=[...sys.querySelectorAll(".action-row")].find(row=>row.textContent.includes("Factory Reset"));factory?.remove();
+ const restart=[...sys.querySelectorAll(".action-row")].find(row=>row.textContent.includes("Restart ESP32"));if(restart)restart.onclick=()=>sendProjectAction("rebootBtn");
+ const wifi=[...sys.querySelectorAll(".action-row")].find(row=>row.textContent.includes("Forget Wi-Fi"));if(wifi)wifi.onclick=()=>sendProjectAction("forgetWifiBtn");
+ const ledTitle=[...sys.querySelectorAll(".section-title")].find(node=>node.textContent.includes("LED SETTINGS"));
+ const ledCard=ledTitle?.nextElementSibling;ledCard?.querySelector(".switch-row")?.remove();
+})();
+</script>
 </body>
 </html>
+
+
 
