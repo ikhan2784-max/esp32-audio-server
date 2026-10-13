@@ -9,11 +9,20 @@ const { getClientIp } = require("./client_ip");
 const { isSameOriginRequest } = require("./request_security");
 const { addListenerWithinLimit } = require("./listener_capacity");
 const { hasValidListenerSession } = require("./listener_auth");
+const { createDeviceCredentialRegistry, isValidDeviceId } = require("./device_registry");
 
 const PORT = process.env.PORT || 10000;
 
 const SOURCE_TOKEN = process.env.SOURCE_TOKEN || "";
 const LISTENER_PIN = process.env.LISTENER_PIN || "";
+const MAX_CONFIGURED_DEVICES = process.env.MAX_CONFIGURED_DEVICES === undefined
+    ? 16
+    : Number(process.env.MAX_CONFIGURED_DEVICES);
+const deviceCredentialRegistry = createDeviceCredentialRegistry({
+    sourceToken: SOURCE_TOKEN,
+    deviceCredentialsJson: process.env.DEVICE_CREDENTIALS_JSON || "",
+    maxDevices: MAX_CONFIGURED_DEVICES,
+});
 
 const SESSION_COOKIE_NAME = "esp32_listener_session";
 const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
@@ -98,9 +107,11 @@ const wss = new WebSocket.Server({
 });
 const webrtcSignaling = createWebRtcSignaling({
     WebSocket,
-    sourceToken: SOURCE_TOKEN,
+    deviceRegistry: deviceCredentialRegistry,
     isListenerSessionValid: (ws) => ws.sessionAuthenticated &&
-        typeof ws.sessionValid === "function" && ws.sessionValid()
+        typeof ws.sessionValid === "function" && ws.sessionValid(),
+    isListenerAuthorizedForDevice: (ws) => ws.sessionAuthenticated &&
+        typeof ws.sessionValid === "function" && ws.sessionValid(),
 });
 
 const listeners = new Set();
@@ -238,6 +249,28 @@ app.get("/api/device-status", requireHttps, (req, res) => {
         return res.status(401).json({ ok: false, error: "Unauthorized" });
     }
     res.json(buildDeviceStatus());
+});
+
+app.get("/api/devices", requireHttps, (req, res) => {
+    if (!isAuthenticatedRequest(req)) {
+        return res.status(401).json({ ok: false, error: "Unauthorized" });
+    }
+    res.setHeader("Cache-Control", "no-store");
+    return res.json({ ok: true, devices: webrtcSignaling.getStatuses() });
+});
+
+app.get("/api/devices/:deviceId/status", requireHttps, (req, res) => {
+    if (!isAuthenticatedRequest(req)) {
+        return res.status(401).json({ ok: false, error: "Unauthorized" });
+    }
+    const deviceId = req.params.deviceId;
+    if (!isValidDeviceId(deviceId)) {
+        return res.status(400).json({ ok: false, error: "Invalid device ID" });
+    }
+    const status = webrtcSignaling.getStatus(deviceId);
+    if (!status) return res.status(404).json({ ok: false, error: "Unknown device" });
+    res.setHeader("Cache-Control", "no-store");
+    return res.json({ ok: true, device_id: deviceId, ...status });
 });
 
 app.get("/api/esp32-health", requireHttps, async (req, res) => {
@@ -639,6 +672,7 @@ server.listen(PORT, "0.0.0.0", () => {
     console.log(`HTTP/WS server on port ${PORT}`);
     console.log(`SOURCE_TOKEN: ${SOURCE_TOKEN ? "YES" : "NO"}`);
     console.log(`LISTENER_PIN: ${LISTENER_PIN ? "YES" : "NO"}`);
+    console.log(`Configured WebRTC device identities: ${deviceCredentialRegistry.size}`);
     console.log(`Device heartbeat check: every ${DEVICE_HEARTBEAT_INTERVAL_MS / 1000}s, timeout ${DEVICE_HEARTBEAT_TIMEOUT_MS / 1000}s`);
     console.log(`Per-connection WS ping: every ${WS_CLIENT_PING_MS / 1000}s (ONLY ping mechanism)`);
     console.log(`Server->ESP32 JSON keepalive: every ${SOURCE_KEEPALIVE_MS / 1000}s`);

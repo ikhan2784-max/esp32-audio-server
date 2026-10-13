@@ -18,13 +18,25 @@
 - Legacy listener authentication and every subsequent listener WebSocket message now recheck the live session, so an expired session cannot use the gap before the periodic socket sweep to issue controls. Legacy ESP32 source-token checks use the same timing-safe comparison helper as WebRTC.
 - Added tests for the live legacy-listener session guard.
 
+## Multi-device foundation added on the Phase 6 feature branch
+
+These changes are on the local Phase 6 feature branch. The automated backend suite and a local HTTP smoke check pass; this slice has not been deployed to Render or exercised with multiple physical devices:
+
+- Added a bounded credential registry configured with `DEVICE_CREDENTIALS_JSON`; each device token maps to one validated device ID. The existing `SOURCE_TOKEN` remains the credential for `ESP32-S3-INMP441`.
+- Device tokens are reduced to keyed digests in the registry, compared with fixed-size timing-safe checks, and never returned by the registry API. Duplicate tokens, conflicting default credentials, invalid IDs, malformed configuration, and over-capacity configurations fail closed.
+- WebRTC device/listener pairs, session IDs, signaling, and microphone-gain controls are now scoped to a device ID. A listener for one device cannot relay through another device's session; one listener is allowed per device.
+- Added authenticated `/api/devices` and `/api/devices/:deviceId/status` endpoints and a device selector on the WebRTC listener page.
+- Existing firmware can keep omitting `device_id`: the server derives the identity from its unique token. If a device ID is supplied later, it must match that token.
+- Validation: `npm test` passed 34/34 tests. A local server smoke check verified unauthenticated device listing is rejected (401), listener sign-in succeeds (200), the authenticated device list/status endpoints succeed (200), and test tokens are not returned.
+- This is a backend foundation, not Phase 6 completion. A valid listener PIN currently grants access to all configured devices. Per-user/device authorization, device-specific health and control APIs, persistent/shared state, staging browser/device validation, cross-network ICE/TURN validation, and multi-client soak remain open.
+
 ## Still open
 
 - Sessions, rate limits, device state, and WebRTC pairing are process-local. They are not shared across instances and do not survive restarts.
-- The current WebRTC signaling contract supports one device and one listener at a time. There is no persistent device registry or per-device authorization policy.
+- WebRTC signaling now has a configured per-device registry and isolated one-listener-per-device sessions in local code. There is no persistent registry or per-user/device authorization policy yet, and the separate legacy PCM endpoint still follows its single-source contract.
 - Confirm Render's trusted client-IP header behavior with an authenticated edge request before treating IP-based rate limiting as fully verified.
 - Verify browser login, logout, listener WebSocket, and control requests from the staging origin; foreign/missing origins are covered by helper tests.
 - Verify idle session timeout and active WebRTC listener expiry against the deployed browser flow; automated state tests cover expiry and renewal.
-- Add per-device identity/authentication and authenticated per-device health/status/control APIs. The current firmware sends a shared fixed device name and one source token, so it cannot safely claim multiple independent device identities yet.
+- Add per-device health/control APIs beyond signaling status and session microphone gain. Define per-user/device access rules rather than granting every authenticated listener access to all registered devices.
 - Validate signaling and media across separate networks; the current peer path is STUN-only and has no TURN relay.
 - Run staging soak, restart/reconnect, logout/expiry, and concurrent-client tests before calling Phase 6 complete.
