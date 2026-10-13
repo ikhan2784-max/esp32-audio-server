@@ -2841,7 +2841,7 @@ function toast(msg){const n=document.getElementById("toast");n.textContent=msg;n
 document.querySelectorAll(".tab-btn").forEach(t=>t.addEventListener("click",()=>{const k=t.dataset.tab;document.querySelectorAll(".tab-btn").forEach(x=>x.classList.toggle("active",x===t));document.querySelectorAll(".panel").forEach(p=>p.classList.toggle("active",p.id===`panel-${k}`))}));document.querySelectorAll('input[name="micMode"]').forEach((x,i)=>{x.disabled=true;x.checked=i===0});document.querySelectorAll('input[name="quality"]').forEach((x,i)=>{x.disabled=true;x.checked=i===0});document.querySelectorAll('input[name="timeout"],input[name="ledMode"]').forEach(x=>x.disabled=true);document.querySelectorAll('#panel-system .switch input').forEach(x=>x.disabled=true);
 const ledGroup=document.querySelector("#panel-system .radio-group");let vLed=null;if(ledGroup){const row=document.createElement("div");row.className="switch-row";row.innerHTML='<span class="sw-label">Blue RGB LED</span><label class="switch"><input id="blueLedToggle" type="checkbox" disabled><span class="slider-sw"></span></label>';ledGroup.replaceWith(row);vLed=row.querySelector("input")}
 function syncDesign(){const start=document.getElementById("start"),stop=document.getElementById("stop"),rec=document.getElementById("record"),stopRec=document.getElementById("stopRecord"),on=!stop.disabled,recording=!stopRec.disabled;vAudio.classList.toggle("stop",on);vAudio.classList.toggle("start",!on);vAudioText.textContent=on?"Stop Listening":"Start Listening";vMic.classList.toggle("active",on);vBadge.textContent=on?"Listening":"Not listening";vBadge.classList.toggle("active",on);vAudio.disabled=start.disabled&&!on;vRec.disabled=rec.disabled&&stopRec.disabled;vRec.classList.toggle("record",!recording);vRec.classList.toggle("recording",recording);vRecText.textContent=recording?"Stop Recording":"Start Recording";const led=document.getElementById("rgbLedBtn");if(vLed){vLed.disabled=led.disabled;vLed.checked=/off/i.test(led.textContent)}const online=document.getElementById("deviceStatus").textContent.includes("ONLINE"),head=document.getElementById("topStatus");head.textContent=online?"● ONLINE":"● OFFLINE";head.classList.toggle("online",online);head.classList.toggle("offline",!online);const s=document.getElementById("status").textContent;if(s&&/error|disconnected|offline/i.test(s))vBadge.title=s}
-vAudio.addEventListener("click",toggleListening);vRec.addEventListener("click",toggleRecording);if(vLed)vLed.addEventListener("change",()=>document.getElementById("rgbLedBtn").click());setInterval(syncDesign,300);syncDesign();
+if(vLed)vLed.addEventListener("change",()=>document.getElementById("rgbLedBtn").click());setInterval(syncDesign,300);syncDesign();
 </script>
 
 <script>
@@ -2860,6 +2860,7 @@ vAudio.addEventListener("click",toggleListening);vRec.addEventListener("click",t
 </script>
 </body>
 </html>
+
 
 
 
