@@ -97,7 +97,8 @@ input[type=range]{width:100%;accent-color:var(--blue);}
     <button id="stop" class="secondary" disabled>⏹ Stop Listening</button>
     <button id="rebootBtn" class="danger" disabled>ESP32 Reboot</button>
     <button id="forgetWifiBtn" class="danger" disabled>Forget Wi-Fi</button>
-    <div class="small" style="margin-top:12px">Wi-Fi settings are erased from the ESP32 and the device restarts into setup mode.</div>
+    <button id="rgbLedBtn" class="secondary" disabled>Turn blue RGB LED on</button>
+    <div class="small" style="margin-top:12px">Wi-Fi settings are erased from the ESP32 and the device restarts into setup mode. The LED button controls the onboard blue RGB LED.</div>
     <div id="status" class="statusbar" style="margin-top:12px">Disconnected</div>
   </div>
 
@@ -305,6 +306,8 @@ let manualStop = false;
 let reconnectTimer = null;
 let reconnectAttempts = 0;
 let reconnectInProgress = false;
+let listenerReady = false;
+let rgbLedEnabled = false;
 
 const MAX_RECONNECT_DELAY_MS = 15000;
 
@@ -322,8 +325,14 @@ const volume = $("volume");
 const volumeValue = $("volumeValue");
 const rebootBtn = $("rebootBtn");
 const forgetWifiBtn = $("forgetWifiBtn");
+const rgbLedBtn = $("rgbLedBtn");
 
 function setStatus(text) { status.textContent = text; }
+
+function updateRgbLedButton() {
+  rgbLedBtn.textContent = rgbLedEnabled ? "Turn blue RGB LED off" : "Turn blue RGB LED on";
+  rgbLedBtn.disabled = !deviceOnline || !listenerReady || !ws || ws.readyState !== WebSocket.OPEN;
+}
 
 function formatDate(value) {
   if (!value) return "Never";
@@ -375,6 +384,7 @@ function applyDeviceStatus(data) {
   start.disabled = !deviceOnline || wsActive;
   rebootBtn.disabled = !deviceOnline;
   forgetWifiBtn.disabled = !deviceOnline;
+  updateRgbLedButton();
 }
 
 async function refreshDeviceStatus() {
@@ -757,6 +767,8 @@ function connectWebSocket() {
       try {
         const message = JSON.parse(event.data);
         if (message.type === "auth_failed") {
+          listenerReady = false;
+          updateRgbLedButton();
           listenerActive = false;
           window.setListenerActive(false);
           if (message.reason === "session_expired") {
@@ -781,11 +793,24 @@ function connectWebSocket() {
           return;
         }
         if (message.type === "listener_ready") {
+          listenerReady = true;
+          updateRgbLedButton();
           resetReconnectState();
           setStatus("Listening — " + message.sample_rate + " Hz " + message.format);
           logAdd("Listener ready: " + message.sample_rate + " Hz " + message.format, "ok");
           rebootBtn.disabled = !deviceOnline;
           forgetWifiBtn.disabled = !deviceOnline;
+        }
+        if (message.type === "rgb_led_set_result") {
+          if (message.source_connected) {
+            rgbLedEnabled = !!message.enabled;
+            setStatus(rgbLedEnabled ? "Blue RGB LED is on" : "Blue RGB LED is off");
+            logAdd("Blue RGB LED " + (rgbLedEnabled ? "turned on" : "turned off"), "ok");
+          } else {
+            setStatus("ESP32 is not currently connected");
+            logAdd("RGB LED command was not delivered; ESP32 is offline", "warn");
+          }
+          updateRgbLedButton();
         }
         if (message.type === "device_status") applyDeviceStatus(message);
         if (message.type === "stream_start") {
@@ -826,6 +851,8 @@ function connectWebSocket() {
   };
 
   socket.onclose = (e) => {
+    listenerReady = false;
+    updateRgbLedButton();
     reconnectInProgress = false;
     if (ws === socket) ws = null;
     if (recording) stopRecording();
@@ -837,6 +864,7 @@ function connectWebSocket() {
     stopRecord.disabled = true;
     rebootBtn.disabled = !deviceOnline;
     forgetWifiBtn.disabled = !deviceOnline;
+    updateRgbLedButton();
     logAdd(
       "WebSocket closed: code=" + e.code + " reason=" + (e.reason || "(none)"),
       e.wasClean ? "warn" : "error"
@@ -853,8 +881,18 @@ function connectWebSocket() {
 /* ============================================================
  * START / STOP
  * ============================================================ */
+rgbLedBtn.onclick = () => {
+  if (!deviceOnline || !listenerReady || !ws || ws.readyState !== WebSocket.OPEN) return;
+  const enabled = !rgbLedEnabled;
+  rgbLedBtn.disabled = true;
+  setStatus(enabled ? "Turning blue RGB LED on..." : "Turning blue RGB LED off...");
+  ws.send(JSON.stringify({ type: "rgb_led_set", enabled }));
+};
+
 start.onclick = async () => {
   if (listenerActive) return;
+  listenerReady = false;
+  updateRgbLedButton();
   manualStop = false;
   listenerActive = true;
   window.setListenerActive(true);
