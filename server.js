@@ -5,6 +5,7 @@ const crypto = require("crypto");
 const path = require("path");
 const { createWebRtcSignaling } = require("./webrtc_signaling");
 const { createAuthState, constantTimeStringEqual } = require("./auth_state");
+const { getClientIp } = require("./client_ip");
 
 const PORT = process.env.PORT || 10000;
 
@@ -58,12 +59,6 @@ let healthRequestCounter = 0;
 let lastAudioSequence = null;
 let audioSequenceGaps = 0;
 let audioFramesReceived = 0;
-
-function getClientIp(req) {
-    const forwarded = req.headers["x-forwarded-for"];
-    if (forwarded) return forwarded.split(",")[0].trim();
-    return req.socket.remoteAddress || "unknown";
-}
 
 function getCookie(req, name) {
     const cookieHeader = req.headers.cookie;
