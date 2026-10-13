@@ -8,6 +8,7 @@ const { createAuthState, constantTimeStringEqual } = require("./auth_state");
 const { getClientIp } = require("./client_ip");
 const { isSameOriginRequest } = require("./request_security");
 const { addListenerWithinLimit } = require("./listener_capacity");
+const { hasValidListenerSession } = require("./listener_auth");
 
 const PORT = process.env.PORT || 10000;
 
@@ -346,6 +347,11 @@ wss.on("connection", (ws, req) => {
     sendJson(ws, { type: "welcome", message: "ESP32 INMP441 Relay connected" });
 
     ws.on("message", (data, isBinary) => {
+        if (ws.role === "listener" && !hasValidListenerSession(ws)) {
+            sendJson(ws, { type: "auth_failed", reason: "session_expired" });
+            try { ws.close(1008, "Listener session expired"); } catch {}
+            return;
+        }
         if (isBinary) {
             if (webrtcSignaling.handleBinary(ws)) return;
             if (ws.role !== "source" || !ws.authenticated) return;
@@ -419,7 +425,7 @@ wss.on("connection", (ws, req) => {
 
         if (message.type === "hello") {
             if (message.device !== "ESP32-S3-INMP441" ||
-                !SOURCE_TOKEN || message.source_token !== SOURCE_TOKEN) {
+                !SOURCE_TOKEN || !constantTimeStringEqual(SOURCE_TOKEN, message.source_token)) {
                 console.log("Rejected unauthorized ESP32 source.");
                 sendJson(ws, { type: "auth_failed" });
                 try { ws.close(1008); } catch {}
@@ -462,7 +468,7 @@ wss.on("connection", (ws, req) => {
         }
 
         if (message.type === "listener") {
-            if (!ws.sessionAuthenticated) {
+            if (!ws.sessionAuthenticated || typeof ws.sessionValid !== "function" || !ws.sessionValid()) {
                 console.log("Rejected listener without session.");
                 sendJson(ws, { type: "auth_failed", reason: "session_required" });
                 try { ws.close(1008); } catch {}
