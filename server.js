@@ -225,6 +225,9 @@ app.get("/session-activity.js", requireHttps, (req, res) => {
 
 app.get("/listener", requireHttps, (req, res) => {
     if (!isAuthenticatedRequest(req)) return res.redirect("/");
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
     res.sendFile(__dirname + "/listener.html");
 });
 
