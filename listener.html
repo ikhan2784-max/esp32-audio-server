@@ -1416,6 +1416,7 @@
   .content { flex:none; overflow:visible; }
 </style>
 <style>.project-compat{display:none!important}.toast.show{opacity:1;visibility:visible}#logBox{overflow:auto;white-space:pre-wrap}.listening-badge.active{color:#32df9b}</style>
+<style>.add-device-top{display:inline-flex;align-items:center;justify-content:center;gap:6px;flex-shrink:0;padding:9px 12px;border:1px solid #2b4b77;border-radius:10px;background:rgba(59,130,246,.12);color:#bfdbfe;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer}.add-device-top:hover{background:rgba(59,130,246,.2)}.volume-presets{display:flex;gap:6px;overflow-x:auto;padding:8px 0 14px;scrollbar-width:thin}.volume-preset{flex:0 0 auto;min-width:42px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);color:var(--text-dim);font-family:inherit;font-size:11px;font-weight:600;cursor:pointer}.volume-preset.active,.volume-preset:hover{color:#fff;border-color:var(--blue);background:rgba(59,130,246,.2)}.add-device-modal{position:fixed;inset:0;z-index:300;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(2,6,23,.78);backdrop-filter:blur(5px)}.add-device-modal.show{display:flex}.add-device-dialog{width:min(100%,420px);padding:22px;border:1px solid var(--border);border-radius:18px;background:var(--bg-card);box-shadow:0 24px 70px #0009}.add-device-dialog h2{margin:0 0 10px;font-size:18px}.add-device-dialog p{margin:0 0 16px;color:var(--text-dim);font-size:13px;line-height:1.55}.add-device-dialog button{padding:9px 15px;border:0;border-radius:9px;background:var(--blue);color:white;font-weight:650;cursor:pointer}@media(max-width:420px){.add-device-top{padding:8px 9px;font-size:11px}.volume-presets{gap:4px}.volume-preset{min-width:38px;padding:6px}}</style>
 </head>
 <body>
 
@@ -1437,6 +1438,7 @@
           <polyline points="6 9 12 15 18 9"/>
         </svg>
       </button>
+      <button class="add-device-top" id="addDeviceTop" type="button" onclick="addDevice()">＋ Add Device</button>
       <div class="header-right">
         <div class="session-chip hidden" id="sessionChip">
           <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -1453,13 +1455,13 @@
       </div>
       <div id="deviceList"></div>
       <div class="dropdown-divider"></div>
-      <button class="add-device-btn" >
+      <button class="add-device-btn" id="addDeviceBtn" type="button" onclick="addDevice()">
         <div class="add-device-icon">
           <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         </div>
         <div class="add-device-text">
-          <h4>Add Device</h4>
-          <p>Scan for ESP32 on your network</p>
+          <h4>Add New Device</h4>
+          <p>Open device setup information</p>
         </div>
       </button>
     </div>
@@ -1527,18 +1529,18 @@
           </div>
           <div class="info-pill">
             <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6v6H9z"/></svg>
-            <span class="pv" id="pillBits">24-bit</span>
-            <span class="pl">Depth</span>
+            <span class="pv" id="pillBits">—</span>
+            <span class="pl">Codec</span>
           </div>
           <div class="info-pill">
             <svg viewBox="0 0 24 24"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
-            <span class="pv">Mono</span>
+            <span class="pv" id="pillChannels">—</span>
             <span class="pl">Channels</span>
           </div>
           <div class="info-pill">
             <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v6M12 17v6"/></svg>
-            <span class="pv">Mic 1</span>
-            <span class="pl">Input</span>
+            <span class="pv" id="pillInput">—</span>
+            <span class="pl">Mic input</span>
           </div>
         </div>
 
@@ -1555,9 +1557,10 @@
 
         <div class="slider-row">
           <svg viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-          <input type="range" class="slider" min="0" max="3" step="0.01" value="1.5" id="volume" >
+          <input type="range" class="slider" min="0.25" max="3" step="0.25" value="1.5" id="volume" aria-label="Playback volume, 25 to 300 percent" >
           <span class="slider-value" id="volumeValue">150%</span>
         </div>
+        <div class="volume-presets" id="volumePresets" aria-label="Playback volume presets"><button class="volume-preset" type="button" data-volume="25" aria-label="Set volume to 25 percent">25</button><button class="volume-preset" type="button" data-volume="50" aria-label="Set volume to 50 percent">50</button><button class="volume-preset" type="button" data-volume="75" aria-label="Set volume to 75 percent">75</button><button class="volume-preset" type="button" data-volume="100" aria-label="Set volume to 100 percent">100</button><button class="volume-preset" type="button" data-volume="125" aria-label="Set volume to 125 percent">125</button><button class="volume-preset active" type="button" data-volume="150" aria-label="Set volume to 150 percent">150</button><button class="volume-preset" type="button" data-volume="175" aria-label="Set volume to 175 percent">175</button><button class="volume-preset" type="button" data-volume="200" aria-label="Set volume to 200 percent">200</button><button class="volume-preset" type="button" data-volume="225" aria-label="Set volume to 225 percent">225</button><button class="volume-preset" type="button" data-volume="250" aria-label="Set volume to 250 percent">250</button><button class="volume-preset" type="button" data-volume="275" aria-label="Set volume to 275 percent">275</button><button class="volume-preset" type="button" data-volume="300" aria-label="Set volume to 300 percent">300</button></div>
 
         <div class="record-card">
           <div class="record-header">
@@ -2003,6 +2006,8 @@
 
 <span id="state">Stopped</span><span id="error"></span><span id="mediaStatus">Audio: waiting for a remote track.</span><span id="micGainValue"></span><span id="micGainStatus"></span><span id="processingStatus"></span><audio id="audio" autoplay playsinline aria-hidden="true"></audio><input id="micGain" type="range" min="50" max="150" step="5" value="100" disabled><input id="noiseSuppression" type="checkbox" checked><select id="recordSource"><option value="raw" selected>Raw incoming audio</option><option value="filtered">Filtered listener output</option></select>
 </div><div class="toast" id="toast"></div>
+<div class="add-device-modal" id="addDeviceModal" role="dialog" aria-modal="true" aria-labelledby="addDeviceTitle" onclick="if(event.target===this)closeAddDevice()"><div class="add-device-dialog"><h2 id="addDeviceTitle">Add a new ESP32</h2><p>This staging server currently accepts one ESP32 audio source. The connected device appears here automatically. Adding a second device requires multi-device pairing on the server and firmware.</p><button type="button" onclick="closeAddDevice()">Close</button></div></div>
+
 
 <script src="/session-activity.js"></script>
 <script>
@@ -2787,51 +2792,40 @@ window.addEventListener("pagehide", () => {
 </script>
 <script>
 const uiAudio=document.getElementById("audioBtn"),uiAudioText=document.getElementById("audioBtnText"),uiMic=document.getElementById("micOuter"),uiBadge=document.getElementById("listeningBadge"),uiRec=document.getElementById("recBtn"),uiRecText=document.getElementById("recBtnText"),uiVolume=document.getElementById("volume"),uiVolumeValue=document.getElementById("volumeValue"),uiLevel=document.getElementById("level"),uiDb=document.getElementById("dbValue");
-function toggleListening(){(listenerActive?stopButton:startButton).click()}
-function toggleRecording(){(stopRecordButton.disabled?recordButton:stopRecordButton).click()}
-function sendProjectAction(id){const b=document.getElementById(id);if(b&&!b.disabled)b.click()}
-function clearProjectLogs(){const n=document.getElementById("logBox");if(n)n.replaceChildren()}
-function copyProjectLogs(){const n=document.getElementById("logBox");if(n&&navigator.clipboard)navigator.clipboard.writeText(n.innerText).catch(()=>{})}
+function toggleListening(){(listenerActive?stopButton:startButton).click()}function toggleRecording(){(stopRecordButton.disabled?recordButton:stopRecordButton).click()}
+function clearProjectLogs(){const n=document.getElementById("logBox");if(n)n.replaceChildren()}function copyProjectLogs(){const n=document.getElementById("logBox");if(n&&navigator.clipboard)navigator.clipboard.writeText(n.innerText).catch(()=>{})}
 function toast(message){const n=document.getElementById("toast");n.textContent=message;n.classList.add("show");clearTimeout(n._hideTimer);n._hideTimer=setTimeout(()=>n.classList.remove("show"),2600)}
-function toggleDeviceDropdown(){toast("This listener is connected to the configured ESP32.")}
-function closeDeviceDropdown(){}
-function addDevice(){toast("Additional device selection is not configured.")}
-function confirmFactoryReset(){toast("Factory reset is not configured.")}
-function openSessionModal(){toast("Session timeout is managed by the server.")}
-function closeSessionModal(){}
-function saveSessionTimeout(){toast("Session timeout is managed by the server.")}
-function toggleHotspotPassword(){toast("Hotspot credentials are managed by ESP32 firmware.")}
-function toggleHotspot(){toast("Hotspot settings are managed by ESP32 firmware.")}
-function setQuality(){toast("The ESP32 WebRTC stream uses its configured audio format.")}
-function updateGain(){toast("Use the microphone gain control when the WebRTC link is connected.")}
-function setGainPreset(){toast("Use the microphone gain control when the WebRTC link is connected.")}
-document.querySelectorAll(".tab-btn").forEach(t=>t.addEventListener("click",()=>{const k=t.dataset.tab;document.querySelectorAll(".tab-btn").forEach(x=>x.classList.toggle("active",x===t));document.querySelectorAll(".panel").forEach(p=>p.classList.toggle("active",p.id===`panel-${k}`))}));
-const uiNoise=document.querySelector("#panel-settings .switch-row input");
-const otherSwitches=[...document.querySelectorAll("#panel-settings .switch-row input")].slice(1);
-if(uiNoise){uiNoise.checked=noiseSuppressionEl.checked;uiNoise.addEventListener("change",()=>{noiseSuppressionEl.checked=uiNoise.checked;noiseSuppressionEl.dispatchEvent(new Event("change"))})}
-otherSwitches.forEach(x=>{x.disabled=true});
-const ledGroup=document.querySelector("#panel-system .radio-group");let uiLed=null;
-if(ledGroup){const row=document.createElement("div");row.className="switch-row";row.innerHTML='<span class="sw-label">Blue RGB LED</span><label class="switch"><input id="blueLedToggle" type="checkbox" disabled><span class="slider-sw"></span></label>';ledGroup.replaceWith(row);uiLed=row.querySelector("input")}
+function toggleDeviceDropdown(){const d=document.getElementById("deviceDropdown"),b=document.getElementById("deviceBackdrop"),s=document.getElementById("deviceSelector"),open=!d.classList.contains("show");d.classList.toggle("show",open);b.classList.toggle("show",open);s.classList.toggle("open",open)}
+function closeDeviceDropdown(){document.getElementById("deviceDropdown").classList.remove("show");document.getElementById("deviceBackdrop").classList.remove("show");document.getElementById("deviceSelector").classList.remove("open")}
+function addDevice(){closeDeviceDropdown();document.getElementById("addDeviceModal").classList.add("show")}function closeAddDevice(){document.getElementById("addDeviceModal").classList.remove("show")}
+function confirmFactoryReset(){toast("Factory reset is not available for this firmware.")}
+function openSessionModal(){toast("Session timeout is managed by the server.")}function closeSessionModal(){}function saveSessionTimeout(){toast("Session timeout is managed by the server.")}
+function toggleHotspotPassword(){toast("Hotspot credentials are managed by ESP32 firmware.")}function toggleHotspot(){toast("Hotspot settings are managed by ESP32 firmware.")}
+function setQuality(){toast("The ESP32 WebRTC stream uses its configured audio format.")}function updateGain(){toast("Use the microphone gain control when the WebRTC link is connected.")}function setGainPreset(){toast("Use the microphone gain control when the WebRTC link is connected.")}
+document.getElementById("deviceSelector").addEventListener("click",toggleDeviceDropdown);document.getElementById("deviceBackdrop").addEventListener("click",closeDeviceDropdown);document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeDeviceDropdown();closeAddDevice()}});
+document.querySelectorAll(".tab-btn").forEach(t=>t.addEventListener("click",()=>{const k=t.dataset.tab;document.querySelectorAll(".tab-btn").forEach(x=>x.classList.toggle("active",x===t));document.querySelectorAll(".panel").forEach(p=>p.classList.toggle("active",p.id==="panel-"+k))}));
+const uiNoise=document.querySelector("#panel-settings .switch-row input");const otherSwitches=[...document.querySelectorAll("#panel-settings .switch-row input")].slice(1);if(uiNoise){uiNoise.checked=noiseSuppressionEl.checked;uiNoise.addEventListener("change",()=>{noiseSuppressionEl.checked=uiNoise.checked;noiseSuppressionEl.dispatchEvent(new Event("change"))})}otherSwitches.forEach(x=>x.disabled=true);
+document.querySelectorAll('input[name="micMode"],input[name="quality"],input[name="timeout"],input[name="ledMode"],#panel-system .switch input').forEach(x=>x.disabled=true);
+const ledGroup=document.querySelector("#panel-system .radio-group");let uiLed=null;if(ledGroup){const row=document.createElement("div");row.className="switch-row";row.innerHTML='<span class="sw-label">Blue RGB LED</span><label class="switch"><input id="blueLedToggle" type="checkbox" disabled><span class="slider-sw"></span></label>';ledGroup.replaceWith(row);uiLed=row.querySelector("input")}
+const quickLabels=[...document.querySelectorAll('#panel-listener .info-pills[style*="margin-bottom"] .info-pill .pl')];
 function syncListenerDesign(){
- const active=!!listenerActive, recording=!stopRecordButton.disabled;
- uiAudio.disabled=false;uiAudio.classList.toggle("stop",active);uiAudio.classList.toggle("start",!active);uiAudioText.textContent=active?"Stop Listening":"Start Listening";
- uiMic.classList.toggle("active",active);uiBadge.textContent=active?"Listening":"Not listening";uiBadge.classList.toggle("active",active);
- uiRec.disabled=recordButton.disabled&&stopRecordButton.disabled;uiRec.classList.toggle("record",!recording);uiRec.classList.toggle("recording",recording);uiRecText.textContent=recording?"Stop Recording":"Start Recording";
- const state=document.getElementById("state").textContent.trim();const lower=state.toLowerCase();const online=/connected|ready|listening/.test(lower)&&!/disconnected|not connected|waiting/.test(lower);
- const head=document.getElementById("topStatus");head.textContent=state||"Stopped";head.classList.toggle("online",online);head.classList.toggle("offline",/waiting|offline|failed|error/.test(lower));
- const media=document.getElementById("mediaStatus").textContent;uiBadge.title=document.getElementById("error").textContent||media;
- const db=latestOutputDbfs;const pct=Number.isFinite(db)?Math.max(0,Math.min(100,Math.round(100*Math.pow(10,db/20)))):0;uiLevel.style.width=pct+"%";uiDb.textContent=Number.isFinite(db)?db.toFixed(1)+" dBFS":"— dB";
- const bars=document.getElementById("meterBars");if(bars&&!bars.children.length)for(let i=0;i<28;i++){const b=document.createElement("span");b.className="meter-bar";bars.appendChild(b)}
- if(bars){const n=Math.round(pct/100*bars.children.length);[...bars.children].forEach((b,i)=>{b.className="meter-bar";if(i<n)b.classList.add(i>bars.children.length*.88?"on-3":i>bars.children.length*.7?"on-2":"on-1")})}
- uiVolumeValue.textContent=Math.round(Number(uiVolume.value)*100)+"%";if(typeof syncPlaybackGain==="function")syncPlaybackGain();
- const info=[...document.querySelectorAll("#panel-listener .info-pills[style*=margin-bottom] .info-pill .pl")];const vals=[online?"ONLINE":/waiting|offline|failed|error/.test(lower)?"OFFLINE":"CONNECTING",active?(peer?.connectionState||"CONNECTING"):"IDLE",socket?.readyState===WebSocket.OPEN?"CONNECTED":"WAITING",Number.isFinite(latestInputDbfs)?latestInputDbfs.toFixed(1)+" dBFS":"Not reported"];info.forEach((x,i)=>{x.textContent=vals[i];x.style.color=/offline|waiting|not reported|idle/i.test(vals[i])?"var(--red)":"var(--green)"});
- const labels=[...document.querySelectorAll("#panel-listener .info-pills[style*=margin-bottom] .info-pill .pv")];if(labels[1])labels[1].textContent="WebRTC Audio";if(labels[3])labels[3].textContent="Mic Input";
- if(uiLed)uiLed.disabled=true;
+ const track=remoteStream?.getAudioTracks()[0],peerConnected=peer?.connectionState==="connected"&&track?.readyState==="live",active=!!listenerActive,recording=!stopRecordButton.disabled;
+ uiAudio.disabled=false;uiAudio.classList.toggle("stop",active);uiAudio.classList.toggle("start",!active);uiAudioText.textContent=active?"Stop Listening":"Start Listening";uiMic.classList.toggle("active",active);uiBadge.textContent=active?"Listening":"Not listening";uiBadge.classList.toggle("active",active);
+ uiRec.disabled=recordButton.disabled&&stopRecordButton.disabled;uiRec.classList.toggle("record",!recording);uiRec.classList.toggle("recording",recording);uiRecText.textContent=recording?"Stop Recording":"Start Recording";document.getElementById("recordStatus").textContent=recording?"Recording":"Not recording";
+ const head=document.getElementById("topStatus"),state=peerConnected?"Connected":(active&&peer?.connectionState!=="failed"?"Connecting":"Not connected");head.textContent=state;head.classList.toggle("online",peerConnected);head.classList.toggle("offline",!peerConnected);
+ const media=mediaStatusEl.textContent;uiBadge.title=errorEl.textContent||media;const codec=media.match(/(?:^|;\s*)(opus|pcmu|pcma|g722|ilbc|isac)(?:\/([^;]+))?/i),rate=media.match(/\/(\d+)\s*Hz/i),channels=media.match(/\/(\d+)\s*ch/i),settings=track?.getSettings?.()||{};
+ const rateNode=document.getElementById("pillRate"),codecNode=document.getElementById("pillBits"),channelNode=document.getElementById("pillChannels"),inputNode=document.getElementById("pillInput");
+ rateNode.textContent=peerConnected?(rate?(Number(rate[1])/1000)+" kHz":(audioContext?(audioContext.sampleRate/1000)+" kHz":"Live")):"—";codecNode.textContent=peerConnected?(codec?codec[1].toUpperCase():"WebRTC"):"—";channelNode.textContent=peerConnected?((Number(channels?.[1]||settings.channelCount||1)===1)?"Mono":(channels?.[1]||settings.channelCount)+" ch"):"—";inputNode.textContent=peerConnected?(track.muted?"No signal":"Live"):"Waiting";
+ const db=latestOutputDbfs,pct=Number.isFinite(db)?Math.max(0,Math.min(100,Math.round(100*Math.pow(10,db/20)))):0;uiLevel.style.width=pct+"%";uiDb.textContent=Number.isFinite(db)?db.toFixed(1)+" dBFS":"— dB";const bars=document.getElementById("meterBars");if(bars&&!bars.children.length)for(let i=0;i<28;i++){const b=document.createElement("span");b.className="meter-bar";bars.appendChild(b)}if(bars){const n=Math.round(pct/100*bars.children.length);[...bars.children].forEach((b,i)=>{b.className="meter-bar";if(i<n)b.classList.add(i>bars.children.length*.88?"on-3":i>bars.children.length*.7?"on-2":"on-1")})}
+ uiVolumeValue.textContent=Math.round(Number(uiVolume.value)*100)+"%";if(typeof syncPlaybackGain==="function")syncPlaybackGain();document.querySelectorAll(".volume-preset").forEach(b=>b.classList.toggle("active",Number(b.dataset.volume)===Math.round(Number(uiVolume.value)*100)));
+ const qvalues=[peerConnected?"Connected":(active?"Connecting":"Not connected"),peerConnected?"Connected":(active?(peer?.connectionState||"Connecting"):"Not connected"),socket?.readyState===WebSocket.OPEN?"Connected":"Not connected",peerConnected&&track&&!track.muted?"Live":"Not connected"];quickLabels.forEach((n,i)=>{n.textContent=qvalues[i];n.style.color=/connected|live/i.test(qvalues[i])?"var(--green)":qvalues[i]==="Connecting"?"var(--amber)":"var(--red)"});
+ const menu=document.getElementById("deviceMenuStatus");if(menu)menu.textContent=peerConnected?"Connected":(active?"Connecting":"Not connected");if(uiLed)uiLed.disabled=true;
 }
-if(uiVolume){uiVolume.addEventListener("input",()=>{uiVolumeValue.textContent=Math.round(Number(uiVolume.value)*100)+"%";if(typeof syncPlaybackGain==="function")syncPlaybackGain()})}
-if(uiMic){uiMic.style.cursor="pointer";uiMic.addEventListener("click",toggleListening)}
-setInterval(syncListenerDesign,250);syncListenerDesign();
-</script>
+uiVolume.addEventListener("input",()=>{uiVolumeValue.textContent=Math.round(Number(uiVolume.value)*100)+"%";if(typeof syncPlaybackGain==="function")syncPlaybackGain()});document.querySelectorAll(".volume-preset").forEach(b=>b.addEventListener("click",()=>{uiVolume.value=Number(b.dataset.volume)/100;uiVolume.dispatchEvent(new Event("input",{bubbles:true}));syncListenerDesign()}));uiMic.addEventListener("click",toggleListening);
+const actionRows=[...document.querySelectorAll("#panel-system .action-row")],restart=actionRows.find(x=>x.textContent.includes("Restart ESP32")),wifi=actionRows.find(x=>x.textContent.includes("Forget Wi-Fi"));if(restart)restart.onclick=()=>toast("Restart control is unavailable through the current WebRTC device protocol.");if(wifi)wifi.onclick=()=>toast("Wi-Fi reset control is unavailable through the current WebRTC device protocol.");actionRows.find(x=>x.textContent.includes("Factory Reset"))?.remove();
+document.querySelector("#panel-system .update-banner")?.remove();document.querySelectorAll("#panel-system .btn-pill").forEach(b=>b.remove());const otaTitle=document.querySelector("#panel-system .section-title");if(otaTitle){const note=document.createElement("div");note.className="card flat small";note.textContent="Firmware updates are not configured on this service.";otaTitle.after(note)}
+document.getElementById("deviceList").innerHTML='<div class="device-item selected"><div class="device-item-logo online"></div><div class="device-item-text"><h4>ESP32 INMP441</h4><p id="deviceMenuStatus">Checking connection…</p></div><span class="device-item-badge">Current</span></div>';
+setInterval(syncListenerDesign,500);syncListenerDesign();</script>
 </body>
 </html>
 
