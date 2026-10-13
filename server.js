@@ -4,6 +4,7 @@ const WebSocket = require("ws");
 const crypto = require("crypto");
 const path = require("path");
 const { createWebRtcSignaling } = require("./webrtc_signaling");
+const { createAuthState, constantTimeStringEqual } = require("./auth_state");
 
 const PORT = process.env.PORT || 10000;
 
@@ -12,6 +13,7 @@ const LISTENER_PIN = process.env.LISTENER_PIN || "";
 
 const SESSION_COOKIE_NAME = "esp32_listener_session";
 const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
+const MAX_SESSIONS = 4096;
 
 const WS_CLIENT_PING_MS            = 45000;
 const DEVICE_HEARTBEAT_INTERVAL_MS = 5000;
@@ -38,10 +40,16 @@ process.on("unhandledRejection", (reason) => {
     console.error("UNHANDLED REJECTION:", reason);
 });
 
-const sessions = new Map();
-const authAttempts = new Map();
 const AUTH_WINDOW_MS = 15 * 60 * 1000;
 const AUTH_MAX_ATTEMPTS = 10;
+const MAX_TRACKED_AUTH_IPS = 8192;
+const authState = createAuthState({
+    sessionDurationMs: SESSION_DURATION_MS,
+    authWindowMs: AUTH_WINDOW_MS,
+    authMaxAttempts: AUTH_MAX_ATTEMPTS,
+    maxSessions: MAX_SESSIONS,
+    maxTrackedIps: MAX_TRACKED_AUTH_IPS,
+});
 
 const healthRequests = new Map();
 const HEALTH_REQUEST_TIMEOUT_MS = 5000;
@@ -55,37 +63,6 @@ function getClientIp(req) {
     const forwarded = req.headers["x-forwarded-for"];
     if (forwarded) return forwarded.split(",")[0].trim();
     return req.socket.remoteAddress || "unknown";
-}
-
-function isAuthRateLimited(ip) {
-    const now = Date.now();
-    const entry = authAttempts.get(ip);
-    if (!entry || now - entry.windowStart >= AUTH_WINDOW_MS) {
-        authAttempts.set(ip, { windowStart: now, attempts: 0 });
-        return false;
-    }
-    return entry.attempts >= AUTH_MAX_ATTEMPTS;
-}
-
-function recordAuthAttempt(ip) {
-    const now = Date.now();
-    const entry = authAttempts.get(ip);
-    if (!entry || now - entry.windowStart >= AUTH_WINDOW_MS) {
-        authAttempts.set(ip, { windowStart: now, attempts: 1 });
-        return;
-    }
-    entry.attempts++;
-}
-
-function clearAuthAttempts(ip) { authAttempts.delete(ip); }
-
-function createSession() {
-    const sessionId = crypto.randomBytes(32).toString("hex");
-    sessions.set(sessionId, {
-        createdAt: Date.now(),
-        expiresAt: Date.now() + SESSION_DURATION_MS
-    });
-    return sessionId;
 }
 
 function getCookie(req, name) {
@@ -105,14 +82,7 @@ function getCookie(req, name) {
 
 function getSession(req) {
     const sessionId = getCookie(req, SESSION_COOKIE_NAME);
-    if (!sessionId) return null;
-    const session = sessions.get(sessionId);
-    if (!session) return null;
-    if (Date.now() > session.expiresAt) {
-        sessions.delete(sessionId);
-        return null;
-    }
-    return session;
+    return authState.getSession(sessionId);
 }
 
 function isAuthenticatedRequest(req) { return !!getSession(req); }
@@ -209,16 +179,16 @@ app.get("/health", (req, res) => res.status(200).send("OK"));
 
 app.post("/api/auth", requireHttps, (req, res) => {
     const clientIp = getClientIp(req);
-    if (isAuthRateLimited(clientIp)) {
+    if (authState.isAuthRateLimited(clientIp)) {
         return res.status(429).json({ ok: false, error: "Too many attempts." });
     }
     const { pin } = req.body || {};
-    if (!LISTENER_PIN || typeof pin !== "string" || pin !== LISTENER_PIN) {
-        recordAuthAttempt(clientIp);
+    if (!LISTENER_PIN || !constantTimeStringEqual(LISTENER_PIN, pin)) {
+        authState.recordAuthAttempt(clientIp);
         return res.status(401).json({ ok: false, error: "Invalid PIN" });
     }
-    clearAuthAttempts(clientIp);
-    const sessionId = createSession();
+    authState.clearAuthAttempts(clientIp);
+    const sessionId = authState.createSession();
     res.setHeader("Set-Cookie",
         `${SESSION_COOKIE_NAME}=${encodeURIComponent(sessionId)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${Math.floor(SESSION_DURATION_MS / 1000)}`);
     return res.json({ ok: true });
@@ -226,7 +196,7 @@ app.post("/api/auth", requireHttps, (req, res) => {
 
 app.post("/api/logout", requireHttps, (req, res) => {
     const sessionId = getCookie(req, SESSION_COOKIE_NAME);
-    if (sessionId) sessions.delete(sessionId);
+    if (sessionId) authState.deleteSession(sessionId);
     res.setHeader("Set-Cookie",
         `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`);
     res.json({ ok: true });
@@ -606,13 +576,7 @@ const sourceKeepalive = setInterval(() => {
 }, SOURCE_KEEPALIVE_MS);
 
 const sessionCleanup = setInterval(() => {
-    const now = Date.now();
-    for (const [sessionId, session] of sessions) {
-        if (now > session.expiresAt) sessions.delete(sessionId);
-    }
-    for (const [ip, entry] of authAttempts) {
-        if (now - entry.windowStart >= AUTH_WINDOW_MS) authAttempts.delete(ip);
-    }
+    authState.cleanup();
 }, 15 * 60 * 1000);
 
 server.on("close", () => {
