@@ -55,6 +55,7 @@
     <p class="hint">If the browser blocks playback, press play above. Some networks require a TURN relay; this Render signaling path currently uses direct ICE connectivity.</p>
     <footer>ESP32 microphone → WebRTC/Opus → this listener · no listener microphone is requested</footer>
   </main>
+<script src="/session-activity.js"></script>
 <script>
 "use strict";
 
@@ -477,6 +478,7 @@ function connectSocket() {
       errorEl.textContent = message.reason || "Signaling rejected";
       if (message.reason === "listener_session_required" || message.reason === "listener_session_expired") {
         listenerActive = false;
+        window.setListenerActive(false);
         startButton.disabled = false;
         stopButton.disabled = true;
         setState("Sign-in required");
@@ -706,6 +708,7 @@ function stopRecording() {
 startButton.onclick = async () => {
   manualStop = false;
   listenerActive = true;
+  window.setListenerActive(true);
   errorEl.textContent = "";
   startButton.disabled = true;
   stopButton.disabled = false;
@@ -741,6 +744,7 @@ noiseSuppressionEl.addEventListener("change", async () => {
 stopButton.onclick = () => {
   manualStop = true;
   listenerActive = false;
+  window.setListenerActive(false);
   if (reconnectTimer) clearTimeout(reconnectTimer);
   reconnectTimer = null;
   if (recorder && recorder.state !== "inactive") stopRecording();
@@ -759,6 +763,7 @@ stopRecordButton.onclick = stopRecording;
 window.addEventListener("pagehide", () => {
   manualStop = true;
   listenerActive = false;
+  window.setListenerActive(false);
   if (socket) socket.close(1000, "Page closed");
   closePeer();
   if (audioContext && audioContext.state !== "closed") void audioContext.close();

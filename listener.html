@@ -211,6 +211,7 @@ input[type=range]{width:100%;accent-color:var(--blue);}
 
 </div>
 
+<script src="/session-activity.js"></script>
 <script>
 /* ============================================================
  * EVENT LOG
@@ -757,6 +758,11 @@ function connectWebSocket() {
         const message = JSON.parse(event.data);
         if (message.type === "auth_failed") {
           listenerActive = false;
+          window.setListenerActive(false);
+          if (message.reason === "session_expired") {
+            window.location.replace("/");
+            return;
+          }
           reconnectInProgress = false;
           resetReconnectState();
           setStatus("Access denied — listener authentication failed");
@@ -846,6 +852,7 @@ start.onclick = async () => {
   if (listenerActive) return;
   manualStop = false;
   listenerActive = true;
+  window.setListenerActive(true);
   resetReconnectState();
   logAdd("Start listening requested", "info");
   try {
@@ -862,6 +869,7 @@ start.onclick = async () => {
   } catch (error) {
     console.error(error);
     listenerActive = false;
+    window.setListenerActive(false);
     manualStop = true;
     setStatus("Audio initialization failed");
     logAdd("Audio init failed: " + error.message, "error");
@@ -874,6 +882,7 @@ start.onclick = async () => {
 stop.onclick = () => {
   manualStop = true;
   listenerActive = false;
+  window.setListenerActive(false);
   reconnectInProgress = false;
   resetReconnectState();
   logAdd("Stop listening requested", "info");

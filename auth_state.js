@@ -17,6 +17,7 @@ function constantTimeStringEqual(expected, supplied) {
 
 function createAuthState({
     sessionDurationMs,
+    sessionIdleDurationMs,
     authWindowMs,
     authMaxAttempts,
     maxSessions,
@@ -25,6 +26,7 @@ function createAuthState({
     createId = () => crypto.randomBytes(32).toString("hex"),
 }) {
     positiveInteger(sessionDurationMs, "sessionDurationMs");
+    positiveInteger(sessionIdleDurationMs, "sessionIdleDurationMs");
     positiveInteger(authWindowMs, "authWindowMs");
     positiveInteger(authMaxAttempts, "authMaxAttempts");
     positiveInteger(maxSessions, "maxSessions");
@@ -60,7 +62,13 @@ function createAuthState({
             id = createId();
         } while (sessions.has(id));
 
-        sessions.set(id, { createdAt, expiresAt: createdAt + sessionDurationMs });
+        const absoluteExpiresAt = createdAt + sessionDurationMs;
+        sessions.set(id, {
+            createdAt,
+            lastActivityAt: createdAt,
+            absoluteExpiresAt,
+            expiresAt: Math.min(absoluteExpiresAt, createdAt + sessionIdleDurationMs),
+        });
         return id;
     }
 
@@ -73,6 +81,15 @@ function createAuthState({
             return null;
         }
         return session;
+    }
+
+    function touchSession(id) {
+        const session = getSession(id);
+        if (!session) return false;
+        const at = now();
+        session.lastActivityAt = at;
+        session.expiresAt = Math.min(session.absoluteExpiresAt, at + sessionIdleDurationMs);
+        return true;
     }
 
     function isAuthRateLimited(ip) {
@@ -120,6 +137,7 @@ function createAuthState({
     return {
         createSession,
         getSession,
+        touchSession,
         deleteSession,
         isAuthRateLimited,
         recordAuthAttempt,

@@ -14,6 +14,7 @@ const LISTENER_PIN = process.env.LISTENER_PIN || "";
 
 const SESSION_COOKIE_NAME = "esp32_listener_session";
 const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
+const SESSION_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const MAX_SESSIONS = 4096;
 
 const WS_CLIENT_PING_MS            = 45000;
@@ -46,6 +47,7 @@ const AUTH_MAX_ATTEMPTS = 10;
 const MAX_TRACKED_AUTH_IPS = 8192;
 const authState = createAuthState({
     sessionDurationMs: SESSION_DURATION_MS,
+    sessionIdleDurationMs: SESSION_IDLE_TIMEOUT_MS,
     authWindowMs: AUTH_WINDOW_MS,
     authMaxAttempts: AUTH_MAX_ATTEMPTS,
     maxSessions: MAX_SESSIONS,
@@ -195,6 +197,24 @@ app.post("/api/logout", requireHttps, (req, res) => {
     res.setHeader("Set-Cookie",
         `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`);
     res.json({ ok: true });
+});
+
+app.post("/api/session/activity", requireHttps, (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    const expectedOrigin = `${isHttpsRequest(req) ? "https" : "http"}://${req.headers.host || ""}`;
+    if (!req.headers.origin || req.headers.origin !== expectedOrigin) {
+        return res.status(403).json({ ok: false, error: "Invalid origin" });
+    }
+    const sessionId = getCookie(req, SESSION_COOKIE_NAME);
+    if (!authState.touchSession(sessionId)) {
+        return res.status(401).json({ ok: false, error: "Session expired" });
+    }
+    return res.json({ ok: true });
+});
+
+app.get("/session-activity.js", requireHttps, (req, res) => {
+    res.setHeader("Cache-Control", "no-cache");
+    res.type("application/javascript").sendFile(path.join(__dirname, "session-activity.js"));
 });
 
 app.get("/listener", requireHttps, (req, res) => {
@@ -572,7 +592,18 @@ const sourceKeepalive = setInterval(() => {
 
 const sessionCleanup = setInterval(() => {
     authState.cleanup();
-}, 15 * 60 * 1000);
+    for (const ws of wss.clients) {
+        if (!ws.sessionAuthenticated || typeof ws.sessionValid !== "function" || ws.sessionValid()) continue;
+        if (ws.role === "listener") {
+            sendJson(ws, { type: "auth_failed", reason: "session_expired" });
+        } else if (ws.role === "webrtc_listener") {
+            sendJson(ws, { type: "webrtc_error", reason: "listener_session_expired" });
+        } else {
+            continue;
+        }
+        try { ws.close(1008, "Listener session expired"); } catch {}
+    }
+}, 60 * 1000);
 
 server.on("close", () => {
     clearInterval(heartbeat);

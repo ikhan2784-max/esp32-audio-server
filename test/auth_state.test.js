@@ -7,6 +7,7 @@ function createState(overrides = {}) {
     let id = 0;
     const state = createAuthState({
         sessionDurationMs: 100,
+        sessionIdleDurationMs: 30,
         authWindowMs: 50,
         authMaxAttempts: 3,
         maxSessions: 2,
@@ -19,9 +20,33 @@ function createState(overrides = {}) {
 }
 
 test("sessions expire at their absolute deadline", () => {
-    const { state, setTime } = createState();
+    const { state, setTime } = createState({ sessionIdleDurationMs: 200 });
     const id = state.createSession();
     assert.ok(state.getSession(id));
+    setTime(1100);
+    assert.equal(state.getSession(id), null);
+});
+
+test("idle timeout refreshes on activity and expires without activity", () => {
+    const { state, setTime } = createState();
+    const id = state.createSession();
+    setTime(1029);
+    assert.equal(state.touchSession(id), true);
+    setTime(1058);
+    assert.ok(state.getSession(id));
+    setTime(1059);
+    assert.equal(state.getSession(id), null);
+});
+
+test("activity cannot extend a session beyond its absolute lifetime", () => {
+    const { state, setTime } = createState({ sessionDurationMs: 100, sessionIdleDurationMs: 40 });
+    const id = state.createSession();
+    setTime(1039);
+    assert.equal(state.touchSession(id), true);
+    setTime(1078);
+    assert.equal(state.touchSession(id), true);
+    setTime(1099);
+    assert.equal(state.touchSession(id), true);
     setTime(1100);
     assert.equal(state.getSession(id), null);
 });
