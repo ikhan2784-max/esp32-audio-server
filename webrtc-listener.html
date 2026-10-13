@@ -159,6 +159,7 @@ async function prepareAudioOutput() {
       const inputMeter = context.createAnalyser();
       const outputMeter = context.createAnalyser();
       const gain = context.createGain();
+      const silentPlaybackSink = context.createGain();
       const destination = context.createMediaStreamDestination();
       inputMeter.fftSize = 2048;
       outputMeter.fftSize = 2048;
@@ -168,6 +169,13 @@ async function prepareAudioOutput() {
       inputMeter.connect(outputMeter);
       outputMeter.connect(gain);
       gain.connect(destination);
+      /* Keep the Web Audio graph attached to the active device output while the
+       * processed MediaStream is played by audioEl. Without a destination sink,
+       * some browsers suspend the remote-track/worklet graph and GTCRN receives
+       * silence even though WebRTC continues decoding audio. */
+      silentPlaybackSink.gain.value = 0;
+      gain.connect(silentPlaybackSink);
+      silentPlaybackSink.connect(context.destination);
       audioContext = context;
       inputAnalyser = inputMeter;
       outputAnalyser = outputMeter;
