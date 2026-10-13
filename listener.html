@@ -1422,15 +1422,6 @@
 <div class="phone">
   <div class="screen">
 
-    <div class="status-bar">
-      <span>9:41</span>
-      <div class="right">
-        <svg viewBox="0 0 24 24"><path d="M2 22h20V2z"/></svg>
-        <svg viewBox="0 0 24 24"><path d="M12 21l-12-8h24z"/></svg>
-        <svg viewBox="0 0 24 24"><rect x="2" y="7" width="18" height="10" rx="2"/></svg>
-      </div>
-    </div>
-
     <div class="app-header">
       <button class="device-selector" id="deviceSelector" >
         <div class="device-logo">
@@ -2007,886 +1998,839 @@
 </div>
 
 <div class="project-compat" aria-hidden="true">
-<button id="start" disabled>Start</button><button id="stop" disabled>Stop</button><button id="record" disabled>Record</button><button id="stopRecord" disabled>Stop recording</button><button id="rebootBtn">Reboot</button><button id="forgetWifiBtn">Forget Wi-Fi</button><button id="rgbLedBtn">Turn blue RGB LED on</button><button id="logToggle">Hide</button><button id="logClear">Clear</button><button id="logCopy">Copy</button>
+<button id="start">Start</button><button id="stop" disabled>Stop</button><button id="record" disabled>Record</button><button id="stopRecord" disabled>Stop recording</button><button id="rebootBtn">Reboot</button><button id="forgetWifiBtn">Forget Wi-Fi</button><button id="rgbLedBtn">Turn blue RGB LED on</button><button id="logToggle">Hide</button><button id="logClear">Clear</button><button id="logCopy">Copy</button>
 <div id="status"></div><div id="renderState"></div><div id="diagDevice"></div><div id="deviceStatus"></div><div id="audioState"></div><div id="streamingState"></div><div id="listenerCount"></div><div id="diagListeners"></div><div id="diagStreaming"></div><div id="lastSeen"></div><div id="lastReboot"></div><div id="connectedAt"></div><div id="hwMac"></div><div id="hwUptime"></div><div id="hwReboots"></div><div id="hwBrownouts"></div><div id="hwWifiDrops"></div><div id="hwWsConn"></div><div id="hwWsDisc"></div><div id="hwStack"></div><div id="hwPackets"></div><div id="hwErrors"></div><div id="hwTx"></div><div id="quickListening"></div><div id="quickRender"></div><div id="quickStreaming"></div><div id="quickDevice"></div><div id="quickAudio"></div><div id="quickWifi"></div>
-</div>
-<div class="toast" id="toast"></div>
+
+<span id="state">Stopped</span><span id="error"></span><span id="mediaStatus">Audio: waiting for a remote track.</span><span id="micGainValue"></span><span id="micGainStatus"></span><span id="processingStatus"></span><audio id="audio" autoplay playsinline aria-hidden="true"></audio><input id="micGain" type="range" min="50" max="150" step="5" value="100" disabled><input id="noiseSuppression" type="checkbox" checked><select id="recordSource"><option value="raw" selected>Raw incoming audio</option><option value="filtered">Filtered listener output</option></select>
+</div><div class="toast" id="toast"></div>
 
 <script src="/session-activity.js"></script>
 <script>
-/* ============================================================
- * EVENT LOG
- * ============================================================ */
-const LOG_MAX_LINES = 500;
-let logLineCount = 0;
-const logBox = document.getElementById("logBox");
+"use strict";
 
-function logAdd(message, level = "info") {
-  if (!logBox) return;
-  const color =
-    level === "error" ? "#ff5d67" :
-    level === "warn"  ? "#f5c451" :
-    level === "ok"    ? "#35d07f" :
-    level === "debug" ? "#6b7684" :
-                        "#9aa7b5";
-  const d = new Date();
-  const t = String(d.getHours()).padStart(2,"0") + ":" +
-            String(d.getMinutes()).padStart(2,"0") + ":" +
-            String(d.getSeconds()).padStart(2,"0") + "." +
-            String(d.getMilliseconds()).padStart(3,"0");
-  const line = document.createElement("div");
-  line.style.color = color;
-  line.textContent = `[${t}] ${message}`;
-  logBox.appendChild(line);
-  logLineCount++;
-  while (logLineCount > LOG_MAX_LINES) {
-    logBox.removeChild(logBox.firstChild);
-    logLineCount--;
-  }
-  logBox.scrollTop = logBox.scrollHeight;
-}
+const stateEl = document.getElementById("state");
+const errorEl = document.getElementById("error");
+const mediaStatusEl = document.getElementById("mediaStatus");
+const audioEl = document.getElementById("audio");
+const micGainEl = document.getElementById("micGain");
+const micGainValueEl = document.getElementById("micGainValue");
+const micGainStatusEl = document.getElementById("micGainStatus");
+const noiseSuppressionEl = document.getElementById("noiseSuppression");
+const processingStatusEl = document.getElementById("processingStatus");
+const startButton = document.getElementById("start");
+const stopButton = document.getElementById("stop");
+const recordButton = document.getElementById("record");
+const stopRecordButton = document.getElementById("stopRecord");
+const recordSourceEl = document.getElementById("recordSource");
 
-const logToggleBtn = document.getElementById("logToggle");
-const logClearBtn  = document.getElementById("logClear");
-const logCopyBtn   = document.getElementById("logCopy");
-
-logToggleBtn.onclick = () => {
-  const hidden = logBox.style.display === "none";
-  logBox.style.display = hidden ? "block" : "none";
-  logToggleBtn.textContent = hidden ? "Hide" : "Show";
-};
-
-logClearBtn.onclick = () => {
-  logBox.innerHTML = "";
-  logLineCount = 0;
-  logAdd("Log cleared", "debug");
-};
-
-logCopyBtn.onclick = async () => {
-  try {
-    await navigator.clipboard.writeText(logBox.innerText);
-    logAdd("Log copied to clipboard", "ok");
-  } catch {
-    logAdd("Copy failed", "error");
-  }
-};
-
-logAdd("Log initialized", "info");
-
-/* ============================================================
- * CONSTANTS AND STATE
- * ============================================================ */
-const SAMPLE_RATE = 16000;
-const CHANNELS = 1;
-const BYTES_PER_SAMPLE = 3;
-const BITS_PER_SAMPLE = 24;
-
-const TARGET_BUFFER_SECONDS = 0.20;
-const MAX_BUFFER_SECONDS = 0.80;
-const MIN_BUFFER_SECONDS = 0.06;
-
-let ws = null;
-let audioContext = null;
-let gainNode = null;
-let audioWorkletNode = null;
-let audioWorkletReady = false;
-let playbackStarted = false;
-let recording = false;
-let recordedChunks = [];
-let recordedSamples = 0;
-let recordStartTime = 0;
-let timerHandle = null;
-
-let deviceOnline = false;
-let statusUptimeSeconds = null;
-let statusUptimeBaseMs = 0;
-
+let socket = null;
+let peer = null;
+let remoteStream = null;
+let sessionId = null;
 let listenerActive = false;
 let manualStop = false;
 let reconnectTimer = null;
-let reconnectAttempts = 0;
-let reconnectInProgress = false;
-let listenerReady = false;
-let rgbLedEnabled = false;
+let reconnectAttempt = 0;
+let statsTimer = null;
+let pendingCandidates = [];
+let pendingLocalCandidates = [];
+let localDescriptionSent = false;
+let localIceComplete = false;
+let recorder = null;
+let recordingSourceLabel = "raw";
+let recordedChunks = [];
+let recordedBytes = 0;
+let sessionRedirectTimer = null;
+let audioContext = null;
+let mediaElementSource = null;
+let mediaStreamSource = null;
+let inputAnalyser = null;
+let outputAnalyser = null;
+let latestInputDbfs = null;
+let latestOutputDbfs = null;
+let playbackGain = null;
+let processedDestination = null;
+let gtcrnApi = null;
+let gtcrnWasmBinary = null;
+let gtcrnWorkletLoaded = false;
+let gtcrnNode = null;
+let noiseSuppressionActive = false;
+let silentInputSinceMs = null;
+let audioProcessingStatus = "GTCRN will activate when listening starts.";
+const MAX_PENDING_CANDIDATES = 32;
+const MAX_RECONNECT_MS = 15000;
+const MAX_RECORDING_BYTES = 128 * 1024 * 1024;
+const WS_RECONNECT_CLOSE_CODE = 3000;
 
-const MAX_RECONNECT_DELAY_MS = 15000;
+function setState(value) { stateEl.textContent = value; }
 
-const $ = id => document.getElementById(id);
-const tabButtons = Array.from(document.querySelectorAll(".nav-tab"));
-function activateTab(name) {
-  tabButtons.forEach(button => {
-    const active = button.dataset.tab === name;
-    button.classList.toggle("active", active);
-    button.setAttribute("aria-selected", active ? "true" : "false");
-  });
-  document.querySelectorAll(".tab-panel").forEach(panel => panel.classList.toggle("active", panel.id === "panel-" + name));
-  window.scrollTo({ top: 0, behavior: "smooth" });
-}
-tabButtons.forEach(button => button.addEventListener("click", () => activateTab(button.dataset.tab)));
-
-const status = $("status");
-const level = $("level");
-const start = $("start");
-const stop = $("stop");
-const record = $("record");
-const stopRecord = $("stopRecord");
-const recordStatus = $("recordStatus");
-const duration = $("duration");
-const volume = $("volume");
-const volumeValue = $("volumeValue");
-const rebootBtn = $("rebootBtn");
-const forgetWifiBtn = $("forgetWifiBtn");
-const rgbLedBtn = $("rgbLedBtn");
-
-function setStatus(text) { status.textContent = text; }
-
-function updateRgbLedButton() {
-  rgbLedBtn.textContent = rgbLedEnabled ? "Turn blue RGB LED off" : "Turn blue RGB LED on";
-  rgbLedBtn.disabled = !deviceOnline || !listenerReady || !ws || ws.readyState !== WebSocket.OPEN;
-}
-
-function formatDate(value) {
-  if (!value) return "Never";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString();
+function refreshMicGainAvailability() {
+  const connected = !!sessionId && !!peer && peer.connectionState === "connected" &&
+    !!socket && socket.readyState === WebSocket.OPEN;
+  micGainEl.disabled = !connected;
+  if (!connected && sessionId) micGainStatusEl.textContent = "Available when the WebRTC audio connection is up.";
+  else if (!connected) micGainStatusEl.textContent = "Start listening and connect to adjust microphone gain.";
 }
 
-function formatUptime(seconds) {
-  if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return "—";
-  seconds = Math.max(0, Math.floor(seconds));
-  const days = Math.floor(seconds / 86400); seconds %= 86400;
-  const hours = Math.floor(seconds / 3600); seconds %= 3600;
-  const minutes = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  if (days > 0) return `${days}d ${String(hours).padStart(2,"0")}:${String(minutes).padStart(2,"0")}:${String(secs).padStart(2,"0")}`;
-  return `${String(hours).padStart(2,"0")}:${String(minutes).padStart(2,"0")}:${String(secs).padStart(2,"0")}`;
-}
-
-function updateUptimeDisplay() {
-  if (!deviceOnline || statusUptimeSeconds === null) { $("uptime").textContent = "—"; return; }
-  const elapsed = Math.floor((Date.now() - statusUptimeBaseMs) / 1000);
-  $("uptime").textContent = formatUptime(statusUptimeSeconds + elapsed);
-}
-
-function applyDeviceStatus(data) {
-  deviceOnline = !!data.online;
-  const topStatus = $("topStatus");
-  if (topStatus) { topStatus.textContent = deviceOnline ? "● ONLINE" : "● OFFLINE"; topStatus.classList.toggle("offline", !deviceOnline); }
-  ["quickDevice", "diagDevice"].forEach(id => { const n=$(id); if(n){ n.textContent=deviceOnline?"ONLINE":"OFFLINE"; n.className=deviceOnline?"online":"offline"; } });
-  ["quickAudio", "diagAudio"].forEach(id => { const n=$(id); if(n)n.textContent=data.audio||"IDLE"; });
-  const qs=$("quickStreaming"), ds=$("diagStreaming"), dl=$("diagListeners");
-  if(qs)qs.textContent=data.streaming?"● LIVE":"● READY";
-  if(ds)ds.textContent=data.streaming?"ON":"OFF";
-  if(dl)dl.textContent=Number.isFinite(Number(data.listeners))?data.listeners:"0";
-  $("deviceStatus").textContent = deviceOnline ? "🟢 ONLINE" : "🔴 OFFLINE";
-  $("deviceStatus").className = "value " + (deviceOnline ? "online" : "offline");
-  $("audioState").textContent = data.audio || "IDLE";
-  $("audioState").className = "value " + (data.audio === "OK" ? "ok" : "idle");
-  const streaming = !!data.streaming;
-  $("streamingState").textContent = streaming ? "ON" : "OFF";
-  $("streamingState").className = "value " + (streaming ? "ok" : "idle");
-  $("listenerCount").textContent = Number.isFinite(Number(data.listeners)) ? data.listeners : "0";
-  $("lastSeen").textContent = formatDate(data.last_seen);
-  $("lastReboot").textContent = formatDate(data.last_rebooted);
-  $("connectedAt").textContent = formatDate(data.connected_at);
-
-  if (deviceOnline && data.uptime_seconds !== null && data.uptime_seconds !== undefined) {
-    statusUptimeSeconds = Number(data.uptime_seconds);
-    statusUptimeBaseMs = Date.now();
-  } else {
-    statusUptimeSeconds = null;
-  }
-  updateUptimeDisplay();
-
-  const wsActive = ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING);
-  start.disabled = !deviceOnline || wsActive;
-  rebootBtn.disabled = !deviceOnline;
-  forgetWifiBtn.disabled = !deviceOnline;
-  updateRgbLedButton();
-}
-
-async function refreshDeviceStatus() {
-  try {
-    const response = await fetch("/api/device-status?_=" + Date.now(), {
-      cache: "no-store",
-      headers: { "Cache-Control": "no-cache" }
-    });
-    if (!response.ok) throw new Error("HTTP " + response.status);
-    const data = await response.json();
-    applyDeviceStatus(data);
-    const wasUnavailable = $("renderState").textContent !== "CONNECTED";
-    $("renderState").textContent = "CONNECTED";
-    if ($("quickRender")) { $("quickRender").textContent = "CONNECTED"; $("quickRender").className = "online"; }
-    $("renderState").className = "value ok";
-    if (wasUnavailable) logAdd("Render reachable", "ok");
-  } catch (error) {
-    const wasConnected = $("renderState").textContent === "CONNECTED";
-    $("renderState").textContent = "UNAVAILABLE";
-    if ($("quickRender")) { $("quickRender").textContent = "OFFLINE"; $("quickRender").className = "offline"; }
-    $("renderState").className = "value offline";
-    if (wasConnected) logAdd("Render unreachable: " + error.message, "error");
-  }
-}
-
-setInterval(refreshDeviceStatus, 1000);
-setInterval(updateUptimeDisplay, 1000);
-
-/* ============================================================
- * ESP32 HEALTH POLLING
- * ============================================================ */
-let healthFailCount = 0;
-async function refreshHealth() {
-  try {
-    const r = await fetch("/api/esp32-health?_=" + Date.now(), { cache: "no-store" });
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    const h = await r.json();
-
-    if (healthFailCount > 0) {
-      logAdd("Health endpoint recovered", "ok");
-      healthFailCount = 0;
-    }
-
-    const upSec = h.uptime_sec || 0;
-    const hrs = Math.floor(upSec / 3600);
-    const mins = Math.floor((upSec % 3600) / 60);
-    const secs = upSec % 60;
-
-    $("hwMac").textContent = h.mac || "—";
-    $("hwChip").textContent = h.chip || "—";
-    $("hwVersion").textContent = h.version || "—";
-    $("hwUptime").textContent = `${hrs}h ${mins}m ${secs}s`;
-    $("hwBoot").textContent = h.boot_reason || "—";
-    $("hwReboots").textContent = (h.total_reboots || 0).toString();
-    $("hwBrownouts").textContent = (h.brownouts || 0).toString();
-    $("hwTemp").textContent = (h.temp_c !== undefined ? Number(h.temp_c).toFixed(1) : "—") + " °C";
-    $("hwRssi").textContent = (h.wifi_rssi || 0) + " dBm";
-    $("hwWifiDrops").textContent = (h.wifi_drops || 0).toString();
-    $("hwWsConn").textContent = (h.ws_connects || 0).toString();
-    $("hwWsDisc").textContent = (h.ws_disconnects || 0).toString();
-    $("hwHeap").textContent = Math.round((h.free_heap || 0) / 1024) + " KB";
-    $("hwMinHeap").textContent = Math.round((h.min_heap || 0) / 1024) + " KB";
-    $("hwPsram").textContent = Math.round((h.free_psram || 0) / 1024) + " KB";
-    $("hwStack").textContent = `${h.stack_audio || 0} / ${h.stack_sender || 0} / ${h.stack_monitor || 0}`;
-    $("hwPackets").textContent = `${h.packets || 0} / ${((h.bytes || 0) / 1048576).toFixed(1)} MB`;
-    $("hwErrors").textContent = `${h.send_err || 0} / ${h.i2s_err || 0}`;
-    $("hwTx").textContent = `${h.tx_max_us || 0} µs / ${h.tx_slow || 0}`;
-
-    const tempEl = $("hwTemp");
-    if (h.temp_c > 70) tempEl.style.color = "var(--red)";
-    else if (h.temp_c > 60) tempEl.style.color = "var(--yellow)";
-    else tempEl.style.color = "var(--green)";
-
-    const bootEl = $("hwBoot");
-    if (h.boot_reason === "POWERON" || h.boot_reason === "SOFTWARE") {
-      bootEl.style.color = "var(--green)";
-    } else if (h.boot_reason === "BROWNOUT" || h.boot_reason === "PANIC" || h.boot_reason === "CPU_LOCKUP") {
-      bootEl.style.color = "var(--red)";
-    } else {
-      bootEl.style.color = "var(--yellow)";
-    }
-
-    const brownEl = $("hwBrownouts");
-    brownEl.style.color = h.brownouts > 0 ? "var(--red)" : "var(--green)";
-
-    const rssiEl = $("hwRssi");
-    if (h.wifi_rssi > -55) rssiEl.style.color = "var(--green)";
-    else if (h.wifi_rssi > -70) rssiEl.style.color = "var(--yellow)";
-    else rssiEl.style.color = "var(--red)";
-
-    const wsDiscEl = $("hwWsDisc");
-    wsDiscEl.style.color = h.ws_disconnects > 0 ? "var(--yellow)" : "var(--green)";
-
-  } catch (e) {
-    healthFailCount++;
-    if (healthFailCount === 1) {
-      logAdd("Health endpoint unavailable: " + e.message, "warn");
-    } else if (healthFailCount % 20 === 0) {
-      logAdd("Health endpoint still down (" + healthFailCount + " tries)", "warn");
-    }
-  }
-}
-
-setInterval(refreshHealth, 3000);
-refreshHealth();
-
-/* ============================================================
- * VOLUME / DURATION
- * ============================================================ */
-function updateVolume() {
-  const value = Number(volume.value);
-  volumeValue.textContent = Math.round(value * 100) + "%";
-  if (gainNode) gainNode.gain.value = value;
-}
-volume.addEventListener("input", updateVolume);
-
-function updateDuration() {
-  if (!recording) return;
-  const seconds = Math.floor((Date.now() - recordStartTime) / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const remaining = seconds % 60;
-  duration.textContent = String(minutes).padStart(2, "0") + ":" + String(remaining).padStart(2, "0");
-  timerHandle = setTimeout(updateDuration, 500);
-}
-
-/* ============================================================
- * AUDIO WORKLET
- * ============================================================ */
-async function createAudioEngine() {
-  const workletCode = `
-    class PCMPlayerProcessor extends AudioWorkletProcessor {
-      constructor() {
-        super();
-        this.capacity = 32768;
-        this.buffer = new Float32Array(this.capacity);
-        this.readIndex = 0;
-        this.writeIndex = 0;
-        this.available = 0;
-        this.started = false;
-        this.targetSamples = ${Math.round(TARGET_BUFFER_SECONDS * SAMPLE_RATE)};
-        this.minSamples = ${Math.round(MIN_BUFFER_SECONDS * SAMPLE_RATE)};
-        this.maxSamples = ${Math.round(MAX_BUFFER_SECONDS * SAMPLE_RATE)};
-        this.underruns = 0;
-        this.port.onmessage = (event) => {
-          const data = event.data;
-          if (!data) return;
-          if (data.type === "pcm") {
-            const samples = new Float32Array(data.buffer);
-            for (let i = 0; i < samples.length; i++) {
-              if (this.available >= this.capacity) {
-                this.readIndex = (this.readIndex + 1) % this.capacity;
-                this.available--;
-              }
-              this.buffer[this.writeIndex] = samples[i];
-              this.writeIndex = (this.writeIndex + 1) % this.capacity;
-              this.available++;
-            }
-            if (this.available > this.maxSamples) {
-              const excess = this.available - this.maxSamples;
-              this.readIndex = (this.readIndex + excess) % this.capacity;
-              this.available -= excess;
-            }
-          }
-          if (data.type === "reset") {
-            this.readIndex = 0;
-            this.writeIndex = 0;
-            this.available = 0;
-            this.started = false;
-          }
-        };
-      }
-      process(inputs, outputs) {
-        const output = outputs[0];
-        if (!output || !output[0]) return true;
-        const channel = output[0];
-        if (!this.started) {
-          if (this.available >= this.targetSamples) this.started = true;
-          else { channel.fill(0); return true; }
-        }
-        for (let i = 0; i < channel.length; i++) {
-          if (this.available > 0) {
-            channel[i] = this.buffer[this.readIndex];
-            this.readIndex = (this.readIndex + 1) % this.capacity;
-            this.available--;
-          } else {
-            channel[i] = 0;
-            this.underruns++;
-            this.started = false;
-          }
-        }
-        return true;
-      }
-    }
-    registerProcessor("pcm-player", PCMPlayerProcessor);
-  `;
-  const blob = new Blob([workletCode], { type: "application/javascript" });
-  const url = URL.createObjectURL(blob);
-  try { await audioContext.audioWorklet.addModule(url); } finally { URL.revokeObjectURL(url); }
-  audioWorkletNode = new AudioWorkletNode(audioContext, "pcm-player", {
-    numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [1]
-  });
-  audioWorkletReady = true;
-  audioWorkletNode.connect(gainNode);
-  playbackStarted = false;
-}
-
-/* ============================================================
- * PCM DECODER
- * ============================================================ */
-let playCount = 0;
-function playPCM24(arrayBuffer) {
-  if (!audioContext || !gainNode || !audioWorkletNode || !audioWorkletReady) return;
-  if (arrayBuffer.byteLength < 16) return;
-  const view = new DataView(arrayBuffer);
-  const magic = view.getUint32(0, true);
-  const version = view.getUint8(4);
-  const headerBytes = view.getUint8(5);
-  const sampleCount = view.getUint16(6, true);
-  if (magic !== 0x41334631 || version !== 1 || headerBytes !== 16 ||
-      sampleCount === 0 || arrayBuffer.byteLength !== headerBytes + sampleCount * 3) {
-    console.warn("Invalid ESP32 audio frame", arrayBuffer.byteLength);
-    logAdd("Bad audio frame: " + arrayBuffer.byteLength + " bytes", "error");
+function sendMicGain() {
+  const gainPercent = Number(micGainEl.value);
+  micGainValueEl.value = `${gainPercent}%`;
+  if (!sessionId || !peer || peer.connectionState !== "connected") {
+    refreshMicGainAvailability();
     return;
   }
-  const pcm = new Int32Array(sampleCount);
-  const floatSamples = new Float32Array(sampleCount);
-  let sum = 0;
-  for (let i = 0; i < sampleCount; i++) {
-    const offset = headerBytes + i * 3;
-    let sample = view.getUint8(offset) | (view.getUint8(offset + 1) << 8) | (view.getUint8(offset + 2) << 16);
-    if (sample & 0x800000) sample |= 0xFF000000;
-    pcm[i] = sample;
-    const value = sample / 8388608.0;
-    floatSamples[i] = value;
-    sum += value * value;
+  if (!send({
+    type: "webrtc_audio_control",
+    session_id: sessionId,
+    command: "mic_gain",
+    gain_percent: gainPercent
+  })) {
+    micGainStatusEl.textContent = "Could not send gain change. Check the listener connection.";
+    return;
   }
-  if (recording) { recordedChunks.push(pcm); recordedSamples += sampleCount; }
-  const rms = Math.sqrt(sum / sampleCount);
-  level.style.width = Math.min(100, rms * 220) + "%";
-  audioWorkletNode.port.postMessage({ type: "pcm", buffer: floatSamples.buffer }, [floatSamples.buffer]);
-  playbackStarted = true;
-
-  playCount++;
-  if (playCount % 500 === 0) {
-    logAdd("Received " + playCount + " frames, RMS=" + rms.toFixed(4), "debug");
-  }
+  micGainStatusEl.textContent = `Sending ${gainPercent}% to the ESP32…`;
 }
 
-/* ============================================================
- * RECORDING
- * ============================================================ */
-function startRecording() {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  recordedChunks = [];
-  recordedSamples = 0;
-  recording = true;
-  recordStartTime = Date.now();
-  record.disabled = true;
-  stopRecord.disabled = false;
-  recordStatus.textContent = "🔴 Recording...";
-  duration.textContent = "00:00";
-  updateDuration();
-  logAdd("Recording started", "info");
-}
-
-function stopRecording() {
-  if (!recording) return;
-  recording = false;
-  if (timerHandle) { clearTimeout(timerHandle); timerHandle = null; }
-  record.disabled = false;
-  stopRecord.disabled = true;
-  recordStatus.textContent = "Processing WAV...";
-  const wavBlob = createWavBlob(recordedChunks, recordedSamples);
-  const url = URL.createObjectURL(wavBlob);
-  const link = document.createElement("a");
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  link.href = url;
-  link.download = "ESP32_INMP441_" + stamp + ".wav";
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-  recordStatus.textContent = "Recording saved as WAV";
-  logAdd("Recording saved (" + recordedSamples + " samples)", "ok");
-}
-
-function createWavBlob(chunks, sampleCount) {
-  const dataSize = sampleCount * BYTES_PER_SAMPLE;
-  const buffer = new ArrayBuffer(44 + dataSize);
-  const view = new DataView(buffer);
-  function writeString(offset, text) {
-    for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i));
+function handleMicGainAck(message) {
+  if (message.session_id !== sessionId || message.command !== "mic_gain") return;
+  const gainPercent = Number(message.gain_percent);
+  if (!message.ok) {
+    micGainStatusEl.textContent = "The ESP32 rejected the gain change.";
+    return;
   }
-  writeString(0, "RIFF");
-  view.setUint32(4, 36 + dataSize, true);
-  writeString(8, "WAVE");
-  writeString(12, "fmt ");
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, CHANNELS, true);
-  view.setUint32(24, SAMPLE_RATE, true);
-  view.setUint32(28, SAMPLE_RATE * CHANNELS * BYTES_PER_SAMPLE, true);
-  view.setUint16(32, CHANNELS * BYTES_PER_SAMPLE, true);
-  view.setUint16(34, BITS_PER_SAMPLE, true);
-  writeString(36, "data");
-  view.setUint32(40, dataSize, true);
-  let offset = 44;
-  for (const chunk of chunks) {
-    for (let i = 0; i < chunk.length; i++) {
-      const sample = chunk[i];
-      view.setUint8(offset, sample & 0xFF);
-      view.setUint8(offset + 1, (sample >> 8) & 0xFF);
-      view.setUint8(offset + 2, (sample >> 16) & 0xFF);
-      offset += 3;
+  if (gainPercent !== Number(micGainEl.value)) return;
+  micGainStatusEl.textContent = `ESP32 gain set to ${gainPercent}%.`;
+}
+
+function setAudioProcessingStatus(value) {
+  audioProcessingStatus = value;
+  processingStatusEl.textContent = value;
+}
+
+function readAudioLevelDbfs(analyser) {
+  if (!analyser) return null;
+  const samples = new Float32Array(analyser.fftSize);
+  analyser.getFloatTimeDomainData(samples);
+  let sumSquares = 0;
+  for (const sample of samples) sumSquares += sample * sample;
+  const rms = Math.sqrt(sumSquares / samples.length);
+  return rms === 0 ? Number.NEGATIVE_INFINITY : 20 * Math.log10(rms);
+}
+
+function formatAudioLevelDbfs(value) {
+  if (value === null) return "unavailable";
+  return Number.isFinite(value) ? `${value.toFixed(1)} dBFS` : "digital silence";
+}
+
+function syncPlaybackGain() {
+  if (!audioContext || !playbackGain) return;
+  const playing = remoteStream && !audioEl.paused;
+  const requestedGain = Number(document.getElementById("volume").value);
+  playbackGain.gain.value = playing && !audioEl.muted ? Math.max(0, Math.min(3, requestedGain)) : 0;
+}
+
+audioEl.addEventListener("play", () => {
+  if (audioContext && audioContext.state === "suspended") {
+    void audioContext.resume().then(syncPlaybackGain).catch(() => {});
+  } else {
+    syncPlaybackGain();
+  }
+});
+audioEl.addEventListener("pause", syncPlaybackGain);
+audioEl.addEventListener("volumechange", syncPlaybackGain);
+
+function refreshAudioProcessingStatus() {
+  const hasLiveTrack = remoteStream && remoteStream.getAudioTracks().some((track) => track.readyState === "live");
+  const sampleRate = audioContext ? `${audioContext.sampleRate / 1000} kHz` : "";
+  if (!hasLiveTrack) {
+    setAudioProcessingStatus(noiseSuppressionActive
+      ? `GTCRN ready · ${sampleRate}; waiting for audio`
+      : "Noise suppression off · waiting for audio");
+    return;
+  }
+  setAudioProcessingStatus(noiseSuppressionActive
+    ? `GTCRN enabled · ${sampleRate}; checking signal levels`
+    : "Noise suppression off · direct WebRTC audio");
+}
+
+async function prepareAudioOutput() {
+  if (!audioContext) {
+    const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextConstructor) throw new Error("Web Audio is not supported in this browser");
+
+    const context = new AudioContextConstructor({ latencyHint: "interactive", sampleRate: 48000 });
+    if (context.sampleRate !== 48000 && context.sampleRate !== 16000) {
+      await context.close();
+      throw new Error(`GTCRN does not support ${context.sampleRate} Hz playback`);
+    }
+
+    try {
+      const inputMeter = context.createAnalyser();
+      const outputMeter = context.createAnalyser();
+      const gain = context.createGain();
+      const destination = context.createMediaStreamDestination();
+      inputMeter.fftSize = 2048;
+      outputMeter.fftSize = 2048;
+      inputMeter.smoothingTimeConstant = 0;
+      outputMeter.smoothingTimeConstant = 0;
+      gain.gain.value = 1;
+      inputMeter.connect(outputMeter);
+      outputMeter.connect(gain);
+      gain.connect(destination);
+      gain.connect(context.destination);
+      // Keep the visible audio element as the source of its play/volume/mute controls,
+      // but do not use its MediaElementAudioSourceNode for RTP audio processing.
+      // WebRTC tracks are connected directly with createMediaStreamSource below.
+      const elementSource = context.createMediaElementSource(audioEl);
+      audioContext = context;
+      mediaElementSource = elementSource;
+      inputAnalyser = inputMeter;
+      outputAnalyser = outputMeter;
+      playbackGain = gain;
+      processedDestination = destination;
+      syncPlaybackGain();
+    } catch (error) {
+      await context.close();
+      throw error;
     }
   }
-  return new Blob([buffer], { type: "audio/wav" });
+
+  if (audioContext.state === "suspended") await audioContext.resume();
 }
 
-/* ============================================================
- * RECONNECT LOGIC
- * ============================================================ */
-function resetReconnectState() {
-  reconnectAttempts = 0;
-  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+function connectRemoteAudioStream(stream) {
+  if (!audioContext || !inputAnalyser || !stream) {
+    throw new Error("Web Audio input is not ready");
+  }
+  audioEl.srcObject = stream;
+  if (mediaStreamSource) {
+    try { mediaStreamSource.disconnect(); } catch {}
+  }
+  // Feed the WebRTC track directly into Web Audio. The package's GTCRN worklet
+  // expects live AudioWorklet channel buffers; routing via the media element
+  // source can leave those buffers silent in this browser path.
+  mediaStreamSource = audioContext.createMediaStreamSource(stream);
+  mediaStreamSource.connect(inputAnalyser);
+  syncPlaybackGain();
 }
 
-function resetAudioBuffer() {
-  if (audioWorkletNode) { try { audioWorkletNode.port.postMessage({ type: "reset" }); } catch {} }
-  playbackStarted = false;
+async function enableNoiseSuppression() {
+  await prepareAudioOutput();
+  if (!gtcrnApi) gtcrnApi = await import("/audio-suppressor/index.js");
+  if (!gtcrnWasmBinary) {
+    gtcrnWasmBinary = await gtcrnApi.loadGtcrn({ url: "/audio-suppressor/gtcrn.wasm" });
+  }
+  if (!gtcrnWorkletLoaded) {
+    await audioContext.audioWorklet.addModule("/audio-suppressor/gtcrn/workletProcessor.js");
+    gtcrnWorkletLoaded = true;
+  }
+  if (!gtcrnNode) {
+    gtcrnNode = new gtcrnApi.GtcrnWorkletNode(audioContext, {
+      wasmBinary: gtcrnWasmBinary,
+      maxChannels: 2
+    });
+    const node = gtcrnNode;
+    node.addEventListener("processorerror", () => {
+      if (gtcrnNode !== node) return;
+      restoreDirectAudio("GTCRN processing failed. Direct WebRTC audio has been restored; noise suppression is off.");
+    });
+  }
+
+  if (!inputAnalyser || !outputAnalyser || !playbackGain) {
+    throw new Error("GTCRN audio graph is not ready");
+  }
+  if (remoteStream) connectRemoteAudioStream(remoteStream);
+  inputAnalyser.disconnect();
+  inputAnalyser.connect(gtcrnNode);
+  gtcrnNode.connect(outputAnalyser);
+  audioEl.muted = false;
+  syncPlaybackGain();
+  // Do not wait for playback until the remote track exists: signaling starts
+  // only after this initializer returns, and play() can remain pending with no source.
+  if (remoteStream) {
+    try { await audioEl.play(); } catch { setState("Audio ready — press play"); }
+  }
+  noiseSuppressionActive = true;
+  silentInputSinceMs = null;
+  refreshAudioProcessingStatus();
+}
+
+function disableNoiseSuppression() {
+  if (inputAnalyser) inputAnalyser.disconnect();
+  if (inputAnalyser && outputAnalyser) inputAnalyser.connect(outputAnalyser);
+  if (inputAnalyser && outputAnalyser) {
+    if (gtcrnNode) {
+      try { gtcrnNode.disconnect(); } catch {}
+      try { gtcrnNode.destroy(); } catch {}
+      gtcrnNode = null;
+    }
+  }
+  noiseSuppressionActive = false;
+  silentInputSinceMs = null;
+  if (remoteStream) {
+    if (mediaElementSource) connectRemoteAudioStream(remoteStream);
+    else audioEl.srcObject = remoteStream;
+    void audioEl.play().catch(() => setState("Audio ready — press play"));
+  }
+  refreshAudioProcessingStatus();
+}
+
+function restoreDirectAudio(message) {
+  noiseSuppressionEl.checked = false;
+  disableNoiseSuppression();
+  if (remoteStream) {
+    audioEl.srcObject = remoteStream;
+    void audioEl.play().catch(() => setState("Audio ready — press play"));
+  }
+  if (recorder && recorder.state !== "inactive" && recordingSourceLabel === "filtered") {
+    recordingSourceLabel = "direct-fallback";
+  }
+  setAudioProcessingStatus("Direct WebRTC audio restored; noise suppression is off");
+  errorEl.textContent = message;
+}
+
+async function updateMediaStatus(targetPeer) {
+  if (!targetPeer || peer !== targetPeer) return;
+  const tracks = remoteStream ? remoteStream.getAudioTracks() : [];
+  let inboundAudio = null;
+  const codecsById = new Map();
+  try {
+    const report = await targetPeer.getStats();
+    report.forEach((stat) => {
+      if (stat.type === "codec") codecsById.set(stat.id, stat);
+      if (stat.type === "inbound-rtp" && (stat.kind === "audio" || stat.mediaType === "audio")) {
+        inboundAudio = stat;
+      }
+    });
+  } catch {
+    mediaStatusEl.textContent = "Audio stats unavailable in this browser.";
+    return;
+  }
+
+  const track = tracks[0];
+  const trackState = track ? `${track.readyState}${track.muted ? ", muted" : ", unmuted"}` : "not received";
+  const packets = inboundAudio?.packetsReceived ?? 0;
+  const bytes = inboundAudio?.bytesReceived ?? 0;
+  const jitterMs = Number.isFinite(inboundAudio?.jitter) ? Math.round(inboundAudio.jitter * 1000) : null;
+  const level = Number.isFinite(inboundAudio?.audioLevel) ? inboundAudio.audioLevel.toFixed(3) : null;
+  const codec = inboundAudio?.codecId ? codecsById.get(inboundAudio.codecId) : null;
+  const audioReceiver = targetPeer.getReceivers()
+    .find((receiver) => receiver.track?.kind === "audio");
+  const jitterEmitted = inboundAudio?.jitterBufferEmittedCount;
+  const jitterDelayMs = Number.isFinite(jitterEmitted) && jitterEmitted > 0
+    && Number.isFinite(inboundAudio?.jitterBufferDelay)
+    ? Math.round(inboundAudio.jitterBufferDelay * 1000 / jitterEmitted)
+    : null;
+  const jitterTargetDelayMs = Number.isFinite(jitterEmitted) && jitterEmitted > 0
+    && Number.isFinite(inboundAudio?.jitterBufferTargetDelay)
+    ? Math.round(inboundAudio.jitterBufferTargetDelay * 1000 / jitterEmitted)
+    : null;
+  const jitterMinimumDelayMs = Number.isFinite(jitterEmitted) && jitterEmitted > 0
+    && Number.isFinite(inboundAudio?.jitterBufferMinimumDelay)
+    ? Math.round(inboundAudio.jitterBufferMinimumDelay * 1000 / jitterEmitted)
+    : null;
+  const jitterTarget = Number.isFinite(audioReceiver?.jitterBufferTarget)
+    ? Math.round(audioReceiver.jitterBufferTarget) + " ms"
+    : "browser default";
+  const jitterBuffer = Number.isFinite(jitterEmitted)
+    ? "; jitter buffer emitted " + jitterEmitted + " samples (avg "
+      + (jitterDelayMs ?? "n/a") + " ms, target "
+      + (jitterTargetDelayMs ?? "n/a") + " ms, min "
+      + (jitterMinimumDelayMs ?? "n/a") + " ms; configured " + jitterTarget + ")"
+    : "";
+  const decoderStatus = inboundAudio?.decoderImplementation
+    ? "; decoder " + inboundAudio.decoderImplementation
+    : "";
+  const codecLabel = codec
+    ? `${codec.mimeType || "codec"}${Number.isFinite(codec.clockRate) ? `/${codec.clockRate} Hz` : ""}${Number.isFinite(codec.channels) ? `/${codec.channels} ch` : ""}`
+    : "codec unavailable";
+  const decodedSamples = Number.isFinite(inboundAudio?.totalSamplesReceived)
+    ? `decoded ${inboundAudio.totalSamplesReceived} samples`
+    : "decoded sample count unavailable";
+  const packetLoss = Number.isFinite(inboundAudio?.packetsLost)
+    ? `, ${inboundAudio.packetsLost} lost`
+    : "";
+  const packetDiscard = Number.isFinite(inboundAudio?.packetsDiscarded)
+    ? `, ${inboundAudio.packetsDiscarded} discarded`
+    : "";
+  const concealment = Number.isFinite(inboundAudio?.concealedSamples)
+    ? `, concealed ${inboundAudio.concealedSamples}`
+    : "";
+  const silentConcealment = Number.isFinite(inboundAudio?.silentConcealedSamples)
+    ? ` (${inboundAudio.silentConcealedSamples} silent)`
+    : "";
+  const concealmentEvents = Number.isFinite(inboundAudio?.concealmentEvents)
+    ? `, ${inboundAudio.concealmentEvents} concealment events`
+    : "";
+  const playback = audioEl.paused ? "paused" : "playing";
+  const playbackState = `player ${playback}, volume ${Math.round(audioEl.volume * 100)}%`;
+  latestInputDbfs = readAudioLevelDbfs(inputAnalyser);
+  latestOutputDbfs = readAudioLevelDbfs(outputAnalyser);
+  const graphLevels = noiseSuppressionActive && inputAnalyser && outputAnalyser
+    ? `; Web Audio input ${formatAudioLevelDbfs(latestInputDbfs)}, output ${formatAudioLevelDbfs(latestOutputDbfs)}`
+    : "";
+  const silentFilterWarning = noiseSuppressionActive && packets > 0
+    && Number.isFinite(latestInputDbfs) && latestInputDbfs > -80
+    && (latestOutputDbfs === Number.NEGATIVE_INFINITY
+      || (Number.isFinite(latestOutputDbfs) && latestOutputDbfs < -85))
+    ? "; GTCRN output is near silence despite input"
+    : "";
+  const silentInputWarning = noiseSuppressionActive && packets > 0
+    && Number.isFinite(inboundAudio?.audioLevel) && inboundAudio.audioLevel > 0.002
+    && (latestInputDbfs === Number.NEGATIVE_INFINITY
+      || (Number.isFinite(latestInputDbfs) && latestInputDbfs < -85))
+    ? "; Web Audio input is silent despite received audio"
+    : "";
+  const inboundSignalPresent = Number.isFinite(inboundAudio?.audioLevel) && inboundAudio.audioLevel > 0.002;
+  const webAudioInputSilent = latestInputDbfs === Number.NEGATIVE_INFINITY
+    || (Number.isFinite(latestInputDbfs) && latestInputDbfs < -85);
+  const webAudioOutputSilent = latestOutputDbfs === Number.NEGATIVE_INFINITY
+    || (Number.isFinite(latestOutputDbfs) && latestOutputDbfs < -85);
+  const graphHasSignalMismatch = noiseSuppressionActive && packets > 0
+    && (inboundSignalPresent && webAudioInputSilent
+      || Number.isFinite(latestInputDbfs) && latestInputDbfs > -80 && webAudioOutputSilent);
+  silentInputSinceMs = graphHasSignalMismatch ? (silentInputSinceMs ?? Date.now()) : null;
+  if (silentInputSinceMs !== null && Date.now() - silentInputSinceMs >= 5000) {
+    restoreDirectAudio("GTCRN audio path stayed silent while WebRTC audio was arriving. Direct playback is restored; noise suppression is off.");
+  }
+  const receiveState = packets > 0
+    ? `${codecLabel}; RTP ${packets} packets / ${bytes} bytes${packetLoss}${packetDiscard}${jitterMs === null ? "" : `, jitter ${jitterMs} ms`}; ${decodedSamples}${concealment}${silentConcealment}${concealmentEvents}${level === null ? "" : `, level ${level}`}`
+    : "no inbound audio RTP packets";
+  const processing = noiseSuppressionActive
+    ? (packets > 0 ? "GTCRN enabled" : "GTCRN ready; no audio packets received")
+    : "noise suppression off";
+  mediaStatusEl.textContent = `Audio: track ${trackState}; ${receiveState}; ${playbackState}; ${processing}${graphLevels}${silentFilterWarning}${silentInputWarning}${jitterBuffer}${decoderStatus}.`;
+}
+
+function startMediaStats(targetPeer) {
+  if (statsTimer) clearInterval(statsTimer);
+  void updateMediaStatus(targetPeer);
+  statsTimer = setInterval(() => { void updateMediaStatus(targetPeer); }, 2000);
+}
+
+function send(message) {
+  if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+  socket.send(JSON.stringify(message));
+  return true;
+}
+
+function closePeer() {
+  if (statsTimer) clearInterval(statsTimer);
+  statsTimer = null;
+  if (recorder && recorder.state !== "inactive") stopRecording();
+  if (peer) {
+    try { peer.ontrack = null; peer.onicecandidate = null; peer.close(); } catch {}
+  }
+  peer = null;
+  refreshMicGainAvailability();
+  silentInputSinceMs = null;
+  if (mediaStreamSource) {
+    try { mediaStreamSource.disconnect(); } catch {}
+    mediaStreamSource = null;
+  }
+  remoteStream = null;
+  audioEl.pause();
+  audioEl.srcObject = null;
+  mediaStatusEl.textContent = "Audio: waiting for a remote track.";
+  refreshAudioProcessingStatus();
+  recordButton.disabled = true;
+  stopRecordButton.disabled = true;
+  pendingCandidates = [];
+  pendingLocalCandidates = [];
+  localDescriptionSent = false;
+  localIceComplete = false;
 }
 
 function scheduleReconnect() {
-  if (!listenerActive || manualStop) return;
-  if (reconnectTimer || reconnectInProgress) return;
-  reconnectAttempts++;
-  const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), MAX_RECONNECT_DELAY_MS);
-  setStatus(`Connection lost — reconnecting in ${Math.ceil(delay / 1000)}s...`);
-  $("renderState").textContent = "RECONNECTING";
-  $("renderState").className = "value offline";
-  logAdd("Reconnecting in " + Math.ceil(delay / 1000) + "s (attempt " + reconnectAttempts + ")", "warn");
-  reconnectTimer = setTimeout(() => { reconnectTimer = null; connectWebSocket(); }, delay);
+  if (!listenerActive || manualStop || reconnectTimer) return;
+  reconnectAttempt++;
+  const delay = Math.min(1000 * (2 ** Math.min(reconnectAttempt - 1, 4)), MAX_RECONNECT_MS);
+  setState(`Reconnecting in ${Math.ceil(delay / 1000)}s`);
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connectSocket();
+  }, delay);
 }
 
-/* ============================================================
- * WEBSOCKET
- * ============================================================ */
-function connectWebSocket() {
+function connectSocket() {
   if (!listenerActive || manualStop) return;
-  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
-  reconnectInProgress = true;
-  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-  const socket = new WebSocket(protocol + "//" + location.host + "/ws");
-  ws = socket;
-  socket.binaryType = "arraybuffer";
-
-  socket.onopen = () => {
-    reconnectInProgress = false;
-    setStatus("Connected — authenticating listener...");
-    logAdd("WebSocket connected to " + location.host, "ok");
-    try {
-      socket.send(JSON.stringify({ type: "listener" }));
-      logAdd("Sent listener authentication", "debug");
-    } catch (error) {
-      console.error(error);
-      logAdd("Failed to send auth: " + error.message, "error");
-      socket.close();
-      return;
-    }
-    resetAudioBuffer();
-    start.disabled = true;
-    stop.disabled = false;
-    record.disabled = false;
-    rebootBtn.disabled = !deviceOnline;
-    forgetWifiBtn.disabled = !deviceOnline;
-    $("renderState").textContent = "CONNECTED";
-    $("renderState").className = "value ok";
+  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+  const scheme = location.protocol === "https:" ? "wss:" : "ws:";
+  const current = new WebSocket(`${scheme}//${location.host}/ws`);
+  socket = current;
+  setState("Connecting to Render signaling");
+  current.onopen = () => {
+    current.send(JSON.stringify({ type: "webrtc_listener_hello" }));
   };
-
-  socket.onmessage = (event) => {
-    if (typeof event.data === "string") {
-      try {
-        const message = JSON.parse(event.data);
-        if (message.type === "auth_failed") {
-          listenerReady = false;
-          updateRgbLedButton();
-          listenerActive = false;
-          window.setListenerActive(false);
-          if (message.reason === "session_expired") {
-            window.location.replace("/");
-            return;
-          }
-          reconnectInProgress = false;
-          resetReconnectState();
-          if (message.reason === "listener_limit") {
-            setStatus("The maximum number of listeners is already connected.");
-            logAdd("Listener capacity reached; close another listener and retry.", "warn");
-          } else {
-            setStatus("Access denied — listener authentication failed");
-            logAdd("Auth failed: " + (message.reason || "unknown"), "error");
-          }
-          start.disabled = !deviceOnline;
-          stop.disabled = true;
-          record.disabled = true;
-          stopRecord.disabled = true;
-          rebootBtn.disabled = !deviceOnline;
-          forgetWifiBtn.disabled = !deviceOnline;
-          return;
-        }
-        if (message.type === "listener_ready") {
-          listenerReady = true;
-          updateRgbLedButton();
-          resetReconnectState();
-          setStatus("Listening — " + message.sample_rate + " Hz " + message.format);
-          logAdd("Listener ready: " + message.sample_rate + " Hz " + message.format, "ok");
-          rebootBtn.disabled = !deviceOnline;
-          forgetWifiBtn.disabled = !deviceOnline;
-        }
-        if (message.type === "rgb_led_set_result") {
-          if (message.source_connected) {
-            rgbLedEnabled = !!message.enabled;
-            setStatus(rgbLedEnabled ? "Blue RGB LED is on" : "Blue RGB LED is off");
-            logAdd("Blue RGB LED " + (rgbLedEnabled ? "turned on" : "turned off"), "ok");
-          } else {
-            setStatus("ESP32 is not currently connected");
-            logAdd("RGB LED command was not delivered; ESP32 is offline", "warn");
-          }
-          updateRgbLedButton();
-        }
-        if (message.type === "device_status") applyDeviceStatus(message);
-        if (message.type === "stream_start") {
-          $("streamingState").textContent = "ON";
-          if ($("quickListening")) $("quickListening").textContent = "● LIVE";
-          $("streamingState").className = "value ok";
-          logAdd("Stream started", "ok");
-        }
-        if (message.type === "stream_stop") {
-          $("streamingState").textContent = "OFF";
-          if ($("quickListening")) $("quickListening").textContent = "● IDLE";
-          $("streamingState").className = "value idle";
-          logAdd("Stream stopped", "warn");
-        }
-        if (message.type === "reboot_requested") {
-          setStatus(message.source_connected ? "ESP32 reboot command sent..." : "ESP32 is not currently connected");
-          logAdd("Reboot request: " + (message.source_connected ? "forwarded" : "no source"), "warn");
-        }
-        if (message.type === "forget_wifi_requested") {
-          setStatus(message.source_connected ? "Forget Wi-Fi command sent. ESP32 is restarting into setup mode..." : "ESP32 is not currently connected");
-          logAdd("Forget Wi-Fi request: " + (message.source_connected ? "forwarded" : "no source"), "warn");
-          forgetWifiBtn.disabled = true;
-          rebootBtn.disabled = true;
-        }
-      } catch {
-        setStatus(event.data);
-        logAdd("Unexpected message: " + event.data, "debug");
+  current.onmessage = async (event) => {
+    if (typeof event.data !== "string") return;
+    let message;
+    try { message = JSON.parse(event.data); } catch { return; }
+    if (message.type === "webrtc_error") {
+      errorEl.textContent = message.reason || "Signaling rejected";
+      if (message.reason === "listener_busy") {
+        listenerActive = false;
+        window.setListenerActive(false);
+        startButton.disabled = false;
+        stopButton.disabled = true;
+        setState("Another listener is already active");
+        errorEl.textContent = "This device already has an active WebRTC listener.";
+        return;
+      }
+      if (message.reason === "listener_session_required" || message.reason === "listener_session_expired") {
+        listenerActive = false;
+        window.setListenerActive(false);
+        startButton.disabled = false;
+        stopButton.disabled = true;
+        setState("Sign-in required");
+        errorEl.textContent = "Your listener session expired. Returning to sign-in…";
+        if (sessionRedirectTimer) clearTimeout(sessionRedirectTimer);
+        sessionRedirectTimer = setTimeout(() => { window.location.replace("/"); }, 600);
       }
       return;
     }
-    playPCM24(event.data);
-  };
-
-  socket.onerror = () => {
-    reconnectInProgress = false;
-    $("renderState").textContent = "RECONNECTING";
-    $("renderState").className = "value offline";
-    setStatus("Connection error — preparing to reconnect...");
-    logAdd("WebSocket error", "error");
-  };
-
-  socket.onclose = (e) => {
-    listenerReady = false;
-    updateRgbLedButton();
-    reconnectInProgress = false;
-    if (ws === socket) ws = null;
-    if (recording) stopRecording();
-    $("renderState").textContent = "DISCONNECTED";
-    $("renderState").className = "value idle";
-    start.disabled = !deviceOnline;
-    stop.disabled = true;
-    record.disabled = true;
-    stopRecord.disabled = true;
-    rebootBtn.disabled = !deviceOnline;
-    forgetWifiBtn.disabled = !deviceOnline;
-    updateRgbLedButton();
-    logAdd(
-      "WebSocket closed: code=" + e.code + " reason=" + (e.reason || "(none)"),
-      e.wasClean ? "warn" : "error"
-    );
-    if (manualStop || !listenerActive) {
-      setStatus("Disconnected");
+    if (message.type === "webrtc_listener_ready") {
+      setState("Waiting for ESP32");
       return;
     }
-    resetAudioBuffer();
-    scheduleReconnect();
+    if (message.type === "webrtc_waiting_for_device") {
+      setState("Waiting for ESP32");
+      return;
+    }
+    if (message.type === "webrtc_session_ready") {
+      sessionId = message.session_id;
+      micGainEl.value = "100";
+      micGainValueEl.value = "100%";
+      micGainStatusEl.textContent = "Session default is 100%; waiting for WebRTC audio connection.";
+      reconnectAttempt = 0;
+      errorEl.textContent = "";
+      try { await createPeer(); }
+      catch (error) {
+        errorEl.textContent = `Could not create WebRTC peer: ${error.message}`;
+        setState("Peer setup failed");
+        closePeer();
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.close(WS_RECONNECT_CLOSE_CODE, "WebRTC peer setup failed");
+        }
+      }
+      return;
+    }
+    if (message.type === "webrtc_session_end") {
+      closePeer();
+      sessionId = null;
+      refreshMicGainAvailability();
+      setState("Waiting for ESP32");
+      return;
+    }
+    if (message.type === "webrtc_audio_control_ack") {
+      handleMicGainAck(message);
+      return;
+    }
+    if (message.type === "webrtc_signal" && message.session_id === sessionId) {
+      await handleSignal(message);
+    }
+  };
+  current.onerror = () => { setState("Signaling error"); };
+  current.onclose = () => {
+    if (socket === current) socket = null;
+    sessionId = null;
+    closePeer();
+    if (!manualStop) scheduleReconnect();
   };
 }
 
-/* ============================================================
- * START / STOP
- * ============================================================ */
-rgbLedBtn.onclick = () => {
-  if (!deviceOnline || !listenerReady || !ws || ws.readyState !== WebSocket.OPEN) return;
-  const enabled = !rgbLedEnabled;
-  rgbLedBtn.disabled = true;
-  setStatus(enabled ? "Turning blue RGB LED on..." : "Turning blue RGB LED off...");
-  ws.send(JSON.stringify({ type: "rgb_led_set", enabled }));
-};
+async function createPeer() {
+  closePeer();
+  const peerSessionId = sessionId;
+  peer = new RTCPeerConnection({
+    iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+  });
+  peer.addTransceiver("audio", { direction: "recvonly" });
+  peer.onicecandidate = (event) => {
+    if (sessionId !== peerSessionId || !socket || socket.readyState !== WebSocket.OPEN) return;
+    if (!event.candidate) {
+      localIceComplete = true;
+      if (localDescriptionSent) {
+        send({ type: "webrtc_signal", session_id: peerSessionId, kind: "end-of-candidates" });
+      }
+      return;
+    }
+    const signal = {
+      type: "webrtc_signal",
+      session_id: peerSessionId,
+      kind: "candidate",
+      candidate: event.candidate.candidate
+    };
+    if (localDescriptionSent) {
+      send(signal);
+    } else {
+      if (pendingLocalCandidates.length >= MAX_PENDING_CANDIDATES) pendingLocalCandidates.shift();
+      pendingLocalCandidates.push(signal);
+    }
+  };
+  peer.ontrack = async (event) => {
+    remoteStream = event.streams && event.streams[0]
+      ? event.streams[0]
+      : new MediaStream([event.track]);
+    refreshAudioProcessingStatus();
+    void updateMediaStatus(peer);
+    recordButton.disabled = false;
+    try {
+      if (noiseSuppressionActive) {
+        connectRemoteAudioStream(remoteStream);
+      } else if (mediaElementSource) {
+        connectRemoteAudioStream(remoteStream);
+      } else {
+        audioEl.srcObject = remoteStream;
+      }
+      audioEl.muted = false;
+      await audioEl.play();
+    } catch (error) {
+      restoreDirectAudio(`Processed playback could not start (${error.message}); direct WebRTC audio restored.`);
+    }
+  };
+  peer.onconnectionstatechange = () => {
+    if (!peer) return;
+    refreshMicGainAvailability();
+    setState(`Peer ${peer.connectionState}`);
+    if (peer.connectionState === "failed") {
+      errorEl.textContent = "Direct ICE connection failed. This network may require TURN.";
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.close(WS_RECONNECT_CLOSE_CODE, "ICE failed; reconnect");
+      }
+    }
+  };
+  peer.oniceconnectionstatechange = () => {
+    if (peer && peer.iceConnectionState === "disconnected") {
+      setState("Peer disconnected — checking connection");
+    }
+  };
+  startMediaStats(peer);
+}
 
-start.onclick = async () => {
-  if (listenerActive) return;
-  listenerReady = false;
-  updateRgbLedButton();
+async function handleSignal(message) {
+  if (!peer) return;
+  try {
+    if (message.kind === "offer") {
+      await peer.setRemoteDescription({ type: "offer", sdp: message.sdp });
+      const answer = await peer.createAnswer();
+      await peer.setLocalDescription(answer);
+      if (sessionId !== message.session_id || !send({
+        type: "webrtc_signal", session_id: message.session_id,
+        kind: "answer", sdp: peer.localDescription.sdp
+      })) throw new Error("Could not send the WebRTC answer");
+      localDescriptionSent = true;
+      for (const candidate of pendingLocalCandidates) send(candidate);
+      pendingLocalCandidates = [];
+      if (localIceComplete || peer.iceGatheringState === "complete") {
+        send({ type: "webrtc_signal", session_id: message.session_id, kind: "end-of-candidates" });
+      }
+      for (const candidate of pendingCandidates) await peer.addIceCandidate(candidate);
+      pendingCandidates = [];
+    } else if (message.kind === "candidate") {
+      const candidate = new RTCIceCandidate({ candidate: message.candidate, sdpMid: "0", sdpMLineIndex: 0 });
+      if (peer.remoteDescription) await peer.addIceCandidate(candidate);
+      else {
+        if (pendingCandidates.length >= MAX_PENDING_CANDIDATES) pendingCandidates.shift();
+        pendingCandidates.push(candidate);
+      }
+    } else if (message.kind === "end-of-candidates") {
+      if (peer.remoteDescription) await peer.addIceCandidate(null);
+      else {
+        if (pendingCandidates.length >= MAX_PENDING_CANDIDATES) pendingCandidates.shift();
+        pendingCandidates.push(null);
+      }
+    }
+  } catch (error) {
+    errorEl.textContent = `WebRTC signaling failed: ${error.message}`;
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.close(WS_RECONNECT_CLOSE_CODE, "WebRTC signaling failed");
+    }
+  }
+}
+
+function startRecording() {
+  const liveTracks = remoteStream ? remoteStream.getAudioTracks().filter((track) => track.readyState === "live") : [];
+  if (!liveTracks.length) {
+    errorEl.textContent = "No live incoming WebRTC audio track is available to record.";
+    return;
+  }
+  if (typeof MediaRecorder === "undefined") {
+    errorEl.textContent = "This browser does not support local audio recording.";
+    return;
+  }
+  const mimeType = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4"]
+    .find((candidate) => MediaRecorder.isTypeSupported(candidate));
+  recordedChunks = [];
+  recordedBytes = 0;
+  try {
+    const useFilteredOutput = recordSourceEl.value === "filtered";
+    recordingSourceLabel = useFilteredOutput ? (noiseSuppressionActive ? "filtered" : "listener-output") : "raw";
+    if (useFilteredOutput && !processedDestination) {
+      errorEl.textContent = "Filtered output is not ready. Start listening again, or select raw incoming audio.";
+      return;
+    }
+    const recordingStream = useFilteredOutput ? processedDestination.stream : new MediaStream(liveTracks);
+    recorder = new MediaRecorder(recordingStream, mimeType ? { mimeType } : {});
+    recorder.ondataavailable = (event) => {
+      if (event.data && event.data.size) {
+        if (recordedBytes + event.data.size > MAX_RECORDING_BYTES) {
+          errorEl.textContent = "Recording stopped at the local storage limit.";
+          stopRecording();
+          return;
+        }
+        recordedBytes += event.data.size;
+        recordedChunks.push(event.data);
+      }
+    };
+    recorder.onstop = () => {
+      if (!recordedChunks.length) {
+        errorEl.textContent = "No recorded audio data was produced.";
+        return;
+      }
+      const recordingType = recorder.mimeType || mimeType || "application/octet-stream";
+      const blob = new Blob(recordedChunks, { type: recordingType });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      const suffix = recordingType.includes("mp4") ? "m4a" : recordingType.includes("ogg") ? "ogg" : "webm";
+      link.download = `ESP32-audio-${recordingSourceLabel}-${new Date().toISOString().replace(/[:.]/g, "-")}.${suffix}`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      recordedChunks = [];
+    };
+    recorder.start(1000);
+    recordSourceEl.disabled = true;
+    recordButton.disabled = true;
+    stopRecordButton.disabled = false;
+  } catch (error) {
+    errorEl.textContent = `Recording unavailable: ${error.message}`;
+  }
+}
+
+function stopRecording() {
+  if (recorder && recorder.state !== "inactive") recorder.stop();
+  recordSourceEl.disabled = false;
+  recordButton.disabled = !(remoteStream && remoteStream.getAudioTracks().some((track) => track.readyState === "live"));
+  stopRecordButton.disabled = true;
+}
+
+startButton.onclick = async () => {
   manualStop = false;
   listenerActive = true;
   window.setListenerActive(true);
-  resetReconnectState();
-  logAdd("Start listening requested", "info");
+  errorEl.textContent = "";
+  startButton.disabled = true;
+  stopButton.disabled = false;
   try {
-    audioContext = new (window.AudioContext || window.webkitAudioContext)({
-      sampleRate: SAMPLE_RATE, latencyHint: "interactive"
-    });
-    gainNode = audioContext.createGain();
-    gainNode.gain.value = Number(volume.value);
-    gainNode.connect(audioContext.destination);
-    await audioContext.resume();
-    await createAudioEngine();
-    logAdd("Audio engine ready (" + SAMPLE_RATE + " Hz)", "ok");
-    connectWebSocket();
+    await prepareAudioOutput();
+    if (noiseSuppressionEl.checked) await enableNoiseSuppression();
+    else disableNoiseSuppression();
   } catch (error) {
-    console.error(error);
-    listenerActive = false;
-    window.setListenerActive(false);
-    manualStop = true;
-    setStatus("Audio initialization failed");
-    logAdd("Audio init failed: " + error.message, "error");
-    if (audioContext) { try { await audioContext.close(); } catch {} }
-    audioContext = null;
-    gainNode = null;
+    noiseSuppressionEl.checked = false;
+    disableNoiseSuppression();
+    errorEl.textContent = `AI noise suppression unavailable; continuing with direct audio. ${error.message}`;
   }
+  connectSocket();
 };
 
-stop.onclick = () => {
+noiseSuppressionEl.addEventListener("change", async () => {
+  if (!audioContext) {
+    setAudioProcessingStatus(noiseSuppressionEl.checked
+      ? "GTCRN will activate when listening starts."
+      : "Noise suppression off · waiting for audio");
+    return;
+  }
+  try {
+    if (noiseSuppressionEl.checked) await enableNoiseSuppression();
+    else disableNoiseSuppression();
+  } catch (error) {
+    noiseSuppressionEl.checked = false;
+    disableNoiseSuppression();
+    errorEl.textContent = `AI noise suppression unavailable; continuing with direct audio. ${error.message}`;
+  }
+});
+
+micGainEl.addEventListener("input", () => {
+  micGainValueEl.value = `${micGainEl.value}%`;
+});
+micGainEl.addEventListener("change", sendMicGain);
+
+stopButton.onclick = () => {
   manualStop = true;
   listenerActive = false;
   window.setListenerActive(false);
-  reconnectInProgress = false;
-  resetReconnectState();
-  logAdd("Stop listening requested", "info");
-  if (recording) stopRecording();
-  if (ws) {
-    if (ws.readyState === WebSocket.OPEN) {
-      try { ws.send(JSON.stringify({ type: "listener_stop" })); } catch {}
-    }
-    ws.close();
-    ws = null;
-  }
-  if (audioWorkletNode) {
-    try { audioWorkletNode.port.postMessage({ type: "reset" }); audioWorkletNode.disconnect(); } catch {}
-    audioWorkletNode = null;
-  }
-  audioWorkletReady = false;
-  playbackStarted = false;
-  if (audioContext) { audioContext.close(); audioContext = null; }
-  gainNode = null;
-  level.style.width = "0%";
-  $("streamingState").textContent = "OFF";
-  $("streamingState").className = "value idle";
-  setStatus("Stopped");
-  start.disabled = !deviceOnline;
-  stop.disabled = true;
-  record.disabled = true;
-  stopRecord.disabled = true;
-  rebootBtn.disabled = !deviceOnline;
-  forgetWifiBtn.disabled = !deviceOnline;
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  if (recorder && recorder.state !== "inactive") stopRecording();
+  if (socket) socket.close(1000, "Listener stopped");
+  socket = null;
+  sessionId = null;
+  closePeer();
+  disableNoiseSuppression();
+  startButton.disabled = false;
+  stopButton.disabled = true;
+  setState("Stopped");
 };
 
-/* ============================================================
- * REBOOT / FORGET WIFI
- * ============================================================ */
-rebootBtn.onclick = async () => {
-  if (!deviceOnline) { setStatus("ESP32 is offline"); return; }
-  const confirmed = window.confirm("Are you sure you want to reboot the ESP32?\n\nThe microphone stream will stop and the ESP32 will restart.");
-  if (!confirmed) return;
-  setStatus("Sending ESP32 reboot command...");
-  logAdd("Sending reboot request", "info");
-  try {
-    const response = await fetch("/api/esp32/reboot", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: "{}"
-    });
-    const data = await response.json();
-    if (!response.ok || !data.ok) throw new Error(data.error || "Reboot request failed");
-    setStatus(data.source_connected ? "ESP32 reboot command sent." : "ESP32 is not currently connected.");
-    logAdd("Reboot request sent", "warn");
-  } catch (error) {
-    console.error(error);
-    setStatus("Could not send reboot command.");
-    logAdd("Reboot request failed: " + error.message, "error");
-  }
-};
-
-forgetWifiBtn.onclick = async () => {
-  if (!deviceOnline) { setStatus("ESP32 is offline"); return; }
-  const confirmed = window.confirm(
-    "Are you sure you want to forget the ESP32 Wi-Fi settings?\n\n" +
-    "The ESP32 will erase its saved Wi-Fi credentials and restart into setup mode.\n\n" +
-    "You will need to connect to the ESP32 setup hotspot to configure Wi-Fi again."
-  );
-  if (!confirmed) return;
-  forgetWifiBtn.disabled = true;
-  rebootBtn.disabled = true;
-  setStatus("Sending Forget Wi-Fi command...");
-  logAdd("Sending forget-wifi request", "info");
-  try {
-    const response = await fetch("/api/esp32/forget-wifi", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: "{}"
-    });
-    const data = await response.json();
-    if (!response.ok || !data.ok) throw new Error(data.error || "Forget Wi-Fi request failed");
-    setStatus(data.source_connected ? "Forget Wi-Fi command sent. ESP32 is restarting into setup mode..." : "ESP32 is not currently connected.");
-    logAdd("Forget-wifi request sent", "warn");
-  } catch (error) {
-    console.error(error);
-    setStatus("Could not send Forget Wi-Fi command.");
-    logAdd("Forget-wifi request failed: " + error.message, "error");
-    forgetWifiBtn.disabled = !deviceOnline;
-    rebootBtn.disabled = !deviceOnline;
-  }
-};
-
-record.onclick = startRecording;
-stopRecord.onclick = stopRecording;
-
-updateVolume();
-refreshDeviceStatus();
+recordButton.onclick = startRecording;
+stopRecordButton.onclick = stopRecording;
+window.addEventListener("pagehide", () => {
+  manualStop = true;
+  listenerActive = false;
+  window.setListenerActive(false);
+  if (socket) socket.close(1000, "Page closed");
+  closePeer();
+  if (audioContext && audioContext.state !== "closed") void audioContext.close();
+});
 
 </script>
 <script>
-const vAudio=document.getElementById("audioBtn"),vAudioText=document.getElementById("audioBtnText"),vMic=document.getElementById("micOuter"),vBadge=document.getElementById("listeningBadge"),vRec=document.getElementById("recBtn"),vRecText=document.getElementById("recBtnText");
-function toggleListening(){if(listenerActive){document.getElementById("stop").click()}else{const start=document.getElementById("start");start.disabled=false;start.click()}}function toggleRecording(){const a=document.getElementById("record"),b=document.getElementById("stopRecord");(b.disabled?a:b).click()}function sendProjectAction(id){document.getElementById(id).click()}function clearProjectLogs(){document.getElementById("logClear").click()}function copyProjectLogs(){document.getElementById("logCopy").click()}
-function toast(msg){const n=document.getElementById("toast");n.textContent=msg;n.classList.add("show");clearTimeout(n._hideTimer);n._hideTimer=setTimeout(()=>n.classList.remove("show"),2600)}function toggleDeviceDropdown(){toast("This page is connected to the configured ESP32 device.")}function closeDeviceDropdown(){}function addDevice(){toast("Additional device selection is not configured.")}function confirmFactoryReset(){toast("Factory reset is not configured.")}function openSessionModal(){toast("Session timeout is managed by the server.")}function closeSessionModal(){}function saveSessionTimeout(){toast("Session timeout is managed by the server.")}function toggleHotspotPassword(){toast("Hotspot credentials are not shown here.")}function toggleHotspot(){toast("Hotspot control is not configured.")}function setQuality(){toast("This device streams mono PCM24 at 16 kHz.")}function updateGain(){toast("Microphone gain is set in ESP32 firmware.")}function setGainPreset(){toast("Microphone gain is set in ESP32 firmware.")}
-document.querySelectorAll(".tab-btn").forEach(t=>t.addEventListener("click",()=>{const k=t.dataset.tab;document.querySelectorAll(".tab-btn").forEach(x=>x.classList.toggle("active",x===t));document.querySelectorAll(".panel").forEach(p=>p.classList.toggle("active",p.id===`panel-${k}`))}));document.querySelectorAll('input[name="micMode"]').forEach((x,i)=>{x.disabled=true;x.checked=i===0});document.querySelectorAll('input[name="quality"]').forEach((x,i)=>{x.disabled=true;x.checked=i===0});document.querySelectorAll('input[name="timeout"],input[name="ledMode"]').forEach(x=>x.disabled=true);document.querySelectorAll('#panel-system .switch input').forEach(x=>x.disabled=true);
-const ledGroup=document.querySelector("#panel-system .radio-group");let vLed=null;if(ledGroup){const row=document.createElement("div");row.className="switch-row";row.innerHTML='<span class="sw-label">Blue RGB LED</span><label class="switch"><input id="blueLedToggle" type="checkbox" disabled><span class="slider-sw"></span></label>';ledGroup.replaceWith(row);vLed=row.querySelector("input")}
-function syncDesign(){const start=document.getElementById("start"),stop=document.getElementById("stop"),rec=document.getElementById("record"),stopRec=document.getElementById("stopRecord"),on=!!listenerActive,recording=!stopRec.disabled;start.disabled=on;stop.disabled=!on;vAudio.classList.toggle("stop",on);vAudio.classList.toggle("start",!on);vAudioText.textContent=on?"Stop Listening":"Start Listening";vMic.classList.toggle("active",on);vBadge.textContent=on?"Listening":"Not listening";vBadge.classList.toggle("active",on);vAudio.disabled=false;vRec.disabled=rec.disabled&&stopRec.disabled;vRec.classList.toggle("record",!recording);vRec.classList.toggle("recording",recording);vRecText.textContent=recording?"Stop Recording":"Start Recording";const led=document.getElementById("rgbLedBtn");if(vLed){vLed.disabled=led.disabled;vLed.checked=/off/i.test(led.textContent)}const online=document.getElementById("deviceStatus").textContent.includes("ONLINE"),head=document.getElementById("topStatus");head.textContent=online?"● ONLINE":"● OFFLINE";head.classList.toggle("online",online);head.classList.toggle("offline",!online);const s=document.getElementById("status").textContent;if(s&&/error|disconnected|offline/i.test(s))vBadge.title=s}
-if(vLed)vLed.addEventListener("change",()=>document.getElementById("rgbLedBtn").click());setInterval(syncDesign,300);syncDesign();
-</script>
-
-<script>
-(()=>{
- const sys=document.getElementById("panel-system");
- const ota=sys.querySelector(".section-title");
- if(ota){const note=document.createElement("div");note.className="card flat small";note.textContent="OTA updates are not configured for this firmware.";ota.after(note);}
- sys.querySelector(".update-banner")?.remove();
- sys.querySelectorAll(".btn-pill").forEach(button=>button.remove());
- const factory=[...sys.querySelectorAll(".action-row")].find(row=>row.textContent.includes("Factory Reset"));factory?.remove();
- const restart=[...sys.querySelectorAll(".action-row")].find(row=>row.textContent.includes("Restart ESP32"));if(restart)restart.onclick=()=>sendProjectAction("rebootBtn");
- const wifi=[...sys.querySelectorAll(".action-row")].find(row=>row.textContent.includes("Forget Wi-Fi"));if(wifi)wifi.onclick=()=>sendProjectAction("forgetWifiBtn");
- const ledTitle=[...sys.querySelectorAll(".section-title")].find(node=>node.textContent.includes("LED SETTINGS"));
- const ledCard=ledTitle?.nextElementSibling;ledCard?.querySelector(".switch-row")?.remove();
-})();
-</script>
-<script>
-(()=>{
- const bars=document.getElementById("meterBars");
- if(bars && !bars.children.length){for(let i=0;i<28;i++){const bar=document.createElement("span");bar.className="meter-bar";bars.appendChild(bar)}}
- const quick=[...document.querySelectorAll("#panel-listener .info-pills[style*=margin-bottom] .info-pill .pl")];
- const quickLabels=[...document.querySelectorAll("#panel-listener .info-pills[style*=margin-bottom] .info-pill .pv")];
- const mic=document.getElementById("micOuter");if(mic){mic.style.cursor="pointer";mic.title="Tap to start or stop listening";mic.addEventListener("click",toggleListening)}
- function syncListenerPage(){
-  const device=document.getElementById("deviceStatus").textContent.replace(/[🔴🟢●]/g,"").trim();
-  const render=document.getElementById("renderState").textContent.trim();
-  const audio=document.getElementById("audioState").textContent.trim();
-  const rssi=document.getElementById("hwRssi").textContent.trim();
-  const values=[device,listenerActive?(render||"CONNECTING"):(audio||"IDLE"),render,(rssi&&rssi!=="-"?"Connected":"Not reported")];
-  quick.forEach((node,i)=>{if(values[i]){node.textContent=values[i];node.style.color=/offline|unavailable|not reported|disconnected/i.test(values[i])?"var(--red)":"var(--green)"}});
-  if(quickLabels[1])quickLabels[1].textContent="WSS Audio";
-  const pct=parseFloat(document.getElementById("level").style.width)||0;
-  const ratio=Math.max(0,Math.min(1,pct/100));
-  const db=document.getElementById("dbValue");if(db)db.textContent=ratio>0?Math.max(-90,Math.round(20*Math.log10(ratio/2.2)))+" dB":"— dB";
-  const onBars=Math.round(ratio*bars.children.length);
-  [...bars.children].forEach((bar,i)=>{bar.className="meter-bar";if(i<onBars)bar.classList.add(i>bars.children.length*.88?"on-3":i>bars.children.length*.70?"on-2":"on-1")});
- }
- setInterval(syncListenerPage,120);syncListenerPage();
-})();
+const uiAudio=document.getElementById("audioBtn"),uiAudioText=document.getElementById("audioBtnText"),uiMic=document.getElementById("micOuter"),uiBadge=document.getElementById("listeningBadge"),uiRec=document.getElementById("recBtn"),uiRecText=document.getElementById("recBtnText"),uiVolume=document.getElementById("volume"),uiVolumeValue=document.getElementById("volumeValue"),uiLevel=document.getElementById("level"),uiDb=document.getElementById("dbValue");
+function toggleListening(){(listenerActive?stopButton:startButton).click()}
+function toggleRecording(){(stopRecordButton.disabled?recordButton:stopRecordButton).click()}
+function sendProjectAction(id){const b=document.getElementById(id);if(b&&!b.disabled)b.click()}
+function clearProjectLogs(){const n=document.getElementById("logBox");if(n)n.replaceChildren()}
+function copyProjectLogs(){const n=document.getElementById("logBox");if(n&&navigator.clipboard)navigator.clipboard.writeText(n.innerText).catch(()=>{})}
+function toast(message){const n=document.getElementById("toast");n.textContent=message;n.classList.add("show");clearTimeout(n._hideTimer);n._hideTimer=setTimeout(()=>n.classList.remove("show"),2600)}
+function toggleDeviceDropdown(){toast("This listener is connected to the configured ESP32.")}
+function closeDeviceDropdown(){}
+function addDevice(){toast("Additional device selection is not configured.")}
+function confirmFactoryReset(){toast("Factory reset is not configured.")}
+function openSessionModal(){toast("Session timeout is managed by the server.")}
+function closeSessionModal(){}
+function saveSessionTimeout(){toast("Session timeout is managed by the server.")}
+function toggleHotspotPassword(){toast("Hotspot credentials are managed by ESP32 firmware.")}
+function toggleHotspot(){toast("Hotspot settings are managed by ESP32 firmware.")}
+function setQuality(){toast("The ESP32 WebRTC stream uses its configured audio format.")}
+function updateGain(){toast("Use the microphone gain control when the WebRTC link is connected.")}
+function setGainPreset(){toast("Use the microphone gain control when the WebRTC link is connected.")}
+document.querySelectorAll(".tab-btn").forEach(t=>t.addEventListener("click",()=>{const k=t.dataset.tab;document.querySelectorAll(".tab-btn").forEach(x=>x.classList.toggle("active",x===t));document.querySelectorAll(".panel").forEach(p=>p.classList.toggle("active",p.id===`panel-${k}`))}));
+const uiNoise=document.querySelector("#panel-settings .switch-row input");
+const otherSwitches=[...document.querySelectorAll("#panel-settings .switch-row input")].slice(1);
+if(uiNoise){uiNoise.checked=noiseSuppressionEl.checked;uiNoise.addEventListener("change",()=>{noiseSuppressionEl.checked=uiNoise.checked;noiseSuppressionEl.dispatchEvent(new Event("change"))})}
+otherSwitches.forEach(x=>{x.disabled=true});
+const ledGroup=document.querySelector("#panel-system .radio-group");let uiLed=null;
+if(ledGroup){const row=document.createElement("div");row.className="switch-row";row.innerHTML='<span class="sw-label">Blue RGB LED</span><label class="switch"><input id="blueLedToggle" type="checkbox" disabled><span class="slider-sw"></span></label>';ledGroup.replaceWith(row);uiLed=row.querySelector("input")}
+function syncListenerDesign(){
+ const active=!!listenerActive, recording=!stopRecordButton.disabled;
+ uiAudio.disabled=false;uiAudio.classList.toggle("stop",active);uiAudio.classList.toggle("start",!active);uiAudioText.textContent=active?"Stop Listening":"Start Listening";
+ uiMic.classList.toggle("active",active);uiBadge.textContent=active?"Listening":"Not listening";uiBadge.classList.toggle("active",active);
+ uiRec.disabled=recordButton.disabled&&stopRecordButton.disabled;uiRec.classList.toggle("record",!recording);uiRec.classList.toggle("recording",recording);uiRecText.textContent=recording?"Stop Recording":"Start Recording";
+ const state=document.getElementById("state").textContent.trim();const lower=state.toLowerCase();const online=/connected|ready|listening/.test(lower)&&!/disconnected|not connected|waiting/.test(lower);
+ const head=document.getElementById("topStatus");head.textContent=state||"Stopped";head.classList.toggle("online",online);head.classList.toggle("offline",/waiting|offline|failed|error/.test(lower));
+ const media=document.getElementById("mediaStatus").textContent;uiBadge.title=document.getElementById("error").textContent||media;
+ const db=latestOutputDbfs;const pct=Number.isFinite(db)?Math.max(0,Math.min(100,Math.round(100*Math.pow(10,db/20)))):0;uiLevel.style.width=pct+"%";uiDb.textContent=Number.isFinite(db)?db.toFixed(1)+" dBFS":"— dB";
+ const bars=document.getElementById("meterBars");if(bars&&!bars.children.length)for(let i=0;i<28;i++){const b=document.createElement("span");b.className="meter-bar";bars.appendChild(b)}
+ if(bars){const n=Math.round(pct/100*bars.children.length);[...bars.children].forEach((b,i)=>{b.className="meter-bar";if(i<n)b.classList.add(i>bars.children.length*.88?"on-3":i>bars.children.length*.7?"on-2":"on-1")})}
+ uiVolumeValue.textContent=Math.round(Number(uiVolume.value)*100)+"%";if(typeof syncPlaybackGain==="function")syncPlaybackGain();
+ const info=[...document.querySelectorAll("#panel-listener .info-pills[style*=margin-bottom] .info-pill .pl")];const vals=[online?"ONLINE":/waiting|offline|failed|error/.test(lower)?"OFFLINE":"CONNECTING",active?(peer?.connectionState||"CONNECTING"):"IDLE",socket?.readyState===WebSocket.OPEN?"CONNECTED":"WAITING",Number.isFinite(latestInputDbfs)?latestInputDbfs.toFixed(1)+" dBFS":"Not reported"];info.forEach((x,i)=>{x.textContent=vals[i];x.style.color=/offline|waiting|not reported|idle/i.test(vals[i])?"var(--red)":"var(--green)"});
+ const labels=[...document.querySelectorAll("#panel-listener .info-pills[style*=margin-bottom] .info-pill .pv")];if(labels[1])labels[1].textContent="WebRTC Audio";if(labels[3])labels[3].textContent="Mic Input";
+ if(uiLed)uiLed.disabled=true;
+}
+if(uiVolume){uiVolume.addEventListener("input",()=>{uiVolumeValue.textContent=Math.round(Number(uiVolume.value)*100)+"%";if(typeof syncPlaybackGain==="function")syncPlaybackGain()})}
+if(uiMic){uiMic.style.cursor="pointer";uiMic.addEventListener("click",toggleListening)}
+setInterval(syncListenerDesign,250);syncListenerDesign();
 </script>
 </body>
 </html>
