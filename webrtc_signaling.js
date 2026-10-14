@@ -1,31 +1,62 @@
 "use strict";
 
 const crypto = require("crypto");
-const { constantTimeStringEqual } = require("./auth_state");
+const { DEFAULT_DEVICE_ID, createDeviceCredentialRegistry, isValidDeviceId } = require("./device_registry");
 
 const MAX_SDP_CHARS = 12 * 1024;
 const MAX_CANDIDATE_CHARS = 2048;
 const SIGNAL_WINDOW_MS = 60 * 1000;
 const MAX_SIGNALS_PER_WINDOW = 120;
 const MAX_CONTROL_MESSAGES_PER_WINDOW = 60;
-const MIC_GAIN_MIN_PERCENT = 50;
-const MIC_GAIN_MAX_PERCENT = 150;
+const MIC_GAIN_MIN_PERCENT = 25;
+const MIC_GAIN_MAX_PERCENT = 200;
+const AUDIO_MIC_MODES = new Set(["mic1", "mic2", "both_mono"]);
 const MAX_SIGNAL_BUFFERED_BYTES = 64 * 1024;
-const DEVICE_NAME = "ESP32-S3-INMP441";
+const TELEMETRY_MAX_AGE_MS = 15000;
+const TELEMETRY_NUMBER_RANGES = Object.freeze({
+    wifi_rssi: [-120, 0],
+    wifi_retry_count: [0, Number.MAX_SAFE_INTEGER],
+    wifi_disconnect_count: [0, Number.MAX_SAFE_INTEGER],
+    hotspot_clients: [0, 256],
+    cpu_frequency_mhz: [1, 400],
+    temperature_c: [-20, 120],
+    uptime_ms: [0, Number.MAX_SAFE_INTEGER],
+    free_heap: [0, Number.MAX_SAFE_INTEGER],
+    min_free_heap: [0, Number.MAX_SAFE_INTEGER],
+    free_psram: [0, Number.MAX_SAFE_INTEGER],
+    total_psram: [0, Number.MAX_SAFE_INTEGER],
+    audio_capture_errors: [0, Number.MAX_SAFE_INTEGER],
+    audio_buffer_overflows: [0, Number.MAX_SAFE_INTEGER],
+    dsp_errors: [0, Number.MAX_SAFE_INTEGER],
+    dsp_limiter_clipped: [0, Number.MAX_SAFE_INTEGER],
+    dsp_vad_rms_db: [-120, 0],
+    audio_frames_sent: [0, Number.MAX_SAFE_INTEGER],
+    audio_frames_dropped: [0, Number.MAX_SAFE_INTEGER],
+    signaling_errors: [0, Number.MAX_SAFE_INTEGER],
+    reset_reason: [0, 255],
+});
+const TELEMETRY_BOOLEAN_FIELDS = new Set([
+    "wifi_connected", "hotspot_running", "health_ok", "health_fault_latched",
+    "dsp_vad_voice", "peer_connected",
+]);
+const TELEMETRY_STRING_LIMITS = Object.freeze({ wifi_ssid: 32, ip: 15, firmware: 64 });
 
-function safeEqual(expected, actual) {
-    if (typeof expected !== "string" || typeof actual !== "string" || !expected || !actual) {
-        return false;
-    }
-    return constantTimeStringEqual(expected, actual);
-}
-
-function createWebRtcSignaling({ WebSocket, sourceToken, isListenerSessionValid }) {
-    let device = null;
-    let listener = null;
-    let sessionId = null;
-    let telemetry = null;
-    let telemetryUpdatedAt = 0;
+function createWebRtcSignaling({
+    WebSocket,
+    sourceToken,
+    deviceRegistry,
+    isListenerSessionValid,
+    isListenerAuthorizedForDevice = () => true,
+}) {
+    const credentials = deviceRegistry || createDeviceCredentialRegistry({ sourceToken });
+    const states = new Map(credentials.list().map((deviceId) => [deviceId, {
+        deviceId,
+        device: null,
+        listener: null,
+        sessionId: null,
+        telemetry: null,
+        telemetryAt: 0,
+    }]));
 
     function send(ws, value) {
         if (!ws || ws.readyState !== WebSocket.OPEN ||
@@ -38,27 +69,41 @@ function createWebRtcSignaling({ WebSocket, sourceToken, isListenerSessionValid 
         }
     }
 
-    function endSession(reason, except) {
-        if (sessionId !== null) {
-            if (device && device !== except) send(device, { type: "webrtc_session_end", session_id: sessionId, reason });
-            if (listener && listener !== except) send(listener, { type: "webrtc_session_end", session_id: sessionId, reason });
+    function stateFor(ws) {
+        return ws && typeof ws.deviceId === "string" ? states.get(ws.deviceId) || null : null;
+    }
+
+    function listenerAuthorized(ws, state) {
+        return typeof isListenerAuthorizedForDevice === "function" &&
+            isListenerAuthorizedForDevice(ws, state.deviceId);
+    }
+
+    function endSession(state, reason, except) {
+        if (state.sessionId !== null) {
+            const message = { type: "webrtc_session_end", device_id: state.deviceId, session_id: state.sessionId, reason };
+            if (state.device && state.device !== except) send(state.device, message);
+            if (state.listener && state.listener !== except) send(state.listener, message);
         }
-        sessionId = null;
+        state.sessionId = null;
     }
 
     function closeClient(ws, code, reason) {
         try { ws.close(code, reason); } catch {}
     }
 
-    function pairIfReady() {
-        if (sessionId !== null || !device || !listener ||
-            device.readyState !== WebSocket.OPEN || listener.readyState !== WebSocket.OPEN) {
+    function pairIfReady(state) {
+        if (state.sessionId !== null || !state.device || !state.listener ||
+            state.device.readyState !== WebSocket.OPEN || state.listener.readyState !== WebSocket.OPEN) {
             return;
         }
-        sessionId = crypto.randomUUID();
-        const message = { type: "webrtc_session_ready", session_id: sessionId };
-        send(device, { ...message, role: "offerer" });
-        send(listener, { ...message, role: "answerer" });
+        state.sessionId = crypto.randomUUID();
+        const message = {
+            type: "webrtc_session_ready",
+            device_id: state.deviceId,
+            session_id: state.sessionId,
+        };
+        send(state.device, { ...message, role: "offerer" });
+        send(state.listener, { ...message, role: "answerer" });
     }
 
     function fail(ws, reason) {
@@ -66,58 +111,92 @@ function createWebRtcSignaling({ WebSocket, sourceToken, isListenerSessionValid 
         closeClient(ws, 1008, "WebRTC signaling rejected");
     }
 
+    function handleDeviceJoin(ws, message) {
+        const claimedId = Object.prototype.hasOwnProperty.call(message, "device_id")
+            ? message.device_id
+            : undefined;
+        const deviceId = credentials.authenticate(claimedId, message.source_token);
+        if (!deviceId || (message.device !== undefined &&
+            (typeof message.device !== "string" || message.device.length > 64))) {
+            fail(ws, "device_authentication_failed");
+            return true;
+        }
+        const state = states.get(deviceId);
+        if (!state) {
+            fail(ws, "device_not_configured");
+            return true;
+        }
+        if (state.device && state.device !== ws) {
+            endSession(state, "device_replaced", state.device);
+            closeClient(state.device, 1012, "Device session replaced");
+        }
+        state.device = ws;
+        ws.deviceId = deviceId;
+        ws.role = "webrtc_device";
+        ws.authenticated = true;
+        send(ws, { type: "webrtc_device_ready", device_id: deviceId });
+        pairIfReady(state);
+        return true;
+    }
+
+    function handleListenerJoin(ws, message) {
+        const deviceId = message.device_id === undefined ? DEFAULT_DEVICE_ID : message.device_id;
+        if (!isValidDeviceId(deviceId) || !states.has(deviceId)) {
+            fail(ws, "device_not_configured");
+            return true;
+        }
+        if (typeof isListenerSessionValid !== "function" || !isListenerSessionValid(ws)) {
+            fail(ws, "listener_session_required");
+            return true;
+        }
+        if (typeof isListenerAuthorizedForDevice !== "function" ||
+            !isListenerAuthorizedForDevice(ws, deviceId)) {
+            fail(ws, "device_access_denied");
+            return true;
+        }
+        const state = states.get(deviceId);
+        if (state.listener && state.listener !== ws) {
+            fail(ws, "listener_busy");
+            return true;
+        }
+        state.listener = ws;
+        ws.deviceId = deviceId;
+        ws.role = "webrtc_listener";
+        ws.authenticated = true;
+        send(ws, { type: "webrtc_listener_ready", device_id: deviceId });
+        if (!state.device || state.device.readyState !== WebSocket.OPEN) {
+            send(ws, { type: "webrtc_waiting_for_device", device_id: deviceId });
+        }
+        pairIfReady(state);
+        return true;
+    }
+
     function handleJoin(ws, message) {
         if (ws.role !== "unknown") return false;
-        if (message.type === "webrtc_device_hello") {
-            if (message.device !== DEVICE_NAME || !safeEqual(sourceToken, message.source_token)) {
-                fail(ws, "device_authentication_failed");
-                return true;
-            }
-            if (device && device !== ws) {
-                endSession("device_replaced", device);
-                closeClient(device, 1012, "Device session replaced");
-            }
-            device = ws;
-            ws.role = "webrtc_device";
-            ws.authenticated = true;
-            send(ws, { type: "webrtc_device_ready", device: DEVICE_NAME });
-            pairIfReady();
-            return true;
-        }
-        if (message.type === "webrtc_listener_hello") {
-            if (typeof isListenerSessionValid !== "function" || !isListenerSessionValid(ws)) {
-                fail(ws, "listener_session_required");
-                return true;
-            }
-            if (listener && listener !== ws) {
-                fail(ws, "listener_busy");
-                return true;
-            }
-            listener = ws;
-            ws.role = "webrtc_listener";
-            ws.authenticated = true;
-            send(ws, { type: "webrtc_listener_ready" });
-            if (!device || device.readyState !== WebSocket.OPEN) {
-                send(ws, { type: "webrtc_waiting_for_device" });
-            }
-            pairIfReady();
-            return true;
-        }
+        if (message.type === "webrtc_device_hello") return handleDeviceJoin(ws, message);
+        if (message.type === "webrtc_listener_hello") return handleListenerJoin(ws, message);
         return false;
     }
 
     function handleSignal(ws, message) {
         if (message.type !== "webrtc_signal") return false;
-        const senderIsDevice = ws === device && ws.role === "webrtc_device" && ws.authenticated;
-        const senderIsListener = ws === listener && ws.role === "webrtc_listener" && ws.authenticated;
-        if ((!senderIsDevice && !senderIsListener) || sessionId === null ||
-            message.session_id !== sessionId) {
+        const state = stateFor(ws);
+        const senderIsDevice = !!state && ws === state.device &&
+            ws.role === "webrtc_device" && ws.authenticated;
+        const senderIsListener = !!state && ws === state.listener &&
+            ws.role === "webrtc_listener" && ws.authenticated;
+        if ((!senderIsDevice && !senderIsListener) || state.sessionId === null ||
+            message.session_id !== state.sessionId) {
             fail(ws, "invalid_signaling_session");
             return true;
         }
         if (senderIsListener &&
             (typeof isListenerSessionValid !== "function" || !isListenerSessionValid(ws))) {
             fail(ws, "listener_session_expired");
+            return true;
+        }
+        if (senderIsListener && !listenerAuthorized(ws, state)) {
+            fail(ws, "device_access_denied");
             return true;
         }
         const now = Date.now();
@@ -142,7 +221,7 @@ function createWebRtcSignaling({ WebSocket, sourceToken, isListenerSessionValid 
                 fail(ws, "invalid_sdp_signal");
                 return true;
             }
-            signal = { type: "webrtc_signal", session_id: sessionId, kind, sdp: message.sdp };
+            signal = { type: "webrtc_signal", device_id: state.deviceId, session_id: state.sessionId, kind, sdp: message.sdp };
         } else if (kind === "candidate") {
             if (typeof message.candidate !== "string" ||
                 message.candidate.length > MAX_CANDIDATE_CHARS ||
@@ -150,17 +229,17 @@ function createWebRtcSignaling({ WebSocket, sourceToken, isListenerSessionValid 
                 fail(ws, "invalid_ice_candidate");
                 return true;
             }
-            signal = { type: "webrtc_signal", session_id: sessionId, kind, candidate: message.candidate };
+            signal = { type: "webrtc_signal", device_id: state.deviceId, session_id: state.sessionId, kind, candidate: message.candidate };
         } else if (kind === "end-of-candidates") {
-            signal = { type: "webrtc_signal", session_id: sessionId, kind };
+            signal = { type: "webrtc_signal", device_id: state.deviceId, session_id: state.sessionId, kind };
         } else {
             fail(ws, "unsupported_signal");
             return true;
         }
 
-        const peer = senderIsDevice ? listener : device;
+        const peer = senderIsDevice ? state.listener : state.device;
         if (!send(peer, signal)) {
-            endSession("peer_unavailable");
+            endSession(state, "peer_unavailable");
             if (peer && peer.readyState === WebSocket.OPEN) {
                 closeClient(peer, 1013, "Signaling peer overloaded");
             }
@@ -180,13 +259,19 @@ function createWebRtcSignaling({ WebSocket, sourceToken, isListenerSessionValid 
 
     function handleAudioControl(ws, message) {
         if (message.type !== "webrtc_audio_control") return false;
-        const senderIsListener = ws === listener && ws.role === "webrtc_listener" && ws.authenticated;
-        if (!senderIsListener || sessionId === null || message.session_id !== sessionId) {
+        const state = stateFor(ws);
+        const senderIsListener = !!state && ws === state.listener &&
+            ws.role === "webrtc_listener" && ws.authenticated;
+        if (!senderIsListener || state.sessionId === null || message.session_id !== state.sessionId) {
             fail(ws, "invalid_signaling_session");
             return true;
         }
         if (typeof isListenerSessionValid !== "function" || !isListenerSessionValid(ws)) {
             fail(ws, "listener_session_expired");
+            return true;
+        }
+        if (!listenerAuthorized(ws, state)) {
+            fail(ws, "device_access_denied");
             return true;
         }
         if (!controlRateAllowed(ws)) {
@@ -202,14 +287,14 @@ function createWebRtcSignaling({ WebSocket, sourceToken, isListenerSessionValid 
 
         const forwarded = {
             type: "webrtc_audio_control",
-            session_id: sessionId,
+            session_id: state.sessionId,
             command: "mic_gain",
-            gain_percent: message.gain_percent
+            gain_percent: message.gain_percent,
         };
-        if (!send(device, forwarded)) {
-            endSession("peer_unavailable");
-            if (device && device.readyState === WebSocket.OPEN) {
-                closeClient(device, 1013, "Audio control peer overloaded");
+        if (!send(state.device, forwarded)) {
+            endSession(state, "peer_unavailable");
+            if (state.device && state.device.readyState === WebSocket.OPEN) {
+                closeClient(state.device, 1013, "Audio control peer overloaded");
             }
         }
         return true;
@@ -217,8 +302,10 @@ function createWebRtcSignaling({ WebSocket, sourceToken, isListenerSessionValid 
 
     function handleAudioControlAck(ws, message) {
         if (message.type !== "webrtc_audio_control_ack") return false;
-        const senderIsDevice = ws === device && ws.role === "webrtc_device" && ws.authenticated;
-        if (!senderIsDevice || sessionId === null || message.session_id !== sessionId) {
+        const state = stateFor(ws);
+        const senderIsDevice = !!state && ws === state.device &&
+            ws.role === "webrtc_device" && ws.authenticated;
+        if (!senderIsDevice || state.sessionId === null || message.session_id !== state.sessionId) {
             fail(ws, "invalid_signaling_session");
             return true;
         }
@@ -233,52 +320,24 @@ function createWebRtcSignaling({ WebSocket, sourceToken, isListenerSessionValid 
             fail(ws, "invalid_audio_control_ack");
             return true;
         }
-        if (!send(listener, {
+        if (!send(state.listener, {
             type: "webrtc_audio_control_ack",
-            session_id: sessionId,
+            session_id: state.sessionId,
             command: "mic_gain",
             gain_percent: message.gain_percent,
-            ok: message.ok
+            ok: message.ok,
         })) {
-            endSession("peer_unavailable");
+            endSession(state, "peer_unavailable");
         }
         return true;
     }
 
-
-    function handleDeviceTelemetry(ws, message) {
-        if (message.type !== "webrtc_device_telemetry") return false;
-        if (ws !== device || ws.role !== "webrtc_device" || !ws.authenticated) {
-            fail(ws, "device_authentication_required");
-            return true;
-        }
-        if (!message.data || typeof message.data !== "object" || Array.isArray(message.data)) return true;
-        const input = message.data;
-        const output = {};
-        const booleans = ["wifi_connected", "peer_connected", "health_ok", "health_fault_latched", "dsp_vad_voice"];
-        const numbers = ["wifi_rssi", "wifi_retry_count", "wifi_disconnect_count", "uptime_ms",
-            "free_heap", "min_free_heap", "free_psram", "total_psram", "audio_capture_errors",
-            "audio_buffer_overflows", "dsp_errors", "dsp_limiter_clipped", "audio_frames_sent",
-            "audio_frames_dropped", "signaling_errors", "reset_reason"];
-        for (const key of booleans) if (typeof input[key] === "boolean") output[key] = input[key];
-        for (const key of numbers) {
-            if (Number.isFinite(input[key]) && input[key] >= 0 && input[key] <= Number.MAX_SAFE_INTEGER) {
-                output[key] = Math.floor(input[key]);
-            }
-        }
-        if (Number.isFinite(input.dsp_vad_rms_db) && input.dsp_vad_rms_db >= -150 && input.dsp_vad_rms_db <= 20) output.dsp_vad_rms_db = input.dsp_vad_rms_db;
-        for (const key of ["wifi_ssid", "ip", "firmware"]) {
-            if (typeof input[key] === "string") output[key] = input[key].replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 64);
-        }
-        telemetry = output;
-        telemetryUpdatedAt = Date.now();
-        return true;
-    }
-
-    function handleDeviceControl(ws, message) {
-        if (message.type !== "webrtc_device_control") return false;
-        const senderIsListener = ws === listener && ws.role === "webrtc_listener" && ws.authenticated;
-        if (!senderIsListener || sessionId === null || message.session_id !== sessionId) {
+    function handleAudioSettings(ws, message) {
+        if (message.type !== "webrtc_audio_settings") return false;
+        const state = stateFor(ws);
+        const senderIsListener = !!state && ws === state.listener &&
+            ws.role === "webrtc_listener" && ws.authenticated;
+        if (!senderIsListener || state.sessionId === null || message.session_id !== state.sessionId) {
             fail(ws, "invalid_signaling_session");
             return true;
         }
@@ -286,12 +345,152 @@ function createWebRtcSignaling({ WebSocket, sourceToken, isListenerSessionValid 
             fail(ws, "listener_session_expired");
             return true;
         }
-        if (!controlRateAllowed(ws) || message.command !== "restart") {
-            send(ws, { type: "webrtc_device_control_ack", command: "restart", ok: false });
+        if (!listenerAuthorized(ws, state)) {
+            fail(ws, "device_access_denied");
             return true;
         }
-        const ok = send(device, { type: "webrtc_device_control", session_id: sessionId, command: "restart" });
-        send(ws, { type: "webrtc_device_control_ack", command: "restart", ok });
+        if (!controlRateAllowed(ws)) {
+            fail(ws, "control_rate_limited");
+            return true;
+        }
+        if (!AUDIO_MIC_MODES.has(message.mic_mode) ||
+            typeof message.noise_suppression_enabled !== "boolean" ||
+            typeof message.vad_enabled !== "boolean" ||
+            typeof message.limiter_enabled !== "boolean") {
+            fail(ws, "invalid_audio_settings");
+            return true;
+        }
+        if (!send(state.device, {
+            type: "webrtc_audio_settings",
+            session_id: state.sessionId,
+            mic_mode: message.mic_mode,
+            noise_suppression_enabled: message.noise_suppression_enabled,
+            vad_enabled: message.vad_enabled,
+            limiter_enabled: message.limiter_enabled,
+        })) {
+            endSession(state, "peer_unavailable");
+        }
+        return true;
+    }
+
+    function handleAudioSettingsAck(ws, message) {
+        if (message.type !== "webrtc_audio_settings_ack") return false;
+        const state = stateFor(ws);
+        const senderIsDevice = !!state && ws === state.device &&
+            ws.role === "webrtc_device" && ws.authenticated;
+        if (!senderIsDevice || state.sessionId === null || message.session_id !== state.sessionId) {
+            fail(ws, "invalid_signaling_session");
+            return true;
+        }
+        if (!controlRateAllowed(ws)) {
+            fail(ws, "control_rate_limited");
+            return true;
+        }
+        if (typeof message.ok !== "boolean" || !AUDIO_MIC_MODES.has(message.mic_mode) ||
+            typeof message.noise_suppression_enabled !== "boolean" ||
+            typeof message.vad_enabled !== "boolean" ||
+            typeof message.limiter_enabled !== "boolean") {
+            fail(ws, "invalid_audio_settings_ack");
+            return true;
+        }
+        if (!send(state.listener, {
+            type: "webrtc_audio_settings_ack",
+            session_id: state.sessionId,
+            mic_mode: message.mic_mode,
+            noise_suppression_enabled: message.noise_suppression_enabled,
+            vad_enabled: message.vad_enabled,
+            limiter_enabled: message.limiter_enabled,
+            ok: message.ok,
+        })) {
+            endSession(state, "peer_unavailable");
+        }
+        return true;
+    }
+
+    function normalizeDeviceTelemetry(data) {
+        if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+        const telemetry = {};
+        for (const [field, [minimum, maximum]] of Object.entries(TELEMETRY_NUMBER_RANGES)) {
+            const value = data[field];
+            if (typeof value === "number" && Number.isFinite(value) &&
+                value >= minimum && value <= maximum) {
+                telemetry[field] = value;
+            }
+        }
+        for (const field of TELEMETRY_BOOLEAN_FIELDS) {
+            if (typeof data[field] === "boolean") telemetry[field] = data[field];
+        }
+        for (const [field, maxLength] of Object.entries(TELEMETRY_STRING_LIMITS)) {
+            const value = data[field];
+            if (typeof value === "string" && value.length <= maxLength &&
+                !/[\u0000-\u001f\u007f]/.test(value)) {
+                telemetry[field] = value;
+            }
+        }
+        return Object.keys(telemetry).length ? telemetry : null;
+    }
+
+    function handleDeviceTelemetry(ws, message) {
+        if (message.type !== "webrtc_device_telemetry") return false;
+        const state = stateFor(ws);
+        if (!state || ws !== state.device || ws.role !== "webrtc_device" ||
+            ws.authenticated !== true) {
+            fail(ws, "invalid_device_telemetry_sender");
+            return true;
+        }
+        const now = Date.now();
+        if (now - state.telemetryAt < 1000) return true;
+        const telemetry = normalizeDeviceTelemetry(message.data);
+        if (!telemetry) {
+            fail(ws, "invalid_device_telemetry");
+            return true;
+        }
+        telemetry.received_at = new Date(now).toISOString();
+        state.telemetry = telemetry;
+        state.telemetryAt = now;
+        if (state.listener && state.sessionId !== null) {
+            send(state.listener, {
+                type: "webrtc_device_telemetry",
+                device_id: state.deviceId,
+                session_id: state.sessionId,
+                data: telemetry,
+            });
+        }
+        return true;
+    }
+
+    function handleDeviceControl(ws, message) {
+        if (message.type !== "webrtc_device_control") return false;
+        const state = stateFor(ws);
+        const senderIsListener = !!state && ws === state.listener &&
+            ws.role === "webrtc_listener" && ws.authenticated;
+        if (!senderIsListener || state.sessionId === null || message.session_id !== state.sessionId) {
+            fail(ws, "invalid_signaling_session");
+            return true;
+        }
+        if (typeof isListenerSessionValid !== "function" || !isListenerSessionValid(ws)) {
+            fail(ws, "listener_session_expired");
+            return true;
+        }
+        if (!listenerAuthorized(ws, state)) {
+            fail(ws, "device_access_denied");
+            return true;
+        }
+        if (!controlRateAllowed(ws)) {
+            fail(ws, "control_rate_limited");
+            return true;
+        }
+        if (message.command !== "restart") {
+            fail(ws, "invalid_device_control");
+            return true;
+        }
+        if (!send(state.device, {
+            type: "webrtc_device_control",
+            session_id: state.sessionId,
+            command: "restart",
+        })) {
+            endSession(state, "peer_unavailable");
+        }
         return true;
     }
 
@@ -299,7 +498,9 @@ function createWebRtcSignaling({ WebSocket, sourceToken, isListenerSessionValid 
         if (!message || typeof message !== "object" || Array.isArray(message)) return false;
         return handleJoin(ws, message) || handleSignal(ws, message) ||
             handleAudioControl(ws, message) || handleAudioControlAck(ws, message) ||
-            handleDeviceTelemetry(ws, message) || handleDeviceControl(ws, message);
+            handleAudioSettings(ws, message) || handleAudioSettingsAck(ws, message) ||
+            handleDeviceTelemetry(ws, message) ||
+            handleDeviceControl(ws, message);
     }
 
     function handleBinary(ws) {
@@ -309,29 +510,48 @@ function createWebRtcSignaling({ WebSocket, sourceToken, isListenerSessionValid 
     }
 
     function handleClose(ws) {
-        if (ws === device) {
-            endSession("device_disconnected", ws);
-            device = null;
-            telemetry = null;
-            telemetryUpdatedAt = 0;
+        const state = stateFor(ws);
+        if (!state) return;
+        if (ws === state.device) {
+            endSession(state, "device_disconnected", ws);
+            state.device = null;
         }
-        if (ws === listener) {
-            endSession("listener_disconnected", ws);
-            listener = null;
+        if (ws === state.listener) {
+            endSession(state, "listener_disconnected", ws);
+            state.listener = null;
         }
+        delete ws.deviceId;
     }
 
-    function getStatus() {
-        return {
-            device_connected: !!device && device.readyState === WebSocket.OPEN,
-            listener_connected: !!listener && listener.readyState === WebSocket.OPEN,
-            session_active: sessionId !== null,
-            device_telemetry: telemetry && Date.now() - telemetryUpdatedAt <= 15000 ? telemetry : null,
-            telemetry_updated_at: telemetry && Date.now() - telemetryUpdatedAt <= 15000 ? telemetryUpdatedAt : null,
+    function getStatus(deviceId = DEFAULT_DEVICE_ID) {
+        const state = states.get(deviceId);
+        if (!state) {
+            if (arguments.length > 0) return null;
+            return {
+                device_connected: false,
+                listener_connected: false,
+                session_active: false,
+            };
+        }
+        const result = {
+            device_connected: !!state.device && state.device.readyState === WebSocket.OPEN,
+            listener_connected: !!state.listener && state.listener.readyState === WebSocket.OPEN,
+            session_active: state.sessionId !== null,
         };
+        if (state.telemetry && Date.now() - state.telemetryAt <= TELEMETRY_MAX_AGE_MS) {
+            result.telemetry = state.telemetry;
+        }
+        return result;
     }
 
-    return { handleMessage, handleBinary, handleClose, getStatus };
+    function getStatuses() {
+        return Array.from(states.keys(), (deviceId) => ({
+            device_id: deviceId,
+            ...getStatus(deviceId),
+        }));
+    }
+
+    return { handleMessage, handleBinary, handleClose, getStatus, getStatuses };
 }
 
 module.exports = { createWebRtcSignaling, MAX_SDP_CHARS, MAX_CANDIDATE_CHARS };

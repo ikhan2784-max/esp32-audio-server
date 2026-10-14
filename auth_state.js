@@ -67,6 +67,8 @@ function createAuthState({
             createdAt,
             lastActivityAt: createdAt,
             absoluteExpiresAt,
+            idleTimeoutMs: sessionIdleDurationMs,
+            timeoutMinutes: sessionIdleDurationMs / 60000,
             expiresAt: Math.min(absoluteExpiresAt, createdAt + sessionIdleDurationMs),
         });
         return id;
@@ -88,7 +90,26 @@ function createAuthState({
         if (!session) return false;
         const at = now();
         session.lastActivityAt = at;
-        session.expiresAt = Math.min(session.absoluteExpiresAt, at + sessionIdleDurationMs);
+        session.expiresAt = session.idleTimeoutMs === 0
+            ? session.absoluteExpiresAt
+            : Math.min(session.absoluteExpiresAt, at + session.idleTimeoutMs);
+        return true;
+    }
+
+    function setSessionTimeout(id, timeoutMinutes) {
+        if (!Number.isSafeInteger(timeoutMinutes) || timeoutMinutes < 0) return false;
+        const session = getSession(id);
+        if (!session) return false;
+        const at = now();
+        session.timeoutMinutes = timeoutMinutes;
+        session.idleTimeoutMs = timeoutMinutes * 60 * 1000;
+        session.lastActivityAt = at;
+        session.absoluteExpiresAt = timeoutMinutes === 0
+            ? Number.MAX_SAFE_INTEGER
+            : at + sessionDurationMs;
+        session.expiresAt = timeoutMinutes === 0
+            ? session.absoluteExpiresAt
+            : Math.min(session.absoluteExpiresAt, at + session.idleTimeoutMs);
         return true;
     }
 
@@ -138,6 +159,7 @@ function createAuthState({
         createSession,
         getSession,
         touchSession,
+        setSessionTimeout,
         deleteSession,
         isAuthRateLimited,
         recordAuthAttempt,

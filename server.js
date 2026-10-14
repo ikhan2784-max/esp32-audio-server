@@ -9,15 +9,27 @@ const { getClientIp } = require("./client_ip");
 const { isSameOriginRequest } = require("./request_security");
 const { addListenerWithinLimit } = require("./listener_capacity");
 const { hasValidListenerSession } = require("./listener_auth");
+const { createDeviceCredentialRegistry, isValidDeviceId } = require("./device_registry");
 
 const PORT = process.env.PORT || 10000;
 
 const SOURCE_TOKEN = process.env.SOURCE_TOKEN || "";
+const DEVICE_CREDENTIALS_JSON = process.env.DEVICE_CREDENTIALS_JSON || "";
 const LISTENER_PIN = process.env.LISTENER_PIN || "";
+const MAX_CONFIGURED_DEVICES = process.env.MAX_CONFIGURED_DEVICES === undefined
+    ? 16
+    : Number(process.env.MAX_CONFIGURED_DEVICES);
+const deviceCredentialRegistry = createDeviceCredentialRegistry({
+    sourceToken: SOURCE_TOKEN,
+    deviceCredentialsJson: DEVICE_CREDENTIALS_JSON,
+    maxDevices: MAX_CONFIGURED_DEVICES,
+});
 
 const SESSION_COOKIE_NAME = "esp32_listener_session";
 const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
 const SESSION_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+const SESSION_TIMEOUT_OPTIONS_MINUTES = new Set([0, 30, 60, 120, 1440]);
+const SESSION_NEVER_COOKIE_MAX_AGE_SECONDS = 5 * 365 * 24 * 60 * 60;
 const MAX_SESSIONS = 4096;
 const MAX_WEBSOCKET_CLIENTS = 64;
 const MAX_LEGACY_LISTENERS = 4;
@@ -36,7 +48,7 @@ app.use("/audio-suppressor", requireHttps, express.static(
     { fallthrough: false, index: false, maxAge: "1h" }
 ));
 
-if (!SOURCE_TOKEN) console.error("ERROR: SOURCE_TOKEN not set.");
+if (!SOURCE_TOKEN && !DEVICE_CREDENTIALS_JSON) console.error("ERROR: No WebRTC device credentials configured.");
 if (!LISTENER_PIN) console.error("ERROR: LISTENER_PIN not set.");
 
 process.on("uncaughtException", (err) => {
@@ -98,9 +110,11 @@ const wss = new WebSocket.Server({
 });
 const webrtcSignaling = createWebRtcSignaling({
     WebSocket,
-    sourceToken: SOURCE_TOKEN,
+    deviceRegistry: deviceCredentialRegistry,
     isListenerSessionValid: (ws) => ws.sessionAuthenticated &&
-        typeof ws.sessionValid === "function" && ws.sessionValid()
+        typeof ws.sessionValid === "function" && ws.sessionValid(),
+    isListenerAuthorizedForDevice: (ws) => ws.sessionAuthenticated &&
+        typeof ws.sessionValid === "function" && ws.sessionValid(),
 });
 
 const listeners = new Set();
@@ -221,6 +235,33 @@ app.post("/api/session/activity", requireHttps, requireSameOrigin, (req, res) =>
     return res.json({ ok: true });
 });
 
+app.get("/api/session/settings", requireHttps, (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    const session = getSession(req);
+    if (!session) return res.status(401).json({ ok: false, error: "Unauthorized" });
+    return res.json({ ok: true, timeout_minutes: session.timeoutMinutes ?? 30 });
+});
+
+app.post("/api/session/timeout", requireHttps, requireSameOrigin, (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    const sessionId = getCookie(req, SESSION_COOKIE_NAME);
+    const timeoutMinutes = req.body && req.body.timeout_minutes;
+    if (!getSession(req)) return res.status(401).json({ ok: false, error: "Unauthorized" });
+    if (!Number.isSafeInteger(timeoutMinutes) ||
+        !SESSION_TIMEOUT_OPTIONS_MINUTES.has(timeoutMinutes)) {
+        return res.status(400).json({ ok: false, error: "Invalid session timeout" });
+    }
+    if (!authState.setSessionTimeout(sessionId, timeoutMinutes)) {
+        return res.status(401).json({ ok: false, error: "Session expired" });
+    }
+    const maxAgeSeconds = timeoutMinutes === 0
+        ? SESSION_NEVER_COOKIE_MAX_AGE_SECONDS
+        : Math.floor(SESSION_DURATION_MS / 1000);
+    res.setHeader("Set-Cookie",
+        `${SESSION_COOKIE_NAME}=${encodeURIComponent(sessionId)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAgeSeconds}`);
+    return res.json({ ok: true, timeout_minutes: timeoutMinutes });
+});
+
 app.get("/session-activity.js", requireHttps, (req, res) => {
     res.setHeader("Cache-Control", "no-cache");
     res.type("application/javascript").sendFile(path.join(__dirname, "session-activity.js"));
@@ -268,6 +309,28 @@ app.get("/api/webrtc-status", requireHttps, (req, res) => {
         return res.status(401).json({ ok: false, error: "Unauthorized" });
     }
     return res.json({ ok: true, transport: "webrtc", ...webrtcSignaling.getStatus() });
+});
+
+app.get("/api/devices", requireHttps, (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    if (!isAuthenticatedRequest(req)) {
+        return res.status(401).json({ ok: false, error: "Unauthorized" });
+    }
+    return res.json({ ok: true, devices: webrtcSignaling.getStatuses() });
+});
+
+app.get("/api/devices/:deviceId/status", requireHttps, (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    if (!isAuthenticatedRequest(req)) {
+        return res.status(401).json({ ok: false, error: "Unauthorized" });
+    }
+    const deviceId = req.params.deviceId;
+    if (!isValidDeviceId(deviceId)) {
+        return res.status(400).json({ ok: false, error: "Invalid device ID" });
+    }
+    const status = webrtcSignaling.getStatus(deviceId);
+    if (!status) return res.status(404).json({ ok: false, error: "Unknown device" });
+    return res.json({ ok: true, device_id: deviceId, ...status });
 });
 
 app.get("/api/esp32-health", requireHttps, async (req, res) => {

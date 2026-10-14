@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#06131f">
-  <title>ESP32 Audio Listener</title>
+  <title>Listening Device</title>
   <style>
     :root {
       color-scheme: dark;
@@ -44,12 +44,14 @@
       box-shadow: 0 24px 70px #000a, inset 0 1px #ffffff0a;
     }
     .app-header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:3px 2px 15px; }
-    .brand { display:flex; align-items:center; gap:10px; min-width:0; }
+    .brand { display:flex; align-items:center; flex:1 1 auto; gap:10px; min-width:0; }
     .brand-icon { display:grid; place-items:center; width:42px; height:42px; flex:none; color:var(--cyan); border:1px solid #138bd1; border-radius:12px; background:#08243a; box-shadow:0 0 18px #0782d32e; }
     .brand-icon svg { width:25px; height:25px; }
-    .brand-copy { min-width:0; }
-    .brand-copy strong { display:block; overflow:hidden; color:#f4faff; font-size:1rem; letter-spacing:.045em; text-overflow:ellipsis; white-space:nowrap; }
-    .brand-copy span { display:block; margin-top:2px; color:#8da8bc; font-size:.7rem; }
+    .brand-copy { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:center; flex:1 1 auto; gap:4px 9px; min-width:0; }
+    .brand-copy label { color:var(--cyan); font-size:.62rem; font-weight:800; letter-spacing:.06em; white-space:nowrap; }
+    .brand-copy select { width:100%; min-width:0; min-height:36px; padding:6px 9px; color:#eaf7ff; border:1px solid #31536a; border-radius:9px; background:#071723; font-size:.72rem; }
+    .brand-copy select:focus-visible { outline:2px solid var(--cyan); outline-offset:2px; }
+    .brand-copy small { grid-column:1 / -1; overflow:hidden; color:#8da8bc; font-size:.6rem; text-overflow:ellipsis; white-space:nowrap; }
     .device-pill { display:flex; align-items:center; gap:6px; flex:none; padding:7px 9px; color:#8da8bc; border:1px solid #254157; border-radius:999px; background:#0a1b28; font-size:.65rem; font-weight:800; letter-spacing:.04em; }
     .status-dot { width:7px; height:7px; border-radius:50%; background:#8294a3; box-shadow:0 0 8px currentColor; }
     .device-pill.online { color:#61e8ad; border-color:#14704f; background:#06251d; }
@@ -74,11 +76,19 @@
     .mic-orb { display:grid; place-items:center; width:100px; height:100px; margin:2px auto 13px; color:#62caff; border:1px solid #1686ca; border-radius:50%; background:radial-gradient(circle at 50% 40%,#10517a 0,#092b46 48%,#071724 75%); box-shadow:0 0 0 9px #0b2a3a6e,0 0 32px #008bf04a; }
     .mic-orb svg { width:38px; height:38px; stroke:currentColor; }
     .hero-caption { margin:0 0 12px; color:#9bb3c4; font-size:.77rem; }
-    .listen-actions { display:grid; width:100%; grid-template-columns:1fr 1fr; gap:8px; }
+    .listen-actions { display:grid; width:100%; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
     .action-button { display:flex; align-items:center; justify-content:center; gap:7px; min-height:43px; padding:10px 11px; color:white; border:1px solid #208ce9; border-radius:10px; background:linear-gradient(#168fff,#0872e6); box-shadow:0 5px 14px #007cf333; font-size:.76rem; font-weight:800; letter-spacing:.015em; }
     .action-button svg { width:16px; height:16px; stroke:currentColor; }
     .action-button.stop { border-color:#263f52; background:#122737; box-shadow:none; }
     .action-button.record { border-color:#c84242; background:linear-gradient(#ff5753,#e53935); box-shadow:0 5px 14px #f13c3333; }
+    .action-button.record[aria-pressed="true"] { border-color:#263f52; background:#122737; box-shadow:none; }
+    #recordStatus { min-height:1em; margin:7px 0 0; color:#9bb3c4; font-size:.66rem; }
+    .listen-stop-icon { display:none; }
+    #start[aria-pressed="true"] .listen-start-icon { display:none; }
+    #start[aria-pressed="true"] .listen-stop-icon { display:block; }
+    .record-stop-icon { display:none; }
+    #record[aria-pressed="true"] .record-start-icon { display:none; }
+    #record[aria-pressed="true"] .record-stop-icon { display:block; }
     button:disabled { opacity:.43; cursor:not-allowed; box-shadow:none; }
     .spec-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:7px; margin:9px 0; }
     .spec-card { min-width:0; padding:9px 4px; text-align:center; border:1px solid #1a374b; border-radius:10px; background:#091b28; }
@@ -95,14 +105,7 @@
     input[type="range"] { width:100%; accent-color:#178eff; }
     .volume-row input { margin:0; }
     .volume-row output { width:38px; color:#d8ecfa; text-align:right; font-size:.7rem; }
-    .record-card { border-color:#653235; background:linear-gradient(145deg,#25171c,#111821); }
-    .record-row { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-    .record-row .action-button { min-width:145px; }
-    #recordStatus { color:#f3b7b4; font-size:.66rem; text-align:right; }
-    .record-options { margin-top:9px; color:#a0b3c1; font-size:.68rem; }
-    .record-options summary { cursor:pointer; }
-    .recording-source { display:flex; flex-direction:column; gap:6px; margin:9px 0 0; color:#d8e8f2; font-size:.74rem; text-align:left; }
-    .recording-source select { width:100%; border:1px solid #314a5c; border-radius:8px; padding:8px; color:#e9f4fa; background:#081925; font:inherit; }
+    .volume-scale { display:flex; justify-content:space-between; margin:3px 47px 0 26px; color:#819bae; font-size:.57rem; font-variant-numeric:tabular-nums; }
     .quick-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; }
     .quick-tile { min-width:0; padding:8px 4px; text-align:center; border:1px solid #173649; border-radius:10px; background:#091b28; }
     .quick-tile strong { display:block; overflow:hidden; color:#e2f4ff; font-size:.64rem; text-overflow:ellipsis; white-space:nowrap; }
@@ -128,7 +131,7 @@
     .gain-heading { display:flex; justify-content:space-between; gap:10px; color:#e0edf4; font-size:.75rem; font-weight:700; }
     #micGain { width:100%; margin:12px 0 5px; }
     #micGainValue { color:#61bfff; font-variant-numeric:tabular-nums; }
-    #micGainStatus, #processingStatus { display:block; min-height:1.2em; color:#8da6b7; font-size:.66rem; }
+    #micGainStatus, #processingStatus, #audioSettingsStatus { display:block; min-height:1.2em; color:#8da6b7; font-size:.66rem; }
     .helper { margin:8px 0 0; color:#8199aa; font-size:.66rem; line-height:1.45; }
     .readonly-tag { color:#8ca5b6; font-size:.65rem; }
     .diagnostic-grid { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
@@ -140,6 +143,8 @@
     .status-chip.offline { color:#ff928d; border-color:#714047; background:#291419; }
     .log-toolbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; margin-bottom:9px; }
     .filter-list { display:flex; gap:5px; }
+    .autoscroll-option { display:flex; align-items:center; gap:6px; color:#a7bdcc; font-size:.67rem; white-space:nowrap; }
+    .autoscroll-option input { accent-color:#168fff; }
     .filter-button { padding:6px 8px; color:#a8bfce; border:1px solid #234256; border-radius:999px; background:#091a27; font-size:.63rem; }
     .filter-button[aria-pressed="true"] { color:white; border-color:#087cf0; background:#087cf0; }
     .small-button { padding:7px 9px; color:#cce5f3; border:1px solid #2a4b60; border-radius:8px; background:#102433; font-size:.67rem; font-weight:700; }
@@ -156,6 +161,8 @@
     .system-action span { color:#8ca6b7; font-size:.65rem; }
     .system-action.danger { color:#ff8884; border-color:#61363b; }
     .system-action:disabled { opacity:.5; }
+    .system-action.link { text-decoration:none; }
+    .settings-select { width:100%; min-height:38px; padding:8px 10px; color:#e9f5fb; border:1px solid #314a5c; border-radius:8px; background:#081925; font:inherit; }
     .notice { padding:9px 10px; color:#a8c2d1; border:1px solid #224359; border-radius:9px; background:#0a1c29; font-size:.68rem; line-height:1.4; }
     .notice.error { color:#ff9c98; border-color:#66363a; background:#211518; }
     .notice[hidden] { display:none; }
@@ -169,12 +176,210 @@
     @media (max-width:390px) {
       body { padding:0; }
       .app-shell { min-height:100vh; padding:12px; border:0; border-radius:0; }
-      .brand-copy strong { font-size:.9rem; }
+      .brand-copy { grid-template-columns:minmax(0,1fr); gap:3px; }
+      .brand-copy label { font-size:.55rem; }
+      .brand-copy select { min-height:32px; padding:5px 6px; font-size:.65rem; }
+      .brand-copy small { display:none; }
       .device-pill { padding:6px 7px; font-size:.58rem; }
       .mic-orb { width:88px; height:88px; }
-      .record-row .action-button { min-width:0; }
     }
     @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration:.01ms !important; transition-duration:.01ms !important; } }
+    /* Presentation polish: clearer hierarchy, softer surfaces, and accessible controls. */
+    :root {
+      --surface:#071522;
+      --surface-raised:#0b1c2a;
+      --surface-soft:#0e2434;
+      --border:#1b3a50;
+      --border-bright:#1c6b98;
+      --blue:#168bff;
+      --cyan:#4bc7ff;
+      --green:#35d99a;
+      --muted:#9bb0c1;
+    }
+    body {
+      padding:clamp(18px,4vw,42px) 16px;
+      color:#f0f7fc;
+      line-height:1.45;
+      -webkit-font-smoothing:antialiased;
+      text-rendering:optimizeLegibility;
+      background:
+        radial-gradient(ellipse at 15% 0%,#0e3450 0,transparent 36%),
+        radial-gradient(ellipse at 90% 15%,#0c263b 0,transparent 30%),
+        #030b13;
+    }
+    .app-shell {
+      width:min(100%,680px);
+      min-height:min(960px,calc(100vh - 60px));
+      padding:clamp(16px,3vw,25px);
+      border-color:#1a6289;
+      border-radius:28px;
+      background:linear-gradient(155deg,#0a1d2b 0%,#06131e 58%,#071522 100%);
+      box-shadow:0 28px 90px #0009,0 0 55px #0879b318,inset 0 1px #ffffff0d;
+    }
+    .app-header { gap:16px; padding:2px 2px 18px; }
+    .brand { gap:12px; }
+    .brand-icon {
+      width:48px;
+      height:48px;
+      border-color:#207aaa;
+      border-radius:15px;
+      background:linear-gradient(145deg,#0d3550,#082238);
+      box-shadow:0 0 24px #0782d333,inset 0 1px #ffffff12;
+    }
+    .brand-copy { gap:5px 10px; }
+    .brand-copy label { font-size:.68rem; letter-spacing:.11em; }
+    .brand-copy select {
+      min-height:40px;
+      padding:8px 11px;
+      border-color:#315a73;
+      border-radius:11px;
+      background:#081a27;
+      font-size:.78rem;
+    }
+    .brand-copy small { color:#9bb1c2; font-size:.65rem; }
+    .device-pill { padding:8px 11px; font-size:.68rem; }
+    .tabbar {
+      gap:6px;
+      padding:6px;
+      border-color:#1d4057;
+      border-radius:17px;
+      background:#06131e;
+      box-shadow:inset 0 1px #ffffff07;
+    }
+    .tab-button {
+      min-height:62px;
+      gap:5px;
+      border:1px solid transparent;
+      border-radius:12px;
+      color:#9aafbf;
+      font-size:.69rem;
+      transition:color .16s ease,background .16s ease,border-color .16s ease,transform .16s ease;
+    }
+    .tab-button svg { width:20px; height:20px; }
+    .tab-button:hover { border-color:#21455d; background:#0b2231; }
+    .tab-button[aria-selected="true"] {
+      border-color:#3aabff;
+      background:linear-gradient(180deg,#178df5,#096bcf);
+      box-shadow:0 6px 18px #087cf34a,inset 0 1px #ffffff2b;
+    }
+    .tab-panel { padding:22px 2px 6px; }
+    .section-heading { margin:0 2px 14px; }
+    .section-heading h1,.section-heading h2 { font-size:.83rem; letter-spacing:.1em; }
+    .live-state { font-size:.74rem; }
+    .panel-card,.setting-group {
+      border-color:#1c3d53;
+      border-radius:17px;
+      background:linear-gradient(145deg,#0d2130,#091824 78%);
+      box-shadow:0 8px 24px #0002,inset 0 1px #ffffff08;
+    }
+    .panel-card { margin:11px 0; padding:16px; }
+    .hero-card {
+      padding:24px 20px 18px;
+      border-color:#24536e;
+      background:radial-gradient(ellipse at 50% 0%,#12344a 0,#0d2130 55%,#091824 100%);
+    }
+    .mic-orb {
+      width:112px;
+      height:112px;
+      margin:3px auto 16px;
+      border-color:#36a9e7;
+      background:radial-gradient(circle at 50% 36%,#17618a 0,#0d3a59 49%,#0a2031 78%);
+      box-shadow:0 0 0 10px #0b2a3a70,0 0 42px #008bf052,inset 0 1px #ffffff1c;
+    }
+    .hero-caption { margin-bottom:16px; font-size:.82rem; }
+    .listen-actions { gap:10px; }
+    .action-button {
+      min-height:48px;
+      border-radius:12px;
+      font-size:.8rem;
+      transition:filter .15s ease,transform .15s ease,box-shadow .15s ease;
+    }
+    .action-button:not(:disabled):hover,.small-button:not(:disabled):hover,.system-action:not(:disabled):hover { filter:brightness(1.1); transform:translateY(-1px); }
+    .action-button.stop,.action-button.record[aria-pressed="true"] { border-color:#335064; background:#142b3a; }
+    .spec-grid { gap:9px; margin:11px 0; }
+    .spec-card,.quick-tile,.metric {
+      border-color:#1c3d53;
+      border-radius:12px;
+      background:linear-gradient(145deg,#0b1e2b,#081722);
+    }
+    .spec-card { padding:11px 5px; }
+    .spec-card strong { font-size:.88rem; }
+    .spec-card span { font-size:.61rem; }
+    .card-title { margin-bottom:12px; font-size:.8rem; }
+    .level-track { height:13px; border-color:#1b4055; border-radius:7px; }
+    .quick-grid { gap:8px; }
+    .quick-tile { padding:10px 5px; }
+    .quick-tile strong { font-size:.69rem; }
+    .quick-tile span { font-size:.59rem; }
+    .settings-stack { gap:11px; }
+    .setting-group { padding:15px; }
+    .setting-group h2 { margin-bottom:12px; font-size:.78rem; letter-spacing:.075em; }
+    .choice-list { gap:7px; }
+    .choice-row {
+      min-height:42px;
+      padding:10px 12px;
+      border-color:#1b3c51;
+      border-radius:11px;
+      background:#091a27;
+      transition:border-color .15s ease,background .15s ease;
+    }
+    .choice-row:not(.disabled):hover { border-color:#32749a; background:#0c2231; }
+    .setting-row { min-height:43px; font-size:.76rem; }
+    .diagnostic-grid { gap:9px; }
+    .metric { padding:12px; }
+    .metric span { font-size:.65rem; }
+    .metric strong { font-size:.82rem; }
+    .status-chip { padding:5px 9px; font-size:.65rem; }
+    .log-toolbar { gap:10px; margin-bottom:12px; }
+    .filter-list { flex-wrap:wrap; gap:6px; }
+    .filter-button { padding:7px 10px; border-color:#294b61; font-size:.67rem; transition:background .15s ease,color .15s ease; }
+    .small-button,.system-action { border-radius:11px; }
+    .small-button { min-height:36px; padding:8px 11px; }
+    .system-action { min-height:44px; padding:11px 12px; }
+    .settings-select { min-height:42px; border-radius:10px; }
+    .notice { padding:11px 12px; border-radius:11px; }
+    .audio-control { height:40px; margin-top:13px; }
+    .footer { margin-top:20px; padding-top:13px; font-size:.66rem; }
+    :where(button,select,input,a,summary):focus-visible {
+      outline:2px solid #66cfff;
+      outline-offset:3px;
+    }
+    .toggle input:focus-visible + span { outline:2px solid #66cfff; outline-offset:3px; }
+    input[type="range"] { accent-color:#36b6ff; cursor:pointer; }
+    @media (max-width:620px) {
+      body { padding:0; }
+      .app-shell { min-height:100vh; padding:16px; border:0; border-radius:0; box-shadow:none; }
+      .tab-panel { padding-top:19px; }
+    }
+    @media (max-width:420px) {
+      .app-shell { padding:13px; }
+      .app-header { gap:9px; padding-bottom:14px; }
+      .brand { gap:8px; }
+      .brand-icon { width:40px; height:40px; border-radius:12px; }
+      .brand-icon svg { width:22px; height:22px; }
+      .brand-copy { grid-template-columns:minmax(0,1fr); gap:3px; }
+      .brand-copy label { font-size:.57rem; }
+      .brand-copy select { min-height:35px; padding:6px 7px; font-size:.68rem; }
+      .brand-copy small { display:none; }
+      .device-pill { gap:5px; padding:6px 7px; font-size:.58rem; }
+      .tabbar { gap:3px; padding:4px; }
+      .tab-button { min-height:54px; gap:3px; padding:5px 1px; font-size:clamp(.55rem,2.55vw,.64rem); }
+      .tab-button svg { width:18px; height:18px; }
+      .panel-card { padding:13px; }
+      .hero-card { padding:20px 13px 14px; }
+      .mic-orb { width:96px; height:96px; }
+      .listen-actions { gap:7px; }
+      .action-button { gap:5px; padding:9px 6px; font-size:.71rem; }
+      .quick-grid,.spec-grid { gap:5px; }
+      .quick-tile { padding:8px 3px; }
+      .volume-scale { margin-right:38px; font-size:.5rem; }
+      .setting-group { padding:13px; }
+      .filter-list { gap:4px; }
+      .filter-button { padding:6px 8px; }
+    }
+    @media (prefers-reduced-motion:reduce) {
+      .tab-button,.action-button,.choice-row { transition:none; }
+    }
   </style>
 </head>
 <body>
@@ -182,7 +387,11 @@
     <header class="app-header">
       <div class="brand">
         <div class="brand-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="3" width="16" height="18" rx="4"/><path d="M9 9a3 3 0 0 1 6 0v3a3 3 0 0 1-6 0V9Zm-3 3a6 6 0 0 0 12 0m-6 6v3m-3 0h6"/></svg></div>
-        <div class="brand-copy"><strong>ESP32 INMP441</strong><span>Secure Live Audio Listener</span></div>
+        <div class="brand-copy">
+          <label for="deviceSelect">LISTENING DEVICE</label>
+          <select id="deviceSelect" aria-describedby="deviceSelectStatus"><option value="">Loading devices…</option></select>
+          <small id="deviceSelectStatus" role="status" aria-live="polite">Choose which ESP32 supplies the listener audio.</small>
+        </div>
       </div>
       <div id="deviceOnlinePill" class="device-pill"><i class="status-dot" aria-hidden="true"></i><span id="deviceStatusLabel">CHECKING</span></div>
     </header>
@@ -201,9 +410,10 @@
         <div class="mic-orb" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.6"><rect x="9" y="2.5" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0m-7 7v3m-4 0h8"/></svg></div>
         <p class="hero-caption">One-way WebRTC audio from your ESP32</p>
         <div class="listen-actions">
-          <button class="action-button" id="start" type="button"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="m8 5 11 7-11 7z"/></svg>Start listening</button>
-          <button class="action-button stop" id="stop" type="button" disabled><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>Stop</button>
+          <button class="action-button" id="start" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path class="listen-start-icon" d="m8 5 11 7-11 7z"/><rect class="listen-stop-icon" x="6" y="6" width="12" height="12" rx="1"/></svg><span id="listenButtonLabel">Start listening</span></button>
+          <button class="action-button record" id="record" type="button" disabled aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle class="record-start-icon" cx="12" cy="12" r="5"/><rect class="record-stop-icon" x="6" y="6" width="12" height="12" rx="1"/></svg><span id="recordButtonLabel">Start recording</span></button>
         </div>
+        <p id="recordStatus" role="status" aria-live="polite">Connect to audio to record a WAV file.</p>
         <audio id="audio" class="audio-control" controls autoplay playsinline aria-label="Audio playback controls"></audio>
       </section>
 
@@ -215,16 +425,11 @@
         <div class="card-title"><span class="eyebrow">AUDIO LEVEL</span><output id="listenerDb">Waiting for audio</output></div>
         <div class="level-label"><span id="levelSource">Incoming WebRTC audio</span><span id="levelWord">Idle</span></div>
         <div class="level-track" role="meter" aria-label="Audio output level" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="level-fill" id="audioLevelFill"></div></div>
-        <label class="volume-row" for="playVolume"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M4 10v4h4l5 4V6l-5 4H4Z"/><path d="M17 9a5 5 0 0 1 0 6m2-9a9 9 0 0 1 0 12"/></svg><input id="playVolume" type="range" min="0" max="100" value="100" aria-label="Listener playback volume"><output id="playVolumeValue">100%</output></label>
-      </section>
-
-      <section class="panel-card record-card">
-        <div class="card-title"><span class="eyebrow">LOCAL RECORDING · WAV</span><span id="recordStatus">Not recording</span></div>
-        <div class="record-row">
-          <button class="action-button record" id="record" type="button" disabled><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="5"/></svg>Start recording</button>
-          <button class="action-button stop" id="stopRecord" type="button" disabled>Stop recording</button>
+        <div class="volume-control">
+          <label class="volume-row" for="playVolume"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M4 10v4h4l5 4V6l-5 4H4Z"/><path d="M17 9a5 5 0 0 1 0 6m2-9a9 9 0 0 1 0 12"/></svg><input id="playVolume" type="range" min="0" max="300" step="1" value="100" list="playVolumeMarks" aria-label="Listener playback volume"><output id="playVolumeValue">100%</output></label>
+          <datalist id="playVolumeMarks"><option value="0"></option><option value="50"></option><option value="100"></option><option value="150"></option><option value="200"></option><option value="250"></option><option value="300"></option></datalist>
+          <div class="volume-scale" aria-hidden="true"><span>0%</span><span>50%</span><span>100%</span><span>150%</span><span>200%</span><span>250%</span><span>300%</span></div>
         </div>
-        <details class="record-options"><summary>Recording options</summary><label class="recording-source" for="recordSource">Source · WAV / 16-bit PCM<select id="recordSource"><option value="raw" selected>Raw incoming WebRTC audio</option><option value="filtered">GTCRN-processed listener output</option></select></label><p class="helper">WAV files are saved locally. The microphone on this phone or computer is never requested.</p></details>
       </section>
 
       <section class="panel-card">
@@ -241,26 +446,38 @@
       <div class="section-heading"><h2> AUDIO SETTINGS</h2><span class="status-chip">Firmware profile</span></div>
       <div class="settings-stack">
         <section class="setting-group"><h2>MICROPHONE MODE</h2><div class="choice-list">
-          <label class="choice-row"><input type="radio" name="micMode" checked disabled><span>Mic 1</span><small>Active</small></label>
-          <label class="choice-row disabled"><input type="radio" name="micMode" disabled><span>Mic 2</span><small>Not available</small></label>
-          <label class="choice-row disabled"><input type="radio" name="micMode" disabled><span>Both (Mono)</span><small>Not available</small></label>
-          <label class="choice-row disabled"><input type="radio" name="micMode" disabled><span>Both (Stereo)</span><small>Not available</small></label>
-        </div><p class="helper">This build is using the left I²S channel. Microphone selection is not remotely configurable yet.</p></section>
+          <label class="choice-row"><input type="radio" name="micMode" value="mic1" checked disabled><span>Mic 1</span><small>Left slot</small></label>
+          <label class="choice-row"><input type="radio" name="micMode" value="mic2" disabled><span>Mic 2</span><small>Right slot</small></label>
+          <label class="choice-row"><input type="radio" name="micMode" value="both_mono" disabled><span>Both (Mono)</span><small>Mix to mono</small></label>
+          <label class="choice-row disabled"><input type="radio" name="micMode" value="both_stereo" disabled><span>Both (Stereo)</span><small>Unavailable</small></label>
+        </div><p class="helper">Mic 1 and Mic 2 share BCLK GPIO4, WS GPIO5, and DATA GPIO6. Set the microphones’ L/R select pins to opposite levels so one drives LEFT and the other RIGHT. Both stereo is unavailable because this firmware’s processed-audio and Opus transport are mono.</p></section>
         <section class="setting-group"><h2>AUDIO QUALITY</h2><div class="choice-list">
           <label class="choice-row"><input type="radio" name="audioQuality" checked disabled><span>16 kHz / 16-bit</span><small>Voice profile</small></label>
           <label class="choice-row disabled"><input type="radio" name="audioQuality" disabled><span>44.1 kHz / 24-bit</span><small>Unavailable</small></label>
-        </div><p class="helper">Capture currently uses 16 kHz mono PCM16 and WebRTC Opus. Higher-rate selection is not exposed by the current firmware.</p></section>
+        </div><p class="helper">The live pipeline currently processes mono PCM16 and sends Opus at the firmware profile rate. Opus does not accept 44.1 kHz input; a working high-rate option needs resampling and a 24-bit capture path, so this choice stays unavailable until the complete pipeline supports it.</p></section>
         <section class="setting-group"><h2>DEVICE GAIN</h2><div class="gain-control">
           <label class="gain-heading" id="gainHeading" for="micGain"><span>Microphone gain</span><output id="micGainValue" for="micGain">100%</output></label>
-          <input id="micGain" type="range" min="50" max="150" step="5" value="100" disabled>
+          <input id="micGain" type="range" min="25" max="200" step="5" value="100" disabled>
           <span id="micGainStatus" role="status" aria-live="polite">Start listening and connect to adjust microphone gain.</span>
           <p class="helper">Session-only gain after the ESP32 DSP, before Opus. 100% is 1.0×. Higher settings may clip.</p>
         </div></section>
         <section class="setting-group"><h2>AUDIO PROCESSING</h2>
           <div class="setting-row"><span>Browser AI noise suppression (GTCRN)</span><label class="toggle" aria-label="Enable GTCRN noise suppression"><input id="noiseSuppression" type="checkbox" checked><span></span></label></div>
           <span id="processingStatus" role="status" aria-live="polite">GTCRN will activate when listening starts.</span>
-          <div class="setting-row"><span>ESP32 voice detection (VAD)</span><span class="readonly-tag">Firmware controlled</span></div>
-          <div class="setting-row"><span>ESP32 limiter</span><span class="readonly-tag">Firmware controlled</span></div>
+          <div class="setting-row"><span>ESP32 quiet-interval noise gate</span><label class="toggle" aria-label="Enable ESP32 noise gate"><input id="firmwareNoiseSuppression" type="checkbox" checked disabled><span></span></label></div>
+          <div class="setting-row"><span>ESP32 voice detection (VAD)</span><label class="toggle" aria-label="Enable ESP32 voice detection"><input id="firmwareVad" type="checkbox" checked disabled><span></span></label></div>
+          <div class="setting-row"><span>ESP32 limiter</span><label class="toggle" aria-label="Enable ESP32 limiter"><input id="firmwareLimiter" type="checkbox" checked disabled><span></span></label></div>
+          <span id="audioSettingsStatus" role="status" aria-live="polite">Connect to the selected ESP32 to change microphone mode and DSP controls.</span>
+          <p class="helper">The ESP32 noise gate reduces quiet intervals; it is not AI or spectral noise removal and may soften quiet syllables. Browser GTCRN is the separate AI suppression. VAD reports speech activity without muting. The limiter caps peaks in DSP and before Opus when enabled.</p>
+        </section>
+        <section class="setting-group"><h2>SESSION TIMEOUT</h2>
+          <label class="gain-heading" for="sessionTimeout"><span>Sign out after inactivity</span></label>
+          <select class="settings-select" id="sessionTimeout">
+            <option value="30" selected>30 minutes</option><option value="60">1 hour</option>
+            <option value="120">2 hours</option><option value="1440">24 hours</option>
+            <option value="0">Never</option>
+          </select>
+          <span id="sessionTimeoutStatus" class="helper" role="status" aria-live="polite">30-minute idle timeout is active by default.</span>
         </section>
       </div>
     </section>
@@ -270,16 +487,25 @@
       <section class="setting-group"><h2>DEVICE</h2><div class="diagnostic-grid">
         <div class="metric"><span>Device</span><strong id="diagDevice">ESP32-S3</strong></div><div class="metric"><span>Firmware</span><strong id="diagFirmware">—</strong></div>
         <div class="metric"><span>Uptime</span><strong id="diagUptime">—</strong></div><div class="metric"><span>Boot reason</span><strong id="diagBoot">—</strong></div>
-        <div class="metric"><span>Temperature</span><strong id="diagTemp">—</strong></div><div class="metric"><span>Wi-Fi RSSI</span><strong id="diagRssi">—</strong></div>
+        <div class="metric"><span>CPU frequency</span><strong id="diagCpuFrequency">—</strong></div><div class="metric"><span>Temperature</span><strong id="diagTemp">—</strong></div>
       </div></section>
       <section class="setting-group"><h2>MEMORY</h2><div class="diagnostic-grid">
         <div class="metric"><span>Free heap</span><strong id="diagHeap">—</strong></div><div class="metric"><span>Minimum heap</span><strong id="diagMinHeap">—</strong></div>
         <div class="metric"><span>Free PSRAM</span><strong id="diagPsram">—</strong></div><div class="metric"><span>Audio / sender / monitor stack</span><strong id="diagStacks">—</strong></div>
       </div></section>
-      <section class="setting-group"><h2>NETWORK & WEBRTC</h2><div class="diagnostic-grid">
+      <section class="setting-group"><h2>WEBRTC</h2><div class="diagnostic-grid">
         <div class="metric"><span>Render signaling</span><strong id="diagSignaling">—</strong></div><div class="metric"><span>WebRTC device</span><strong id="diagPeer">—</strong></div>
-        <div class="metric"><span>Audio packets</span><strong id="diagPackets">—</strong></div><div class="metric"><span>Wi-Fi drops</span><strong id="diagWifiDrops">—</strong></div>
+        <div class="metric"><span>Audio packets</span><strong id="diagPackets">—</strong></div>
         <div class="metric wide"><span>Device errors / transmit latency</span><strong id="diagErrors">—</strong></div>
+      </div></section>
+      <section class="setting-group"><h2>NETWORK</h2><div class="diagnostic-grid">
+        <div class="metric"><span>Device</span><strong id="networkDevice">—</strong></div><div class="metric"><span>Wi-Fi</span><strong id="networkWifi">—</strong></div>
+        <div class="metric"><span>Network name</span><strong id="networkSsid">—</strong></div><div class="metric"><span>Signal strength</span><strong id="networkRssi">—</strong></div>
+        <div class="metric"><span>Wi-Fi drops</span><strong id="networkDrops">—</strong></div><div class="metric"><span>Wi-Fi retries</span><strong id="networkRetries">—</strong></div>
+        <div class="metric wide"><span>Device IP</span><strong id="networkIp">—</strong></div>
+      </div><p class="helper" id="networkUpdated">Waiting for authenticated device telemetry.</p></section>
+      <section class="setting-group"><h2>RENDER BACKEND</h2><div class="diagnostic-grid">
+        <div class="metric"><span>Health endpoint</span><strong id="networkRenderHealth">—</strong></div><div class="metric"><span>Selected device signaling</span><strong id="networkSignaling">—</strong></div>
       </div></section>
       <p class="helper" id="diagUpdated">Diagnostics are read from the authenticated Render and ESP32 health endpoints.</p>
     </section>
@@ -287,10 +513,10 @@
     <section class="tab-panel" id="panel-logs" role="tabpanel" aria-labelledby="tab-logs" hidden>
       <div class="section-heading"><h2>EVENT LOG</h2><span class="status-chip"><span id="logCount">0</span> events</span></div>
       <section class="setting-group">
-        <div class="log-toolbar"><div class="filter-list" role="group" aria-label="Filter event log"><button class="filter-button" data-log-filter="all" aria-pressed="true" type="button">All</button><button class="filter-button" data-log-filter="info" aria-pressed="false" type="button">Info</button><button class="filter-button" data-log-filter="warning" aria-pressed="false" type="button">Warning</button><button class="filter-button" data-log-filter="error" aria-pressed="false" type="button">Error</button></div><div><button class="small-button danger" id="clearLogs" type="button">Clear</button> <button class="small-button" id="exportLogs" type="button">Export</button></div></div>
+        <div class="log-toolbar"><div class="filter-list" role="group" aria-label="Filter event log"><button class="filter-button" data-log-filter="all" aria-pressed="true" type="button">All</button><button class="filter-button" data-log-filter="info" aria-pressed="false" type="button">Info</button><button class="filter-button" data-log-filter="warning" aria-pressed="false" type="button">Warning</button><button class="filter-button" data-log-filter="error" aria-pressed="false" type="button">Error</button><button class="filter-button" data-log-filter="backend" aria-pressed="false" type="button">Backend</button></div><label class="autoscroll-option"><input type="checkbox" id="autoScrollLogs" checked> Auto-scroll</label><div><button class="small-button danger" id="clearLogs" type="button">Clear</button> <button class="small-button" id="exportLogs" type="button">Export</button></div></div>
         <div class="log-list" id="logList" aria-live="polite"><div class="log-entry"><span class="log-time">—</span><span class="log-level info">INFO</span><span>Listener ready</span></div></div>
       </section>
-      <p class="helper">This page records connection and playback events locally in this tab. Audio is never written to the event log.</p>
+      <p class="helper">Listener and backend health-check events appear here. “Backend” filters Render health and authenticated API checks; these are app checks, not Render’s private server logs. Audio is not included in the event log.</p>
     </section>
 
     <section class="tab-panel" id="panel-system" role="tabpanel" aria-labelledby="tab-system" hidden>
@@ -298,24 +524,37 @@
       <section class="setting-group"><div class="metric"><span>Current version</span><strong id="systemFirmware">—</strong></div><div class="metric" style="margin-top:7px"><span>Update status</span><strong>OTA endpoint is not available in this build.</strong></div><button class="system-action" type="button" disabled style="margin-top:8px">Check for update <span>Unavailable</span></button><button class="system-action" type="button" disabled style="margin-top:7px">Update now <span>Unavailable</span></button></section>
       <div class="section-heading"><h2>SYSTEM ACTIONS</h2></div>
       <section class="setting-group system-actions">
-        <button class="system-action" id="rebootDevice" type="button">Restart ESP32 <span>›</span></button>
-        <button class="system-action" id="forgetWifi" type="button">Forget Wi-Fi <span>›</span></button>
-        <button class="system-action danger" id="factoryReset" type="button" disabled>Factory reset <span>Deferred</span></button>
+        <button class="system-action" id="rebootDevice" type="button" disabled>Restart selected ESP32 <span>›</span></button>
+        <a class="system-action link" href="http://192.168.4.1/" target="_blank" rel="noopener noreferrer">Change Wi-Fi or hotspot password <span>Open device setup</span></a>
+        <p class="helper">Connect to the ESP32 setup hotspot first. Wi-Fi and hotspot credentials are changed only through its authenticated local setup page; the setup hotspot stays available for recovery.</p>
         <div id="systemActionStatus" class="notice" role="status" aria-live="polite" hidden></div>
       </section>
       <div class="section-heading"><h2>SECURITY</h2></div>
       <section class="setting-group">
         <div class="setting-row"><span>Listener PIN</span><span class="readonly-tag">•••••• · Required</span></div>
-        <div class="setting-row"><span>Device authentication</span><span class="status-chip">On</span></div>
-        <div class="setting-row"><span>Session timeout</span><span class="readonly-tag">30 min idle</span></div>
-        <p class="helper">Timeout and authentication policy are enforced by the server for this session.</p>
+        <button class="system-action" type="button" disabled>Change listener PIN <span>Managed in Render environment</span></button>
+        <div class="setting-row"><span>Require PIN on connection</span><label class="toggle" aria-label="PIN is required"><input type="checkbox" checked disabled><span></span></label></div>
+        <div class="setting-row"><span>Device authentication</span><label class="toggle" aria-label="Device authentication is required"><input type="checkbox" checked disabled><span></span></label></div>
+        <div class="setting-row"><span>Session timeout</span><span class="readonly-tag" id="sessionTimeoutSummary">30 min idle</span></div>
+        <p class="helper">PIN and device authentication stay required. The Render service currently has no persistent in-app credential manager, so PIN rotation is managed through its environment settings.</p>
+      </section>
+      <div class="section-heading"><h2>HOTSPOT RECOVERY</h2></div>
+      <section class="setting-group">
+        <div class="setting-row"><span>Setup hotspot</span><strong class="readonly-tag" id="systemHotspotStatus">Waiting for device</strong></div>
+        <div class="setting-row"><span>Turn hotspot on/off</span><label class="toggle" aria-label="Hotspot state is managed for recovery"><input id="hotspotToggle" type="checkbox" checked disabled><span></span></label></div>
+        <p class="helper">Remote shutdown stays unavailable so Wi-Fi recovery remains reachable when the station network fails. Change its password from the local setup page.</p>
+      </section>
+      <div class="section-heading"><h2>FACTORY RESET</h2></div>
+      <section class="setting-group">
+        <button class="system-action danger" id="factoryReset" type="button" disabled>Factory reset <span>Deferred until final phase</span></button>
+        <p class="helper">The complete factory reset remains deferred until the rest of the project is reliable. Ordinary debugging never clears NVS or credentials.</p>
       </section>
       <div class="section-heading"><h2>LED SETTINGS</h2></div>
-      <section class="setting-group"><div class="setting-row"><span>Status LED</span><span class="readonly-tag">Firmware control unavailable</span></div></section>
+      <section class="setting-group"><div class="setting-row"><span>Status light across tabs</span><label class="toggle" aria-label="Status LED control is not configured"><input id="statusLedToggle" type="checkbox" disabled><span></span></label></div><p class="helper">This firmware has no configured status-LED pin or runtime LED-control API, so an on/off switch here would not affect the board.</p></section>
       <button class="small-button" id="logout" type="button" style="width:100%;margin-top:8px">Sign out</button>
     </section>
 
-    <footer class="footer">ESP32 microphone → Render signaling → WebRTC listener · one-way audio · recording stays on this device</footer>
+    <footer class="footer">ESP32 microphone → Render signaling → WebRTC listener · one-way audio</footer>
   </main>
 <script src="/session-activity.js"></script>
 <script>
@@ -330,16 +569,24 @@ const micGainValueEl = document.getElementById("micGainValue");
 const micGainStatusEl = document.getElementById("micGainStatus");
 const noiseSuppressionEl = document.getElementById("noiseSuppression");
 const processingStatusEl = document.getElementById("processingStatus");
+const micModeEls = Array.from(document.querySelectorAll('input[name="micMode"]'));
+const firmwareNoiseSuppressionEl = document.getElementById("firmwareNoiseSuppression");
+const firmwareVadEl = document.getElementById("firmwareVad");
+const firmwareLimiterEl = document.getElementById("firmwareLimiter");
+const audioSettingsStatusEl = document.getElementById("audioSettingsStatus");
+const sessionTimeoutEl = document.getElementById("sessionTimeout");
+const autoScrollLogsEl = document.getElementById("autoScrollLogs");
 const startButton = document.getElementById("start");
-const stopButton = document.getElementById("stop");
+const listenButtonLabelEl = document.getElementById("listenButtonLabel");
 const recordButton = document.getElementById("record");
-const stopRecordButton = document.getElementById("stopRecord");
-const recordSourceEl = document.getElementById("recordSource");
+const recordButtonLabelEl = document.getElementById("recordButtonLabel");
 const recordStatusEl = document.getElementById("recordStatus");
 const logListEl = document.getElementById("logList");
 const logCountEl = document.getElementById("logCount");
 const deviceOnlinePill = document.getElementById("deviceOnlinePill");
 const deviceStatusLabel = document.getElementById("deviceStatusLabel");
+const deviceSelectEl = document.getElementById("deviceSelect");
+const deviceSelectStatusEl = document.getElementById("deviceSelectStatus");
 const audioLevelFill = document.getElementById("audioLevelFill");
 const audioLevelMeter = document.querySelector(".level-track[role='meter']");
 const playVolumeEl = document.getElementById("playVolume");
@@ -349,32 +596,24 @@ const levelSourceEl = document.getElementById("levelSource");
 const MAX_LOG_ENTRIES = 200;
 let logEntries = [];
 let activeLogFilter = "all";
-let lastDeviceOnline = null;
+try { autoScrollLogsEl.checked = localStorage.getItem("esp32-listener-auto-scroll") !== "false"; } catch {}
+let lastStatusDeviceId = null;
 let lastRenderReachable = null;
+let lastBackendHealth = null;
+let lastDeviceApiReachable = null;
 let lastSignalingState = null;
+let availableDevices = [];
+let selectedDeviceId = "";
 let appStatusTimer = null;
 let diagnosticsBusy = false;
-let recordTimer = null;
-let recordStartedAt = 0;
-
-let socket = null;
-let peer = null;
-let remoteStream = null;
-let sessionId = null;
-let listenerActive = false;
-let manualStop = false;
-let reconnectTimer = null;
-let reconnectAttempt = 0;
-let statsTimer = null;
-let pendingCandidates = [];
-let pendingLocalCandidates = [];
-let localDescriptionSent = false;
-let localIceComplete = false;
-let recordingSourceLabel = "raw";
+let backendHealthBusy = false;
+let playbackVolumePercent = 100;
+let appliedAudioSettings = { mic_mode: "mic1", noise_suppression_enabled: true, vad_enabled: true, limiter_enabled: true };
 let recordedChunks = [];
 let recordedBytes = 0;
 let recordingActive = false;
 let recordingFinalizing = false;
+let recordingStartAttempt = 0;
 let recordingSampleRate = 0;
 let recordingChannels = 0;
 let recordingSourceNode = null;
@@ -382,6 +621,21 @@ let recordingProcessor = null;
 let recordingSilenceGain = null;
 let recordingFlushTimer = null;
 let wavCaptureWorkletLoaded = false;
+
+let socket = null;
+let peer = null;
+let remoteStream = null;
+let sessionId = null;
+let listenerActive = false;
+let manualStop = false;
+let listenerStartAttempt = 0;
+let reconnectTimer = null;
+let reconnectAttempt = 0;
+let statsTimer = null;
+let pendingCandidates = [];
+let pendingLocalCandidates = [];
+let localDescriptionSent = false;
+let localIceComplete = false;
 let sessionRedirectTimer = null;
 let audioContext = null;
 let mediaElementSource = null;
@@ -391,7 +645,6 @@ let outputAnalyser = null;
 let latestInputDbfs = null;
 let latestOutputDbfs = null;
 let playbackGain = null;
-let processedDestination = null;
 let gtcrnApi = null;
 let gtcrnWasmBinary = null;
 let gtcrnWorkletLoaded = false;
@@ -461,7 +714,9 @@ registerProcessor("wav-capture", WavCaptureProcessor);
 function renderLogs() {
   const visibleEntries = activeLogFilter === "all"
     ? logEntries
-    : logEntries.filter((entry) => entry.level === activeLogFilter);
+    : activeLogFilter === "backend"
+      ? logEntries.filter((entry) => entry.category === "backend")
+      : logEntries.filter((entry) => entry.level === activeLogFilter);
   logCountEl.textContent = String(logEntries.length);
   logListEl.replaceChildren();
   if (!visibleEntries.length) {
@@ -485,12 +740,13 @@ function renderLogs() {
     row.append(time, level, message);
     logListEl.append(row);
   }
-  logListEl.scrollTop = logListEl.scrollHeight;
+  if (autoScrollLogsEl.checked) logListEl.scrollTop = logListEl.scrollHeight;
 }
 
-function addLog(message, level = "info") {
+function addLog(message, level = "info", category = "listener") {
   const safeLevel = ["info", "warning", "error"].includes(level) ? level : "info";
-  logEntries.push({ at: new Date(), level: safeLevel, message: String(message).slice(0, 400) });
+  const safeCategory = category === "backend" ? "backend" : "listener";
+  logEntries.push({ at: new Date(), level: safeLevel, category: safeCategory, message: String(message).slice(0, 400) });
   if (logEntries.length > MAX_LOG_ENTRIES) logEntries.splice(0, logEntries.length - MAX_LOG_ENTRIES);
   renderLogs();
 }
@@ -508,6 +764,12 @@ function setState(value) {
   }
 }
 
+function setListenButtonActive(active) {
+  startButton.setAttribute("aria-pressed", String(Boolean(active)));
+  startButton.classList.toggle("stop", Boolean(active));
+  listenButtonLabelEl.textContent = active ? "Stop listening" : "Start listening";
+}
+
 function setQuickStatus(id, value, bad = false) {
   const element = document.getElementById(id);
   element.textContent = value;
@@ -515,7 +777,83 @@ function setQuickStatus(id, value, bad = false) {
 }
 
 function setMetric(id, value) {
-  document.getElementById(id).textContent = value;
+  const element = document.getElementById(id);
+  if (element) element.textContent = value;
+}
+
+function preferredDeviceId() {
+  const queryDeviceId = new URLSearchParams(location.search).get("device_id");
+  if (queryDeviceId) return queryDeviceId;
+  try { return localStorage.getItem("esp32-listener-device-id") || ""; }
+  catch { return ""; }
+}
+
+function persistDeviceSelection() {
+  const params = new URLSearchParams(location.search);
+  if (selectedDeviceId) params.set("device_id", selectedDeviceId);
+  else params.delete("device_id");
+  const query = params.toString();
+  history.replaceState(null, "", `${location.pathname}${query ? `?${query}` : ""}`);
+  try {
+    if (selectedDeviceId) localStorage.setItem("esp32-listener-device-id", selectedDeviceId);
+    else localStorage.removeItem("esp32-listener-device-id");
+  } catch {}
+}
+
+function populateDeviceSelect(devices) {
+  const validDevices = Array.isArray(devices)
+    ? devices.filter((device) => device && typeof device.device_id === "string")
+    : [];
+  validDevices.sort((left, right) => left.device_id.localeCompare(right.device_id));
+  const hadSelection = Boolean(selectedDeviceId);
+  const previousSelection = selectedDeviceId || preferredDeviceId();
+  availableDevices = validDevices;
+  const currentIds = Array.from(deviceSelectEl.options)
+    .map((option) => option.value)
+    .filter(Boolean);
+  const nextIds = validDevices.map((device) => device.device_id);
+  const idsChanged = currentIds.length !== nextIds.length ||
+    currentIds.some((deviceId, index) => deviceId !== nextIds[index]);
+  if (idsChanged) {
+    deviceSelectEl.replaceChildren();
+    for (const device of validDevices) {
+      const option = document.createElement("option");
+      option.value = device.device_id;
+      deviceSelectEl.append(option);
+    }
+    if (!validDevices.length) {
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = "No ESP32 devices configured";
+      deviceSelectEl.append(option);
+    }
+  }
+  for (const [index, device] of validDevices.entries()) {
+    deviceSelectEl.options[index].textContent =
+      `${device.device_id} · ${device.device_connected ? "ONLINE" : "OFFLINE"}`;
+  }
+
+  const preferred = validDevices.find((device) => device.device_id === previousSelection);
+  const initial = preferred || validDevices.find((device) => device.device_connected) || validDevices[0];
+  selectedDeviceId = initial ? initial.device_id : "";
+  if (initial) deviceSelectEl.value = selectedDeviceId;
+  deviceSelectEl.disabled = validDevices.length === 0;
+  startButton.disabled = validDevices.length === 0 && !listenerActive;
+  deviceSelectStatusEl.textContent = initial
+    ? `Audio and session controls apply to ${selectedDeviceId}.`
+    : "Configure device credentials on the Render service to add ESP32 boards.";
+  if (selectedDeviceId && !hadSelection) persistDeviceSelection();
+}
+
+function selectedDeviceStatus() {
+  return availableDevices.find((device) => device.device_id === selectedDeviceId) || null;
+}
+
+function syncDeviceActionAvailability() {
+  const restartButton = document.getElementById("rebootDevice");
+  if (restartButton) {
+    restartButton.disabled = !(selectedDeviceId && sessionId && socket && socket.readyState === WebSocket.OPEN);
+  }
 }
 
 function updateAudioLevelMeter() {
@@ -542,52 +880,157 @@ function resetAudioLevelMeter() {
   levelSourceEl.textContent = "Incoming WebRTC audio";
 }
 
+function formatBytes(value) {
+  if (!Number.isFinite(Number(value)) || Number(value) < 0) return "—";
+  const bytes = Number(value);
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function updateTelemetryViews(device) {
+  const telemetry = device?.telemetry || null;
+  const receivedAt = telemetry?.received_at ? Date.parse(telemetry.received_at) : NaN;
+  const isFresh = telemetry && Number.isFinite(receivedAt) && Date.now() - receivedAt <= 15000;
+  if (!isFresh) {
+    setMetric("diagFirmware", "Waiting for device telemetry");
+    setMetric("diagUptime", "—");
+    setMetric("diagBoot", "—");
+    setMetric("diagCpuFrequency", "—");
+    setMetric("diagTemp", "—");
+    setMetric("diagHeap", "—");
+    setMetric("diagMinHeap", "—");
+    setMetric("diagPsram", "—");
+    setMetric("diagStacks", "Not reported by firmware");
+    setMetric("diagPackets", "—");
+    setMetric("diagErrors", "—");
+    setMetric("networkWifi", "No fresh telemetry");
+    setMetric("networkSsid", "—");
+    setMetric("networkRssi", "—");
+    setMetric("networkDrops", "—");
+    setMetric("networkRetries", "—");
+    setMetric("networkIp", "—");
+    setMetric("networkDevice", device ? selectedDeviceId : "No device selected");
+    setMetric("networkUpdated", "Waiting for authenticated device telemetry.");
+    setMetric("systemHotspotStatus", "No fresh telemetry");
+    const hotspotToggle = document.getElementById("hotspotToggle");
+    if (hotspotToggle) hotspotToggle.checked = false;
+    setMetric("systemFirmware", "—");
+    setQuickStatus("quickWifi", "N/A", true);
+    return;
+  }
+
+  const wifiConnected = telemetry.wifi_connected === true;
+  const wifiText = wifiConnected ? "Connected" : "Disconnected";
+  const sent = Number.isFinite(telemetry.audio_frames_sent) ? Math.floor(telemetry.audio_frames_sent) : null;
+  const dropped = Number.isFinite(telemetry.audio_frames_dropped) ? Math.floor(telemetry.audio_frames_dropped) : null;
+  const errors = [
+    ["capture", telemetry.audio_capture_errors],
+    ["buffer", telemetry.audio_buffer_overflows],
+    ["DSP", telemetry.dsp_errors],
+    ["signaling", telemetry.signaling_errors],
+  ].filter(([, value]) => Number.isFinite(value)).map(([name, value]) => `${name} ${Math.floor(value)}`);
+  const healthy = telemetry.health_ok === true && telemetry.health_fault_latched !== true;
+
+  setMetric("diagFirmware", telemetry.firmware || "—");
+  setMetric("diagUptime", Number.isFinite(telemetry.uptime_ms) ? formatDuration(telemetry.uptime_ms / 1000) : "—");
+  setMetric("diagBoot", Number.isFinite(telemetry.reset_reason) ? `Reset reason ${Math.floor(telemetry.reset_reason)}` : "—");
+  setMetric("diagCpuFrequency", Number.isFinite(telemetry.cpu_frequency_mhz) ? `${Math.round(telemetry.cpu_frequency_mhz)} MHz` : "—");
+  setMetric("diagTemp", Number.isFinite(telemetry.temperature_c) ? `${telemetry.temperature_c.toFixed(1)} °C` : "Unavailable");
+  setMetric("diagHeap", formatBytes(telemetry.free_heap));
+  setMetric("diagMinHeap", formatBytes(telemetry.min_free_heap));
+  setMetric("diagPsram", Number.isFinite(telemetry.free_psram) ? formatBytes(telemetry.free_psram) : "Unavailable");
+  setMetric("diagStacks", "Not reported by firmware");
+  setMetric("diagPackets", sent === null ? "—" : `${sent} sent · ${dropped ?? 0} dropped`);
+  setMetric("diagErrors", `${healthy ? "Health OK" : "Health fault"}${errors.length ? ` · ${errors.join(" · ")}` : ""}`);
+  setMetric("networkDevice", `${selectedDeviceId} · ${device.device_connected ? "online" : "offline"}`);
+  setMetric("networkWifi", wifiText);
+  setMetric("networkSsid", telemetry.wifi_ssid || "—");
+  setMetric("networkRssi", wifiConnected && Number.isFinite(telemetry.wifi_rssi) ? `${Math.round(telemetry.wifi_rssi)} dBm` : "—");
+  setMetric("networkDrops", Number.isFinite(telemetry.wifi_disconnect_count) ? String(Math.floor(telemetry.wifi_disconnect_count)) : "—");
+  setMetric("networkRetries", Number.isFinite(telemetry.wifi_retry_count) ? String(Math.floor(telemetry.wifi_retry_count)) : "—");
+  setMetric("networkIp", telemetry.ip || "—");
+  setMetric("networkUpdated", `Telemetry received ${new Date(receivedAt).toLocaleTimeString()}.`);
+  setMetric("systemHotspotStatus", telemetry.hotspot_running === true
+    ? `Running · ${Math.floor(telemetry.hotspot_clients || 0)} client(s)` : "Not running");
+  const hotspotToggle = document.getElementById("hotspotToggle");
+  if (hotspotToggle) hotspotToggle.checked = telemetry.hotspot_running === true;
+  setMetric("systemFirmware", telemetry.firmware || "—");
+  setQuickStatus("quickWifi", wifiConnected ? "CONNECTED" : "DISCONNECTED", !wifiConnected);
+}
+
+async function refreshBackendHealth() {
+  if (backendHealthBusy) return;
+  backendHealthBusy = true;
+  try {
+    const response = await fetch("/health", { cache: "no-store", credentials: "same-origin" });
+    const healthy = response.ok;
+    setMetric("networkRenderHealth", healthy ? "Healthy" : `HTTP ${response.status}`);
+    if (lastBackendHealth !== healthy) {
+      addLog(healthy ? "Render /health check passed" : `Render /health check failed (HTTP ${response.status})`, healthy ? "info" : "error", "backend");
+    }
+    lastBackendHealth = healthy;
+  } catch (error) {
+    setMetric("networkRenderHealth", "Unavailable");
+    if (lastBackendHealth !== false) addLog(`Render /health check failed: ${error.message}`, "error", "backend");
+    lastBackendHealth = false;
+  } finally {
+    backendHealthBusy = false;
+  }
+}
+
 async function refreshAppStatus() {
-  const [deviceResult, webrtcResult] = await Promise.allSettled([
-    getJson("/api/device-status"),
-    getJson("/api/webrtc-status")
-  ]);
-  const renderReachable = deviceResult.status === "fulfilled";
-  if (lastRenderReachable !== null && renderReachable !== lastRenderReachable) {
-    addLog(renderReachable ? "Render status API reachable" : "Render status API unavailable", renderReachable ? "info" : "error");
+  const devicesResult = await Promise.allSettled([getJson("/api/devices")]);
+  const renderReachable = devicesResult[0].status === "fulfilled";
+  if (lastRenderReachable !== renderReachable) {
+    addLog(renderReachable ? "Authenticated device API check passed" : "Authenticated device API check failed", renderReachable ? "info" : "error", "backend");
   }
   lastRenderReachable = renderReachable;
+  lastDeviceApiReachable = renderReachable;
   setQuickStatus("quickRender", renderReachable ? "CONNECTED" : "UNAVAILABLE", !renderReachable);
 
   if (renderReachable) {
-    const device = deviceResult.value;
-    const online = Boolean(device.online);
+    const response = devicesResult[0].value;
+    populateDeviceSelect(response.devices);
+    const selected = selectedDeviceStatus();
+    const online = Boolean(selected && selected.device_connected);
     deviceOnlinePill.classList.toggle("online", online);
-    deviceOnlinePill.classList.toggle("offline", !online);
-    deviceStatusLabel.textContent = online ? "ONLINE" : "OFFLINE";
-    setQuickStatus("quickDevice", online ? "ONLINE" : "OFFLINE", !online);
-    setQuickStatus("quickWifi", online ? "CONNECTED" : "OFFLINE", !online);
-    if (lastDeviceOnline !== null && online !== lastDeviceOnline) {
-      addLog(online ? "ESP32 connected to Render" : "ESP32 disconnected from Render", online ? "info" : "warning");
-    }
-    lastDeviceOnline = online;
+    deviceOnlinePill.classList.toggle("offline", Boolean(selected) && !online);
+    deviceStatusLabel.textContent = selected ? (online ? "ONLINE" : "OFFLINE") : "NO DEVICE";
+    setQuickStatus("quickDevice", selected ? (online ? "ONLINE" : "OFFLINE") : "NOT CONFIGURED", !online);
+    updateTelemetryViews(selected);
+    deviceSelectStatusEl.textContent = selected
+      ? `${selectedDeviceId} is ${online ? "connected to Render signaling" : "offline"}.`
+      : "Configure device credentials on the Render service to add ESP32 boards.";
+    const peerState = peer?.connectionState;
+    const label = peerState === "connected" ? "CONNECTED"
+      : selected?.session_active || sessionId ? "CONNECTING"
+        : "IDLE";
+    setQuickStatus("quickWebRtc", label, peerState === "failed");
+    setMetric("networkSignaling", online ? "Connected" : "Device offline");
   } else {
     deviceOnlinePill.classList.remove("online", "offline");
     deviceStatusLabel.textContent = "UNKNOWN";
     setQuickStatus("quickDevice", "UNKNOWN", true);
-    setQuickStatus("quickWifi", "UNKNOWN", true);
-  }
-
-  if (webrtcResult.status === "fulfilled") {
-    const status = webrtcResult.value;
-    const signalingState = status.device_connected ? "device connected" : "device disconnected";
-    if (lastSignalingState !== null && signalingState !== lastSignalingState) {
-      addLog(`WebRTC signaling: ${signalingState}`, status.device_connected ? "info" : "warning");
-    }
-    lastSignalingState = signalingState;
-    const peerState = peer?.connectionState;
-    const label = peerState === "connected" ? "CONNECTED"
-      : status.session_active || sessionId ? "CONNECTING"
-        : "IDLE";
-    setQuickStatus("quickWebRtc", label, peerState === "failed");
-  } else {
+    setQuickStatus("quickWifi", "N/A", true);
     setQuickStatus("quickWebRtc", "UNKNOWN", true);
+    setMetric("networkSignaling", "Unavailable");
   }
+  const selected = selectedDeviceStatus();
+  if (selected) {
+    const nextState = selected.device_connected ? "device connected" : "device disconnected";
+    if (lastStatusDeviceId === selectedDeviceId && lastSignalingState !== null &&
+        nextState !== lastSignalingState) {
+      addLog(`${selectedDeviceId} WebRTC signaling: ${nextState}`, selected.device_connected ? "info" : "warning");
+    }
+    lastSignalingState = nextState;
+    lastStatusDeviceId = selectedDeviceId;
+  } else {
+    lastSignalingState = null;
+    lastStatusDeviceId = null;
+  }
+  syncDeviceActionAvailability();
+  void refreshBackendHealth();
 }
 
 async function refreshDiagnostics() {
@@ -595,58 +1038,29 @@ async function refreshDiagnostics() {
   diagnosticsBusy = true;
   const refreshButton = document.getElementById("refreshDiagnostics");
   refreshButton.disabled = true;
-  setMetric("diagUpdated", "Refreshing authenticated device diagnostics…");
-  const [deviceResult, webrtcResult, healthResult] = await Promise.allSettled([
-    getJson("/api/device-status"),
-    getJson("/api/webrtc-status"),
-    getJson("/api/esp32-health")
-  ]);
-  if (deviceResult.status === "fulfilled") {
-    const device = deviceResult.value;
-    setMetric("diagDevice", device.online ? "ESP32-S3 · online" : "ESP32-S3 · offline");
-  } else {
-    setMetric("diagDevice", "Status unavailable");
-  }
-  if (webrtcResult.status === "fulfilled") {
-    const status = webrtcResult.value;
-    setMetric("diagSignaling", status.device_connected ? "ESP32 signaling connected" : "ESP32 signaling offline");
-    setMetric("diagPeer", peer?.connectionState || (status.session_active ? "Session active" : "No listener session"));
-  } else {
+  setMetric("diagUpdated", "Refreshing authenticated device telemetry…");
+  try {
+    const response = await getJson("/api/devices");
+    populateDeviceSelect(response.devices);
+    const device = selectedDeviceStatus();
+    updateTelemetryViews(device);
+    setMetric("diagDevice", device ? `${selectedDeviceId} · ${device.device_connected ? "online" : "offline"}` : "No device selected");
+    setMetric("diagSignaling", device?.device_connected ? "ESP32 signaling connected" : "ESP32 signaling offline");
+    setMetric("diagPeer", peer?.connectionState || (device?.session_active ? "Session active" : "No listener session"));
+    setMetric("diagUpdated", device?.telemetry?.received_at
+      ? `Updated ${new Date().toLocaleTimeString()} · device telemetry received ${new Date(device.telemetry.received_at).toLocaleTimeString()}`
+      : `Updated ${new Date().toLocaleTimeString()} · waiting for fresh device telemetry`);
+    setMetric("networkSignaling", device?.device_connected ? "Connected" : "Device offline");
+    void refreshBackendHealth();
+  } catch (error) {
+    setMetric("diagUpdated", `Status unavailable · ${error.message}`);
+    setMetric("diagDevice", "Unavailable");
     setMetric("diagSignaling", "Unavailable");
     setMetric("diagPeer", peer?.connectionState || "Unavailable");
+  } finally {
+    refreshButton.disabled = false;
+    diagnosticsBusy = false;
   }
-
-  let healthError = "";
-  if (healthResult.status === "fulfilled") {
-    const health = healthResult.value;
-    const number = (value) => value === null || value === undefined || value === ""
-      ? null
-      : Number.isFinite(Number(value)) ? Number(value) : null;
-    const kb = (value) => number(value) === null ? "—" : `${Math.round(number(value) / 1024)} KB`;
-    const count = (value) => number(value) === null ? "—" : String(number(value));
-    setMetric("diagDevice", health.chip || (deviceResult.status === "fulfilled" && deviceResult.value.online ? "ESP32-S3 · online" : "ESP32-S3"));
-    setMetric("diagFirmware", health.version || "—");
-    setMetric("diagUptime", formatDuration(health.uptime_sec));
-    setMetric("diagBoot", health.boot_reason || "—");
-    setMetric("diagTemp", number(health.temp_c) === null ? "—" : `${number(health.temp_c).toFixed(1)} °C`);
-    setMetric("diagRssi", number(health.wifi_rssi) === null ? "—" : `${number(health.wifi_rssi)} dBm`);
-    setMetric("diagHeap", kb(health.free_heap));
-    setMetric("diagMinHeap", kb(health.min_heap));
-    setMetric("diagPsram", kb(health.free_psram));
-    setMetric("diagStacks", `${count(health.stack_audio)} / ${count(health.stack_sender)} / ${count(health.stack_monitor)}`);
-    setMetric("diagPackets", `${count(health.packets)} packets · ${number(health.bytes) === null ? "—" : `${(number(health.bytes) / 1048576).toFixed(1)} MB`}`);
-    setMetric("diagWifiDrops", count(health.wifi_drops));
-    setMetric("diagErrors", `${count(health.send_err)} send / ${count(health.i2s_err)} I²S · ${count(health.tx_max_us)} µs max TX / ${count(health.tx_slow)} slow`);
-    setMetric("systemFirmware", health.version || "—");
-    setQuickStatus("quickWifi", number(health.wifi_rssi) === null ? "UNKNOWN" : `RSSI ${number(health.wifi_rssi)} dBm`, number(health.wifi_rssi) === null);
-  } else {
-    healthError = healthResult.reason?.message || "ESP32 health unavailable";
-    addLog(`ESP32 health unavailable: ${healthError}`, "warning");
-  }
-  const updated = new Date().toLocaleTimeString();
-  setMetric("diagUpdated", healthError ? `Last checked ${updated} · ${healthError}` : `Updated ${updated}`);
-  refreshButton.disabled = false;
-  diagnosticsBusy = false;
 }
 
 function formatDuration(seconds) {
@@ -683,6 +1097,75 @@ function setAppTab(name, focus = false) {
   if (name === "diagnostics" || name === "system") void refreshDiagnostics();
 }
 
+function sessionTimeoutLabel(minutes) {
+  if (minutes === 0) return "Never";
+  if (minutes === 30) return "30 minutes";
+  if (minutes === 60) return "1 hour";
+  if (minutes === 120) return "2 hours";
+  if (minutes === 1440) return "24 hours";
+  return "Unknown";
+}
+
+function showSessionTimeout(minutes, saved = false) {
+  const label = sessionTimeoutLabel(minutes);
+  setMetric("sessionTimeoutSummary", minutes === 0 ? "Never" : `${label} idle`);
+  setMetric("sessionTimeoutStatus", minutes === 0
+    ? "No idle sign-out; a Render restart or explicit sign-out still ends this login."
+    : `${saved ? "Saved" : "Active"}: sign out after ${label} without activity.`);
+}
+
+async function loadSessionTimeout() {
+  try {
+    const response = await getJson("/api/session/settings");
+    const minutes = Number(response.timeout_minutes);
+    if (![0, 30, 60, 120, 1440].includes(minutes)) throw new Error("Unexpected timeout setting");
+    sessionTimeoutEl.value = String(minutes);
+    sessionTimeoutEl.dataset.savedValue = String(minutes);
+    showSessionTimeout(minutes);
+  } catch (error) {
+    setMetric("sessionTimeoutStatus", `Could not load timeout setting · ${error.message}`);
+  }
+}
+
+async function saveSessionTimeout() {
+  const previous = sessionTimeoutEl.dataset.savedValue || "30";
+  const minutes = Number(sessionTimeoutEl.value);
+  sessionTimeoutEl.disabled = true;
+  try {
+    const response = await fetch("/api/session/timeout", {
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({ timeout_minutes: minutes }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (response.status === 401) {
+      window.location.assign("/");
+      return;
+    }
+    if (!response.ok || result.timeout_minutes !== minutes) {
+      throw new Error(result.error || `HTTP ${response.status}`);
+    }
+    sessionTimeoutEl.dataset.savedValue = String(minutes);
+    showSessionTimeout(minutes, true);
+    addLog(`Listener idle timeout set to ${sessionTimeoutLabel(minutes)}`, "info", "backend");
+  } catch (error) {
+    sessionTimeoutEl.value = previous;
+    showSessionTimeout(Number(previous));
+    setMetric("sessionTimeoutStatus", `Could not save timeout setting · ${error.message}`);
+    addLog(`Listener timeout update failed: ${error.message}`, "error", "backend");
+  } finally {
+    sessionTimeoutEl.disabled = false;
+  }
+}
+
+sessionTimeoutEl.addEventListener("change", () => { void saveSessionTimeout(); });
+autoScrollLogsEl.addEventListener("change", () => {
+  try { localStorage.setItem("esp32-listener-auto-scroll", String(autoScrollLogsEl.checked)); } catch {}
+  if (autoScrollLogsEl.checked) logListEl.scrollTop = logListEl.scrollHeight;
+});
+
 document.querySelectorAll("[data-tab]").forEach((button, index, buttons) => {
   button.addEventListener("click", () => setAppTab(button.dataset.tab));
   button.addEventListener("keydown", (event) => {
@@ -714,7 +1197,7 @@ document.getElementById("clearLogs").addEventListener("click", () => {
 
 document.getElementById("exportLogs").addEventListener("click", () => {
   const content = logEntries.map((entry) =>
-    `${entry.at.toISOString()} [${entry.level.toUpperCase()}] ${entry.message}`
+    `${entry.at.toISOString()} [${entry.category.toUpperCase()}/${entry.level.toUpperCase()}] ${entry.message}`
   ).join("\n");
   const url = URL.createObjectURL(new Blob([content || "No listener events recorded.\n"], { type: "text/plain" }));
   const link = document.createElement("a");
@@ -765,6 +1248,71 @@ function handleMicGainAck(message) {
   micGainStatusEl.textContent = `ESP32 gain set to ${gainPercent}%.`;
 }
 
+function currentAudioSettings() {
+  return {
+    mic_mode: micModeEls.find((input) => input.checked)?.value || "mic1",
+    noise_suppression_enabled: firmwareNoiseSuppressionEl.checked,
+    vad_enabled: firmwareVadEl.checked,
+    limiter_enabled: firmwareLimiterEl.checked
+  };
+}
+
+function applyAudioSettings(settings) {
+  const mode = micModeEls.find((input) => input.value === settings.mic_mode);
+  if (mode) mode.checked = true;
+  firmwareNoiseSuppressionEl.checked = Boolean(settings.noise_suppression_enabled);
+  firmwareVadEl.checked = Boolean(settings.vad_enabled);
+  firmwareLimiterEl.checked = Boolean(settings.limiter_enabled);
+}
+
+function refreshAudioSettingsAvailability() {
+  const available = !!sessionId && !!socket && socket.readyState === WebSocket.OPEN;
+  for (const input of micModeEls) input.disabled = !available || input.value === "both_stereo";
+  firmwareNoiseSuppressionEl.disabled = !available;
+  firmwareVadEl.disabled = !available;
+  firmwareLimiterEl.disabled = !available;
+  if (!available) {
+    audioSettingsStatusEl.textContent = "Connect to the selected ESP32 to change microphone mode, noise gate, VAD, or limiter.";
+  }
+}
+
+function sendAudioSettings() {
+  if (!sessionId || !socket || socket.readyState !== WebSocket.OPEN) {
+    refreshAudioSettingsAvailability();
+    return;
+  }
+  const settings = currentAudioSettings();
+  const sent = send({ type: "webrtc_audio_settings", session_id: sessionId, ...settings });
+  audioSettingsStatusEl.textContent = sent
+    ? "Applying settings on the selected ESP32…"
+    : "Could not send settings. Check the listener connection.";
+}
+
+function handleAudioSettingsAck(message) {
+  if (message.session_id !== sessionId || typeof message.ok !== "boolean") return;
+  if (!message.ok) {
+    applyAudioSettings(appliedAudioSettings);
+    audioSettingsStatusEl.textContent = "The ESP32 rejected these settings; the previous values were restored.";
+    addLog("ESP32 rejected an audio settings change", "warning");
+    return;
+  }
+  const accepted = {
+    mic_mode: message.mic_mode,
+    noise_suppression_enabled: message.noise_suppression_enabled,
+    vad_enabled: message.vad_enabled,
+    limiter_enabled: message.limiter_enabled
+  };
+  if (!micModeEls.some((input) => input.value === accepted.mic_mode) ||
+      typeof accepted.noise_suppression_enabled !== "boolean" ||
+      typeof accepted.vad_enabled !== "boolean" ||
+      typeof accepted.limiter_enabled !== "boolean") return;
+  appliedAudioSettings = accepted;
+  applyAudioSettings(accepted);
+  const modeLabel = accepted.mic_mode === "mic1" ? "Mic 1" :
+    accepted.mic_mode === "mic2" ? "Mic 2" : "Both (Mono)";
+  audioSettingsStatusEl.textContent = `${modeLabel} applied · noise gate ${accepted.noise_suppression_enabled ? "on" : "off"} · VAD ${accepted.vad_enabled ? "on" : "off"} · limiter ${accepted.limiter_enabled ? "on" : "off"}.`;
+}
+
 function setAudioProcessingStatus(value) {
   audioProcessingStatus = value;
   processingStatusEl.textContent = value;
@@ -788,7 +1336,8 @@ function formatAudioLevelDbfs(value) {
 function syncPlaybackGain() {
   if (!audioContext || !playbackGain) return;
   const playing = remoteStream && !audioEl.paused;
-  playbackGain.gain.value = playing && !audioEl.muted ? audioEl.volume : 0;
+  const selectedGain = Math.max(0, Math.min(300, playbackVolumePercent)) / 100;
+  playbackGain.gain.value = playing && !audioEl.muted ? selectedGain * audioEl.volume : 0;
 }
 
 audioEl.addEventListener("play", () => {
@@ -830,7 +1379,6 @@ async function prepareAudioOutput() {
       const inputMeter = context.createAnalyser();
       const outputMeter = context.createAnalyser();
       const gain = context.createGain();
-      const destination = context.createMediaStreamDestination();
       inputMeter.fftSize = 2048;
       outputMeter.fftSize = 2048;
       inputMeter.smoothingTimeConstant = 0;
@@ -838,18 +1386,17 @@ async function prepareAudioOutput() {
       gain.gain.value = 1;
       inputMeter.connect(outputMeter);
       outputMeter.connect(gain);
-      gain.connect(destination);
       gain.connect(context.destination);
       // Keep the visible audio element as the source of its play/volume/mute controls,
       // but do not use its MediaElementAudioSourceNode for RTP audio processing.
       // WebRTC tracks are connected directly with createMediaStreamSource below.
       const elementSource = context.createMediaElementSource(audioEl);
+      audioEl.volume = 1;
       audioContext = context;
       mediaElementSource = elementSource;
       inputAnalyser = inputMeter;
       outputAnalyser = outputMeter;
       playbackGain = gain;
-      processedDestination = destination;
       syncPlaybackGain();
     } catch (error) {
       await context.close();
@@ -930,7 +1477,7 @@ function disableNoiseSuppression() {
   noiseSuppressionActive = false;
   silentInputSinceMs = null;
   if (remoteStream) {
-    if (mediaElementSource) connectRemoteAudioStream(remoteStream);
+    if (audioContext) connectRemoteAudioStream(remoteStream);
     else audioEl.srcObject = remoteStream;
     void audioEl.play().catch(() => setState("Audio ready — press play"));
   }
@@ -943,9 +1490,6 @@ function restoreDirectAudio(message) {
   if (remoteStream) {
     audioEl.srcObject = remoteStream;
     void audioEl.play().catch(() => setState("Audio ready — press play"));
-  }
-  if ((recordingActive || recordingFinalizing) && recordingSourceLabel === "filtered") {
-    recordingSourceLabel = "direct-fallback";
   }
   setAudioProcessingStatus("Direct WebRTC audio restored; noise suppression is off");
   errorEl.textContent = message;
@@ -1073,14 +1617,29 @@ function startMediaStats(targetPeer) {
 
 function send(message) {
   if (!socket || socket.readyState !== WebSocket.OPEN) return false;
-  socket.send(JSON.stringify(message));
-  return true;
+  try {
+    socket.send(JSON.stringify(message));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function hasLiveRecordingTrack() {
+  return Boolean(remoteStream && remoteStream.getAudioTracks().some((track) => track.readyState === "live"));
+}
+
+function syncRecordButton() {
+  recordButton.disabled = recordingFinalizing || (!recordingActive && !hasLiveRecordingTrack());
+  recordButton.setAttribute("aria-pressed", recordingActive ? "true" : "false");
+  recordButtonLabelEl.textContent = recordingActive ? "Stop recording" : "Start recording";
 }
 
 function closePeer() {
+  recordingStartAttempt++;
+  if (recordingActive) stopRecording();
   if (statsTimer) clearInterval(statsTimer);
   statsTimer = null;
-  if (recordingActive) stopRecording();
   if (peer) {
     try { peer.ontrack = null; peer.onicecandidate = null; peer.close(); } catch {}
   }
@@ -1092,13 +1651,13 @@ function closePeer() {
     mediaStreamSource = null;
   }
   remoteStream = null;
+  syncRecordButton();
+  if (!recordingFinalizing) recordStatusEl.textContent = "Connect to audio to record a WAV file.";
   audioEl.pause();
   audioEl.srcObject = null;
   resetAudioLevelMeter();
   mediaStatusEl.textContent = "Audio: waiting for a remote track.";
   refreshAudioProcessingStatus();
-  recordButton.disabled = true;
-  stopRecordButton.disabled = true;
   pendingCandidates = [];
   pendingLocalCandidates = [];
   localDescriptionSent = false;
@@ -1117,16 +1676,18 @@ function scheduleReconnect() {
 }
 
 function connectSocket() {
-  if (!listenerActive || manualStop) return;
+  if (!listenerActive || manualStop || !selectedDeviceId) return;
   if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
   const scheme = location.protocol === "https:" ? "wss:" : "ws:";
   const current = new WebSocket(`${scheme}//${location.host}/ws`);
   socket = current;
-  setState("Connecting to Render signaling");
+  setState(`Connecting to ${selectedDeviceId}`);
   current.onopen = () => {
-    current.send(JSON.stringify({ type: "webrtc_listener_hello" }));
+    if (socket !== current || !listenerActive) return;
+    current.send(JSON.stringify({ type: "webrtc_listener_hello", device_id: selectedDeviceId }));
   };
   current.onmessage = async (event) => {
+    if (socket !== current) return;
     if (typeof event.data !== "string") return;
     let message;
     try { message = JSON.parse(event.data); } catch { return; }
@@ -1134,18 +1695,18 @@ function connectSocket() {
       errorEl.textContent = message.reason || "Signaling rejected";
       if (message.reason === "listener_busy") {
         listenerActive = false;
+        listenerStartAttempt++;
         window.setListenerActive(false);
-        startButton.disabled = false;
-        stopButton.disabled = true;
+        setListenButtonActive(false);
         setState("Another listener is already active");
         errorEl.textContent = "This device already has an active WebRTC listener.";
         return;
       }
       if (message.reason === "listener_session_required" || message.reason === "listener_session_expired") {
         listenerActive = false;
+        listenerStartAttempt++;
         window.setListenerActive(false);
-        startButton.disabled = false;
-        stopButton.disabled = true;
+        setListenButtonActive(false);
         setState("Sign-in required");
         errorEl.textContent = "Your listener session expired. Returning to sign-in…";
         if (sessionRedirectTimer) clearTimeout(sessionRedirectTimer);
@@ -1154,15 +1715,20 @@ function connectSocket() {
       return;
     }
     if (message.type === "webrtc_listener_ready") {
-      setState("Waiting for ESP32");
+      setState(`Waiting for ${message.device_id || selectedDeviceId}`);
       return;
     }
     if (message.type === "webrtc_waiting_for_device") {
-      setState("Waiting for ESP32");
+      setState(`Waiting for ${message.device_id || selectedDeviceId}`);
       return;
     }
     if (message.type === "webrtc_session_ready") {
       sessionId = message.session_id;
+      syncDeviceActionAvailability();
+      appliedAudioSettings = { mic_mode: "mic1", noise_suppression_enabled: true, vad_enabled: true, limiter_enabled: true };
+      applyAudioSettings(appliedAudioSettings);
+      refreshAudioSettingsAvailability();
+      audioSettingsStatusEl.textContent = `Connected to ${selectedDeviceId}; microphone mode, noise gate, and DSP toggles are ready.`;
       micGainEl.value = "100";
       micGainValueEl.value = "100%";
       micGainStatusEl.textContent = "Session default is 100%; waiting for WebRTC audio connection.";
@@ -1182,23 +1748,32 @@ function connectSocket() {
     if (message.type === "webrtc_session_end") {
       closePeer();
       sessionId = null;
+      syncDeviceActionAvailability();
       refreshMicGainAvailability();
-      setState("Waiting for ESP32");
+      refreshAudioSettingsAvailability();
+      setState(`Waiting for ${message.device_id || selectedDeviceId}`);
       return;
     }
     if (message.type === "webrtc_audio_control_ack") {
       handleMicGainAck(message);
       return;
     }
+    if (message.type === "webrtc_audio_settings_ack") {
+      handleAudioSettingsAck(message);
+      return;
+    }
     if (message.type === "webrtc_signal" && message.session_id === sessionId) {
       await handleSignal(message);
     }
   };
-  current.onerror = () => { setState("Signaling error"); };
+  current.onerror = () => { if (socket === current) setState("Signaling error"); };
   current.onclose = () => {
-    if (socket === current) socket = null;
+    if (socket !== current) return;
+    socket = null;
     sessionId = null;
     closePeer();
+    refreshAudioSettingsAvailability();
+    syncDeviceActionAvailability();
     if (!manualStop) scheduleReconnect();
   };
 }
@@ -1236,13 +1811,19 @@ async function createPeer() {
     remoteStream = event.streams && event.streams[0]
       ? event.streams[0]
       : new MediaStream([event.track]);
+    for (const track of remoteStream.getAudioTracks()) {
+      track.addEventListener("ended", () => {
+        if (recordingActive) stopRecording();
+        syncRecordButton();
+      }, { once: true });
+    }
+    syncRecordButton();
     refreshAudioProcessingStatus();
     void updateMediaStatus(peer);
-    recordButton.disabled = false;
     try {
       if (noiseSuppressionActive) {
         connectRemoteAudioStream(remoteStream);
-      } else if (mediaElementSource) {
+      } else if (audioContext) {
         connectRemoteAudioStream(remoteStream);
       } else {
         audioEl.srcObject = remoteStream;
@@ -1362,16 +1943,11 @@ function finishWavRecording() {
   if (recordingFlushTimer) clearTimeout(recordingFlushTimer);
   recordingFlushTimer = null;
   cleanupWavCapture();
-  if (recordTimer) clearInterval(recordTimer);
-  recordTimer = null;
-  recordSourceEl.disabled = false;
-  stopRecordButton.disabled = true;
-  recordButton.disabled = !(remoteStream && remoteStream.getAudioTracks().some((track) => track.readyState === "live"));
+  syncRecordButton();
 
-  const durationSeconds = (Date.now() - recordStartedAt) / 1000;
   if (!recordedBytes) {
     recordedChunks = [];
-    recordStatusEl.textContent = "No audio saved";
+    recordStatusEl.textContent = "No audio captured";
     recordingSampleRate = 0;
     recordingChannels = 0;
     return;
@@ -1383,14 +1959,11 @@ function finishWavRecording() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `ESP32-audio-${recordingSourceLabel}-${new Date().toISOString().replace(/[:.]/g, "-")}.wav`;
+    link.download = `ESP32-audio-${new Date().toISOString().replace(/[:.]/g, "-")}.wav`;
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    recordStatusEl.textContent = `Saved WAV · ${formatDuration(durationSeconds)}`;
+    recordStatusEl.textContent = "WAV saved to this device";
     addLog("WAV audio recording saved to this device");
-    setTimeout(() => {
-      if (!recordingActive && !recordingFinalizing) recordStatusEl.textContent = "Not recording";
-    }, 5000);
   } catch (error) {
     errorEl.textContent = `WAV recording could not be saved: ${error.message}`;
     recordStatusEl.textContent = "WAV save failed";
@@ -1415,7 +1988,7 @@ function receiveWavChunk(event) {
       return;
     }
     if (recordedBytes + chunkBytes > MAX_RECORDING_BYTES - WAV_HEADER_BYTES) {
-      errorEl.textContent = "WAV recording stopped at the local storage limit; the captured audio is being saved.";
+      errorEl.textContent = "Recording reached the local size limit; saving the captured audio.";
       if (recordingActive) stopRecording();
       return;
     }
@@ -1430,6 +2003,7 @@ function receiveWavChunk(event) {
 
 async function startRecording() {
   if (recordingActive || recordingFinalizing) return;
+  const startAttempt = ++recordingStartAttempt;
   const liveTracks = remoteStream ? remoteStream.getAudioTracks().filter((track) => track.readyState === "live") : [];
   if (!liveTracks.length) {
     errorEl.textContent = "No live incoming WebRTC audio track is available to record.";
@@ -1439,24 +2013,15 @@ async function startRecording() {
     errorEl.textContent = "This browser does not support local WAV recording.";
     return;
   }
+
   recordedChunks = [];
   recordedBytes = 0;
   recordButton.disabled = true;
-  recordSourceEl.disabled = true;
-  recordStatusEl.textContent = "Preparing WAV recorder…";
+  recordStatusEl.textContent = "Preparing WAV recording…";
   try {
-    const useFilteredOutput = recordSourceEl.value === "filtered";
-    recordingSourceLabel = useFilteredOutput ? (noiseSuppressionActive ? "filtered" : "listener-output") : "raw";
-    if (useFilteredOutput && !processedDestination) {
-      errorEl.textContent = "Filtered output is not ready. Start listening again, or select raw incoming audio.";
-      recordButton.disabled = false;
-      recordSourceEl.disabled = false;
-      recordStatusEl.textContent = "Not recording";
-      return;
-    }
-    const recordingStream = useFilteredOutput ? processedDestination.stream : new MediaStream(liveTracks);
+    const recordingStream = new MediaStream(liveTracks);
     const recordingTrack = recordingStream.getAudioTracks().find((track) => track.readyState === "live");
-    if (!recordingTrack) throw new Error("The selected audio source has no live track.");
+    if (!recordingTrack) throw new Error("No live audio track is available.");
     const trackSettings = typeof recordingTrack.getSettings === "function" ? recordingTrack.getSettings() : {};
     const trackChannels = Number(trackSettings.channelCount);
     recordingChannels = Number.isInteger(trackChannels) && trackChannels > 0 ? Math.min(trackChannels, 2) : 1;
@@ -1465,6 +2030,7 @@ async function startRecording() {
       throw new Error(`Unsupported WAV sample rate: ${recordingSampleRate} Hz.`);
     }
     if (audioContext.state === "suspended") await audioContext.resume();
+    if (startAttempt !== recordingStartAttempt || !liveTracks.some((track) => track.readyState === "live")) return;
     if (!wavCaptureWorkletLoaded) {
       const moduleUrl = URL.createObjectURL(new Blob([WAV_CAPTURE_WORKLET_SOURCE], { type: "application/javascript" }));
       try {
@@ -1474,6 +2040,7 @@ async function startRecording() {
         URL.revokeObjectURL(moduleUrl);
       }
     }
+    if (startAttempt !== recordingStartAttempt || !liveTracks.some((track) => track.readyState === "live")) return;
 
     recordingSourceNode = audioContext.createMediaStreamSource(recordingStream);
     recordingProcessor = new AudioWorkletNode(audioContext, "wav-capture", {
@@ -1489,38 +2056,27 @@ async function startRecording() {
     recordingSilenceGain.gain.value = 0;
     recordingProcessor.port.onmessage = receiveWavChunk;
     recordingProcessor.addEventListener("processorerror", () => {
-      errorEl.textContent = "WAV audio capture stopped unexpectedly; saving the captured portion.";
-      if (recordingActive) {
-        recordingActive = false;
-        recordingFinalizing = true;
-        finishWavRecording();
-      }
+      errorEl.textContent = "WAV capture stopped unexpectedly; saving the captured portion.";
+      if (recordingActive) stopRecording();
     }, { once: true });
     recordingSourceNode.connect(recordingProcessor);
     recordingProcessor.connect(recordingSilenceGain);
     recordingSilenceGain.connect(audioContext.destination);
     recordingActive = true;
-    recordStartedAt = Date.now();
-    recordStatusEl.textContent = "Recording · 00:00";
-    if (recordTimer) clearInterval(recordTimer);
-    recordTimer = setInterval(() => {
-      const seconds = Math.floor((Date.now() - recordStartedAt) / 1000);
-      recordStatusEl.textContent = `Recording · ${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
-    }, 1000);
-    addLog(`Local WAV recording started (${recordingSourceLabel} audio)`);
-    stopRecordButton.disabled = false;
+    recordButton.classList.add("recording");
+    recordStatusEl.textContent = `Recording WAV · ${recordingSampleRate} Hz`;
+    syncRecordButton();
+    addLog("Local WAV recording started");
   } catch (error) {
     recordingActive = false;
     recordingFinalizing = false;
-    if (recordTimer) clearInterval(recordTimer);
-    recordTimer = null;
     cleanupWavCapture();
     recordedChunks = [];
     recordedBytes = 0;
     recordingSampleRate = 0;
     recordingChannels = 0;
-    recordButton.disabled = !(remoteStream && remoteStream.getAudioTracks().some((track) => track.readyState === "live"));
-    recordSourceEl.disabled = false;
+    recordButton.classList.remove("recording");
+    syncRecordButton();
     recordStatusEl.textContent = "Not recording";
     errorEl.textContent = `Recording unavailable: ${error.message}`;
   }
@@ -1530,32 +2086,93 @@ function stopRecording() {
   if (!recordingActive) return;
   recordingActive = false;
   recordingFinalizing = true;
-  recordStatusEl.textContent = "Finalizing WAV…";
-  if (recordTimer) clearInterval(recordTimer);
-  recordTimer = null;
-  stopRecordButton.disabled = true;
+  recordButton.classList.remove("recording");
+  recordButton.setAttribute("aria-pressed", "false");
+  recordButtonLabelEl.textContent = "Start recording";
+  recordButton.disabled = true;
+  recordStatusEl.textContent = "Saving WAV…";
   recordingFlushTimer = setTimeout(finishWavRecording, 1500);
   if (recordingProcessor) recordingProcessor.port.postMessage({ type: "stop" });
   else finishWavRecording();
 }
 
-startButton.onclick = async () => {
+async function startListening() {
+  if (listenerActive) return;
+  if (!selectedDeviceId) {
+    errorEl.textContent = "No configured ESP32 device is available to listen to.";
+    return;
+  }
+  const startAttempt = ++listenerStartAttempt;
   manualStop = false;
   listenerActive = true;
   window.setListenerActive(true);
+  setListenButtonActive(true);
   errorEl.textContent = "";
-  startButton.disabled = true;
-  stopButton.disabled = false;
   try {
     await prepareAudioOutput();
+    if (startAttempt !== listenerStartAttempt || !listenerActive) return;
     if (noiseSuppressionEl.checked) await enableNoiseSuppression();
     else disableNoiseSuppression();
   } catch (error) {
+    if (startAttempt !== listenerStartAttempt || !listenerActive) {
+      disableNoiseSuppression();
+      return;
+    }
     noiseSuppressionEl.checked = false;
     disableNoiseSuppression();
     errorEl.textContent = `AI noise suppression unavailable; continuing with direct audio. ${error.message}`;
   }
+  if (startAttempt !== listenerStartAttempt || !listenerActive) {
+    disableNoiseSuppression();
+    return;
+  }
   connectSocket();
+}
+
+function stopListening() {
+  listenerStartAttempt++;
+  manualStop = true;
+  listenerActive = false;
+  window.setListenerActive(false);
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  if (socket) socket.close(1000, "Listener stopped");
+  socket = null;
+  sessionId = null;
+  closePeer();
+  disableNoiseSuppression();
+  setListenButtonActive(false);
+  startButton.disabled = !selectedDeviceId;
+  syncDeviceActionAvailability();
+  setState("Stopped");
+}
+
+startButton.onclick = () => {
+  if (listenerActive) stopListening();
+  else void startListening();
+};
+
+deviceSelectEl.addEventListener("change", () => {
+  const nextDeviceId = deviceSelectEl.value;
+  if (!nextDeviceId || nextDeviceId === selectedDeviceId) return;
+  const wasListening = listenerActive;
+  selectedDeviceId = nextDeviceId;
+  lastStatusDeviceId = null;
+  lastSignalingState = null;
+  persistDeviceSelection();
+  deviceSelectStatusEl.textContent = `Audio and session controls now target ${selectedDeviceId}.`;
+  if (wasListening) {
+    stopListening();
+    void startListening();
+  } else {
+    setState(`Selected ${selectedDeviceId}`);
+    void refreshAppStatus();
+  }
+});
+
+recordButton.onclick = () => {
+  if (recordingActive) stopRecording();
+  else void startRecording();
 };
 
 noiseSuppressionEl.addEventListener("change", async () => {
@@ -1579,18 +2196,21 @@ micGainEl.addEventListener("input", () => {
   micGainValueEl.value = `${micGainEl.value}%`;
 });
 micGainEl.addEventListener("change", sendMicGain);
+micModeEls.forEach((input) => input.addEventListener("change", sendAudioSettings));
+firmwareNoiseSuppressionEl.addEventListener("change", sendAudioSettings);
+firmwareVadEl.addEventListener("change", sendAudioSettings);
+firmwareLimiterEl.addEventListener("change", sendAudioSettings);
 
 playVolumeEl.addEventListener("input", () => {
-  const percent = Number(playVolumeEl.value);
-  audioEl.volume = Math.max(0, Math.min(1, percent / 100));
-  playVolumeValueEl.textContent = `${percent}%`;
+  playbackVolumePercent = Math.max(0, Math.min(300, Number(playVolumeEl.value)));
+  if (!audioContext || !playbackGain) audioEl.volume = Math.min(1, playbackVolumePercent / 100);
+  playVolumeValueEl.textContent = `${playbackVolumePercent}%`;
   syncPlaybackGain();
 });
 
 document.getElementById("refreshDiagnostics").addEventListener("click", () => {
   void refreshDiagnostics();
 });
-
 function showSystemAction(message, error = false) {
   const status = document.getElementById("systemActionStatus");
   status.hidden = false;
@@ -1598,40 +2218,28 @@ function showSystemAction(message, error = false) {
   status.textContent = message;
 }
 
-async function runDeviceAction(path, button, actionName) {
-  button.disabled = true;
-  showSystemAction(`${actionName} request sent…`);
-  try {
-    const response = await fetch(path, { method: "POST", cache: "no-store", credentials: "same-origin" });
-    if (response.status === 401) {
-      window.location.assign("/");
-      throw new Error("Listener session expired");
-    }
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const result = await response.json();
-    if (!result.source_connected) {
-      showSystemAction(`Render accepted the ${actionName.toLowerCase()} request, but the ESP32 is not connected.`, true);
-      addLog(`${actionName} not delivered: ESP32 is offline`, "warning");
-    } else {
-      showSystemAction(`${actionName} command sent to the ESP32.`);
-      addLog(`${actionName} command sent to ESP32`, "warning");
-    }
-  } catch (error) {
-    showSystemAction(`${actionName} failed: ${error.message}`, true);
-    addLog(`${actionName} failed: ${error.message}`, "error");
-  } finally {
-    button.disabled = false;
-  }
-}
-
 document.getElementById("rebootDevice").addEventListener("click", (event) => {
-  if (!window.confirm("Restart the ESP32 now? The audio stream will disconnect briefly.")) return;
-  void runDeviceAction("/api/esp32/reboot", event.currentTarget, "Restart");
-});
-
-document.getElementById("forgetWifi").addEventListener("click", (event) => {
-  if (!window.confirm("Forget the ESP32 Wi-Fi credentials? It will disconnect and require Wi-Fi setup again.")) return;
-  void runDeviceAction("/api/esp32/forget-wifi", event.currentTarget, "Forget Wi-Fi");
+  const button = event.currentTarget;
+  if (!selectedDeviceId || !sessionId || !socket || socket.readyState !== WebSocket.OPEN) {
+    showSystemAction("Start listening to the selected ESP32 before restarting it.", true);
+    return;
+  }
+  if (!window.confirm(`Restart ${selectedDeviceId} now? Its audio connection will end.`)) return;
+  button.disabled = true;
+  const sent = send({
+    type: "webrtc_device_control",
+    device_id: selectedDeviceId,
+    session_id: sessionId,
+    command: "restart"
+  });
+  if (sent) {
+    showSystemAction(`Restart command sent to ${selectedDeviceId}.`);
+    addLog(`Restart command sent to selected device ${selectedDeviceId}`, "warning");
+  } else {
+    showSystemAction(`Could not send restart to ${selectedDeviceId}.`, true);
+    addLog(`Restart command failed for ${selectedDeviceId}`, "error");
+    syncDeviceActionAvailability();
+  }
 });
 
 document.getElementById("logout").addEventListener("click", async () => {
@@ -1647,38 +2255,20 @@ new MutationObserver(() => {
   if (message) addLog(message, "error");
 }).observe(errorEl, { childList: true, characterData: true, subtree: true });
 
-stopButton.onclick = () => {
-  manualStop = true;
-  listenerActive = false;
-  window.setListenerActive(false);
-  if (reconnectTimer) clearTimeout(reconnectTimer);
-  reconnectTimer = null;
-  if (recordingActive) stopRecording();
-  if (socket) socket.close(1000, "Listener stopped");
-  socket = null;
-  sessionId = null;
-  closePeer();
-  disableNoiseSuppression();
-  startButton.disabled = false;
-  stopButton.disabled = true;
-  setState("Stopped");
-};
-
 void refreshAppStatus();
+void loadSessionTimeout();
 appStatusTimer = setInterval(() => { void refreshAppStatus(); }, 10000);
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) void refreshAppStatus();
 });
 
-recordButton.onclick = startRecording;
-stopRecordButton.onclick = stopRecording;
 window.addEventListener("pagehide", () => {
+  listenerStartAttempt++;
   manualStop = true;
   listenerActive = false;
   window.setListenerActive(false);
   if (socket) socket.close(1000, "Page closed");
   if (appStatusTimer) clearInterval(appStatusTimer);
-  if (recordTimer) clearInterval(recordTimer);
   closePeer();
   if (audioContext && audioContext.state !== "closed") void audioContext.close();
 });

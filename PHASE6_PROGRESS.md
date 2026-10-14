@@ -1,6 +1,6 @@
-# Phase 6 — Render security and single-device reliability
+# Phase 6 — Render security and multi-device control
 
-**Status:** In progress. The current scope is one ESP32 device, per the user's direction. Multi-device registration and selection are out of scope. This file is not a completion claim.
+**Status:** In progress. Multi-device selection and signaling isolation are implemented locally in this slice; this has not been tested or deployed. This file is not a completion claim.
 
 ## Implemented in this slice
 
@@ -20,14 +20,23 @@
 - WebRTC source-token comparison uses the shared timing-safe helper and rejects empty/unset credentials.
 - Added authenticated `GET /api/webrtc-status`, reporting the WebRTC device, listener, and session state separately from legacy PCM status. The response is marked `no-store`.
 - Added an HTTP integration test for unauthenticated rejection and authenticated WebRTC status.
+- Restored a bounded per-device credential registry. `SOURCE_TOKEN` retains the legacy `ESP32-S3-INMP441` identity; `DEVICE_CREDENTIALS_JSON` maps unique additional tokens to device IDs. The default cap is 16 identities.
+- WebRTC signaling, listener sessions, gain controls, and restart controls are scoped to each device ID. The existing firmware can derive its ID from the unique token, so no Phase 1–4 source changes are required.
+- Added authenticated `/api/devices` and `/api/devices/:deviceId/status` endpoints. Responses contain IDs and connection state only, never tokens.
+- Added a device selector to the top of the Phase 7 listener page. Changing the selected device switches its signaling session; the browser remembers the selection.
+- Restart is routed through the selected device's authenticated WebRTC session. Wi-Fi reset is disabled in this page because the existing legacy endpoint broadcasts to all legacy sources.
+- Detailed firmware diagnostics are not yet available per device. The UI now marks those fields unavailable instead of reading another legacy source's health response.
+- This local change has not been tested, deployed to Render, or exercised with multiple physical ESP32 boards.
 
 ## Still open
 
 - Sessions, rate limits, device state, and WebRTC pairing are process-local. They are not shared across instances and do not survive restarts.
-- The single-device WebRTC signaling state is process-local and resets on service restart; deployment must remain a single Render instance unless session/device state is moved to shared storage.
+- WebRTC device registrations and sessions are process-local and reset on service restart; deployment must remain a single Render instance unless session/device state is moved to shared storage.
 - Confirm Render's trusted client-IP header behavior with an authenticated edge request before treating IP-based rate limiting as fully verified.
 - Verify browser login, logout, listener WebSocket, and control requests from the staging origin; foreign/missing origins are covered by helper tests.
 - Verify idle session timeout and active WebRTC listener expiry against the deployed browser flow; automated state tests cover expiry and renewal.
-- Connect the single configured ESP32 and verify the authenticated WebRTC status endpoint tracks connect, disconnect, and listener session transitions.
+- Configure a unique token for each physical board in Render and its local ignored `sdkconfig`, then verify multiple devices connect, can be selected, and remain isolated when sessions restart or disconnect.
+- Verify the selector, gain control, and targeted restart from the deployed browser page. Confirm the legacy Wi-Fi reset action remains unavailable on this page.
+- Add per-device health/telemetry and per-user/device authorization rules.
 - Validate signaling and media across separate networks; the current peer path is STUN-only and has no TURN relay.
 - Run staging soak, restart/reconnect, logout/expiry, and concurrent-client tests before calling Phase 6 complete.

@@ -165,6 +165,14 @@ test("relays bounded session-only microphone gain controls and device acknowledg
         type: "webrtc_audio_control_ack", session_id: sessionId,
         command: "mic_gain", gain_percent: 125, ok: true
     });
+
+    for (const gainPercent of [25, 200]) {
+        signaling.handleMessage(listener, {
+            type: "webrtc_audio_control", session_id: sessionId,
+            command: "mic_gain", gain_percent: gainPercent
+        });
+        assert.equal(device.last("webrtc_audio_control").gain_percent, gainPercent);
+    }
 });
 
 test("rejects stale, out-of-range, and wrong-direction microphone gain controls", () => {
@@ -180,7 +188,7 @@ test("rejects stale, out-of-range, and wrong-direction microphone gain controls"
     const invalidSession = joinBoth(invalid);
     invalid.signaling.handleMessage(invalid.listener, {
         type: "webrtc_audio_control", session_id: invalidSession,
-        command: "mic_gain", gain_percent: 151
+        command: "mic_gain", gain_percent: 201
     });
     assert.equal(invalid.listener.closeCode, 1008);
 
