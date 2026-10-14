@@ -1709,7 +1709,7 @@
         <div class="card flat">
           <div class="row">
             <span class="label">Connected to</span>
-            <span class="value good">Not reported</span>
+            <span class="value" id="settingsWifiStatus">Waiting for device telemetry</span>
           </div>
           <div class="row clickable" onclick="toast('Scanning networks…', 'info')">
             <span class="label">Scan Networks</span>
@@ -1764,8 +1764,8 @@
           <div class="row"><span class="label">Firmware</span><span class="value mono" id="hwVersion">—</span></div>
           <div class="row"><span class="label">Uptime</span><span class="value mono" id="uptime">—</span></div>
           <div class="row"><span class="label">Boot Reason</span><span class="value" id="hwBoot">—</span></div>
-          <div class="row"><span class="label">CPU Frequency</span><span class="value mono">—</span></div>
-          <div class="row"><span class="label">Temperature</span><span class="value mono" id="hwTemp">—</span></div>
+          <div class="row"><span class="label">Wi-Fi Retries</span><span class="value mono" id="hwWifiRetries">—</span></div>
+          <div class="row"><span class="label">Reset Reason</span><span class="value mono" id="hwBoot">—</span></div>
         </div>
 
         <div class="section-title">
@@ -1776,7 +1776,7 @@
           <div class="row"><span class="label">Free Heap</span><span class="value mono" id="hwHeap">—</span></div>
           <div class="row"><span class="label">Minimum Heap</span><span class="value mono" id="hwMinHeap">—</span></div>
           <div class="row"><span class="label">Free PSRAM</span><span class="value mono" id="hwPsram">—</span></div>
-          <div class="row"><span class="label">Total PSRAM</span><span class="value mono">—</span></div>
+          <div class="row"><span class="label">Total PSRAM</span><span class="value mono" id="hwTotalPsram">—</span></div>
         </div>
 
         <div class="section-title">
@@ -1784,7 +1784,7 @@
           NETWORK
         </div>
         <div class="card flat">
-          <div class="row"><span class="label">SSID</span><span class="value mono">Not reported</span></div>
+          <div class="row"><span class="label">SSID</span><span class="value mono" id="hwSsid">Waiting for device telemetry</span></div>
           <div class="row">
             <span class="label">RSSI</span>
             <span class="value">
@@ -1792,9 +1792,9 @@
               <span class="mini-meter"><span></span><span></span><span></span><span></span></span>
             </span>
           </div>
-          <div class="row"><span class="label">Internet</span><span class="value">—</span></div>
-          <div class="row"><span class="label">Render Server</span><span class="value">—</span></div>
-          <div class="row"><span class="label">WebRTC</span><span class="value">—</span></div>
+          <div class="row"><span class="label">Wi-Fi Link</span><span class="value" id="hwInternet">Waiting for device telemetry</span></div>
+          <div class="row"><span class="label">Render Server</span><span class="value" id="hwRender">—</span></div>
+          <div class="row"><span class="label">WebRTC</span><span class="value" id="hwWebRtc">Waiting for device telemetry</span></div>
         </div>
       </div>
 
@@ -1825,116 +1825,27 @@
 
       <!-- ============ SYSTEM ============ -->
       <div class="panel" id="panel-system">
-        <div class="section-title">
-          <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          FIRMWARE UPDATE (OTA)
-        </div>
-
-        <div class="card flat" style="margin-bottom:10px;">
-          <div class="row"><span class="label">Current Version</span><span class="value mono">Not reported</span></div>
-          <div class="row"><span class="label">Latest Version</span><span class="value mono good">Not configured</span></div>
-        </div>
-
-        <div class="update-banner">
-          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="8 12 11 15 16 9"/></svg>
-          <div>
-            <strong>Update available</strong>
-            <span>New version 2.0.1 is ready to install.</span>
-          </div>
-        </div>
-
-        <button class="btn-pill primary" onclick="toast('Checking for updates…', 'info')">
-          <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-          Check for Update
-        </button>
-        <button class="btn-pill secondary" style="margin-bottom:20px;" onclick="toast('Downloading update Not configured…', 'success')">
-          <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Update Now
-        </button>
-
-        <div class="section-title">
-          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/></svg>
-          SYSTEM ACTIONS
-        </div>
-        <div class="card flat" style="margin-bottom:20px;">
-          <div class="action-list">
-            <div class="action-row" onclick="toast('Restarting ESP32…', 'warning')">
-              <div class="action-icon green">
-                <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-              </div>
-              <span class="action-label">Restart ESP32</span>
-              <svg class="action-chevron" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
-            </div>
-            <div class="action-row" onclick="toast('Forgetting network…', 'warning')">
-              <div class="action-icon amber">
-                <svg viewBox="0 0 24 24"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
-              </div>
-              <span class="action-label">Forget Wi-Fi</span>
-              <svg class="action-chevron" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
-            </div>
-            <div class="action-row danger" >
-              <div class="action-icon">
-                <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-              </div>
-              <span class="action-label">Factory Reset</span>
-              <svg class="action-chevron" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
-            </div>
-          </div>
-        </div>
-
-        <div class="section-title">
-          <svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-          SECURITY
-        </div>
-        <div class="card flat" style="margin-bottom:20px;">
-          <div class="row clickable">
-            <span class="label">Listener PIN</span>
-            <span class="value mono">••••••••</span>
-          </div>
-          <div class="switch-row">
-            <span class="sw-label">Require PIN on connection</span>
-            <label class="switch"><input type="checkbox" checked><span class="slider-sw"></span></label>
-          </div>
-          <div class="switch-row">
-            <span class="sw-label">Device Authentication</span>
-            <label class="switch"><input type="checkbox" checked><span class="slider-sw"></span></label>
-          </div>
-          <div class="row clickable" >
-            <span class="label">Session Timeout</span>
-            <span class="value">
-              <span id="sessionTimeoutDisplay">30 min</span>
-              <svg class="chevron" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
-            </span>
-          </div>
-        </div>
-
-        <div class="section-title">
-          <svg viewBox="0 0 24 24"><path d="M9 18h6M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.3h6c0-1 .4-1.8 1-2.3A7 7 0 0 0 12 2z"/></svg>
-          LED SETTINGS
-        </div>
+        <div class="section-title">DEVICE STATUS</div>
         <div class="card flat">
-          <div class="switch-row">
-            <span class="sw-label">Status LED</span>
-            <label class="switch"><input type="checkbox" checked><span class="slider-sw"></span></label>
-          </div>
-          <div class="radio-group">
-            <label class="radio-item">
-              <input type="radio" name="ledMode" checked>
-              <span class="radio-circle"></span>
-              <span class="radio-label">Automatic</span>
-            </label>
-            <label class="radio-item">
-              <input type="radio" name="ledMode">
-              <span class="radio-circle"></span>
-              <span class="radio-label">Always ON</span>
-            </label>
-            <label class="radio-item">
-              <input type="radio" name="ledMode">
-              <span class="radio-circle"></span>
-              <span class="radio-label">Always OFF</span>
-            </label>
-          </div>
+          <div class="row"><span class="label">Connection</span><span class="value" id="systemConnection">Checking…</span></div>
+          <div class="row"><span class="label">Firmware</span><span class="value mono" id="systemFirmware">Waiting for firmware telemetry</span></div>
+          <div class="row"><span class="label">Wi-Fi</span><span class="value" id="systemWifi">Waiting for firmware telemetry</span></div>
         </div>
+
+        <div class="section-title">DEVICE ACTIONS</div>
+        <div class="card">
+          <button class="audio-btn start" id="restartDeviceButton" type="button">Restart ESP32</button>
+          <p class="small" style="margin-top:10px">Restart is sent over the authenticated device connection and requires the updated firmware.</p>
+        </div>
+
+        <div class="section-title">FEATURE AVAILABILITY</div>
+        <div class="card flat">
+          <div class="row"><span class="label">OTA firmware update</span><span class="value">Not configured</span></div>
+          <div class="row"><span class="label">Change or forget Wi-Fi</span><span class="value">Use device setup portal</span></div>
+          <div class="row"><span class="label">Built-in LED control</span><span class="value">Not exposed by firmware</span></div>
+          <div class="row"><span class="label">Factory reset</span><span class="value">Not exposed by firmware</span></div>
+        </div>
+        <div class="card flat small">Wi-Fi changes are managed by the ESP32 setup portal. OTA, remote Wi-Fi reset, and LED control need dedicated firmware support; these controls are not available in this project today.</div>
       </div>
 
     </div>
@@ -2793,8 +2704,13 @@ window.addEventListener("pagehide", () => {
 
 </script>
 <script>
-let esp32Online=false,serverReachable=false,serverListenerConnected=false,uiRecordingWasActive=false,uiRecordingStartedAt=0,uiRecordingElapsed=0;
-async function refreshEsp32Status(){try{const response=await fetch("/api/webrtc/device-status",{credentials:"same-origin",cache:"no-store"});if(!response.ok)throw new Error("HTTP "+response.status);const data=await response.json();esp32Online=!!data.online;serverListenerConnected=!!data.listener_connected;serverReachable=true}catch{esp32Online=false;serverListenerConnected=false;serverReachable=false}syncListenerDesign()}
+let esp32Online=false,serverReachable=false,serverListenerConnected=false,uiRecordingWasActive=false,uiRecordingStartedAt=0,uiRecordingElapsed=0,deviceTelemetry=null;
+function setTelemetryText(id,value){const n=document.getElementById(id);if(n)n.textContent=value}
+function formatBytes(value){if(!Number.isFinite(value))return "—";if(value<1024)return value+" B";if(value<1048576)return (value/1024).toFixed(1)+" KB";return (value/1048576).toFixed(2)+" MB"}
+function formatUptime(ms){if(!Number.isFinite(ms))return "—";const s=Math.floor(ms/1000),d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return d?d+"d "+h+"h "+m+"m":h?h+"h "+m+"m":m+"m "+s%60+"s"}
+function renderDeviceTelemetry(){const t=deviceTelemetry;if(!t){["hwSsid","hwRssi","hwWifiRetries","hwHeap","hwMinHeap","hwPsram","hwTotalPsram","uptime","hwBoot","hwWebRtc","hwInternet","systemFirmware","systemWifi"].forEach(id=>setTelemetryText(id,esp32Online?"Waiting for firmware telemetry":"Device offline"));setTelemetryText("hwChip","ESP32-S3");setTelemetryText("hwVersion","—");setTelemetryText("hwRender",serverReachable?"Connected":"Not connected");setTelemetryText("systemConnection",esp32Online?"Connected":"Not connected");const note=document.getElementById("diagnosticsNote");if(note)note.textContent=esp32Online?"Device is connected, but this firmware has not sent diagnostic telemetry yet. Flash the updated Phase 5 firmware.":"ESP32 is offline. Detailed readings appear when it reconnects with telemetry-enabled firmware.";return}
+setTelemetryText("hwChip","ESP32-S3");setTelemetryText("hwVersion",t.firmware||"Phase 5");setTelemetryText("uptime",formatUptime(t.uptime_ms));setTelemetryText("hwBoot",t.reset_reason===undefined?"—":"Reset reason "+t.reset_reason);setTelemetryText("hwHeap",formatBytes(t.free_heap));setTelemetryText("hwMinHeap",formatBytes(t.min_free_heap));setTelemetryText("hwPsram",formatBytes(t.free_psram));setTelemetryText("hwTotalPsram",formatBytes(t.total_psram));setTelemetryText("hwSsid",t.wifi_ssid|| (t.wifi_connected?"Connected (SSID unavailable)":"Disconnected"));setTelemetryText("settingsWifiStatus",t.wifi_connected?(t.wifi_ssid||"Connected"):"Disconnected");setTelemetryText("hwRssi",Number.isFinite(t.wifi_rssi)&&t.wifi_connected?t.wifi_rssi+" dBm":"—");setTelemetryText("hwWifiRetries",Number.isFinite(t.wifi_retry_count)?String(t.wifi_retry_count):"—");setTelemetryText("hwInternet",t.wifi_connected?"Connected":"Disconnected");setTelemetryText("hwRender",serverReachable?"Connected":"Not connected");setTelemetryText("hwWebRtc",t.peer_connected?"Connected":(serverListenerConnected?"Negotiating":"Waiting for listener"));setTelemetryText("systemConnection","Connected");setTelemetryText("systemFirmware",t.firmware||"Reported");setTelemetryText("systemWifi",t.wifi_connected?(t.wifi_ssid||"Connected"):"Disconnected");const note=document.getElementById("diagnosticsNote");if(note)note.textContent="Live device telemetry · updated "+new Date().toLocaleTimeString();const meter=document.querySelector("#panel-diagnostics .mini-meter");if(meter){const strength=Number.isFinite(t.wifi_rssi)?Math.max(0,Math.min(4,Math.round((t.wifi_rssi+90)/12))):0;[...meter.children].forEach((bar,i)=>bar.style.opacity=i<strength?"1":".2")} }
+async function refreshEsp32Status(){try{const response=await fetch("/api/webrtc/device-status",{credentials:"same-origin",cache:"no-store"});if(!response.ok)throw new Error("HTTP "+response.status);const data=await response.json();esp32Online=!!data.online;serverListenerConnected=!!data.listener_connected;serverReachable=true;deviceTelemetry=data.telemetry&&typeof data.telemetry==="object"?data.telemetry:null}catch{esp32Online=false;serverListenerConnected=false;serverReachable=false;deviceTelemetry=null}renderDeviceTelemetry();syncListenerDesign()}
 const uiAudio=document.getElementById("audioBtn"),uiAudioText=document.getElementById("audioBtnText"),uiMic=document.getElementById("micOuter"),uiBadge=document.getElementById("listeningBadge"),uiRec=document.getElementById("recBtn"),uiRecText=document.getElementById("recBtnText"),uiVolume=document.getElementById("volume"),uiVolumeValue=document.getElementById("volumeValue"),uiLevel=document.getElementById("level"),uiDb=document.getElementById("dbValue");
 function toggleListening(){(listenerActive?stopButton:startButton).click()}function toggleRecording(){(stopRecordButton.disabled?recordButton:stopRecordButton).click()}
 function clearProjectLogs(){const n=document.getElementById("logBox");if(n)n.replaceChildren()}function copyProjectLogs(){const n=document.getElementById("logBox"),text=[...(n?.querySelectorAll(".project-log-entry")||[])].map(e=>e.textContent).join("\n");if(!text.trim()){toast("There are no logs to export.");return}const blob=new Blob([text],{type:"text/plain;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="esp32-listener-log.txt";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)}
@@ -2835,7 +2751,7 @@ const uiNoise=document.querySelector("#panel-settings .switch-row input");
 refreshMicGainAvailability();
 const logStyle=document.createElement("style");logStyle.textContent=".project-log-entry{padding:3px 0;font:11px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;color:#cbd5e1}.project-log-entry[data-level=WARNING]{color:#fbbf24}.project-log-entry[data-level=ERROR]{color:#fca5a5}.project-log-entry[hidden]{display:none}";document.head.appendChild(logStyle);
 const settingsNotes=document.querySelector("#panel-settings .section-title");if(settingsNotes){const note=document.createElement("div");note.className="card flat small";note.textContent="Microphone mode and audio format are set by the ESP32 firmware. Microphone gain can be adjusted while connected.";settingsNotes.after(note)}
-const diagnosticsTitle=document.querySelector("#panel-diagnostics .section-title");if(diagnosticsTitle){const note=document.createElement("div");note.className="card flat small";note.textContent="Detailed chip, memory, Wi-Fi, and uptime telemetry is not currently sent by this ESP32 WebRTC firmware, so those values may show as unavailable.";diagnosticsTitle.after(note)}
+const diagnosticsTitle=document.querySelector("#panel-diagnostics .section-title");if(diagnosticsTitle){const note=document.createElement("div");note.id="diagnosticsNote";note.className="card flat small";note.textContent="Waiting for ESP32 telemetry. Flash the updated Phase 5 firmware to report live Wi-Fi and diagnostics.";diagnosticsTitle.after(note)}
 const settingsPanel=document.getElementById("panel-settings"),wifiTitle=[...settingsPanel.querySelectorAll(".section-title")].find(n=>n.textContent.includes("WI-FI SETTINGS"));if(wifiTitle){let node=wifiTitle.nextElementSibling;while(node&&!node.classList.contains("section-title")){const next=node.nextElementSibling;node.remove();node=next}const hotspotTitle=node;if(hotspotTitle){const hotspotCard=hotspotTitle.nextElementSibling;hotspotTitle.remove();hotspotCard?.remove()}const note=document.createElement("div");note.className="card flat small";note.textContent="Wi-Fi scanning, network changes, and hotspot settings are not exposed by the current ESP32 WebRTC firmware.";wifiTitle.replaceWith(note)}
 const timeoutRow=document.querySelector("#panel-system #sessionTimeoutDisplay")?.closest(".row");if(timeoutRow){timeoutRow.classList.remove("clickable");timeoutRow.removeAttribute("onclick");timeoutRow.querySelector("#sessionTimeoutDisplay").textContent="Managed by server";timeoutRow.querySelector(".chevron")?.remove()}
 const securityTitle=[...document.querySelectorAll("#panel-system .section-title")].find(n=>n.textContent.includes("SECURITY"));if(securityTitle){const card=securityTitle.nextElementSibling;if(card){card.replaceChildren();card.className="card flat small";card.textContent="Sign-in, PIN requirements, and session security are managed by the server.";}}
@@ -2854,13 +2770,14 @@ function syncListenerDesign(){
  rateNode.textContent=peerConnected?(rate?(Number(rate[1])/1000)+" kHz":(audioContext?(audioContext.sampleRate/1000)+" kHz":"Live")):"—";codecNode.textContent=peerConnected?(codec?codec[1].toUpperCase():"WebRTC"):"—";channelNode.textContent=peerConnected?((Number(channels?.[1]||settings.channelCount||1)===1)?"Mono":(channels?.[1]||settings.channelCount)+" ch"):"—";inputNode.textContent=peerConnected?(track.muted?"No signal":"Live"):"Waiting";
  const db=latestOutputDbfs,pct=Number.isFinite(db)?Math.max(0,Math.min(100,Math.round(100*Math.pow(10,db/20)))):0;uiLevel.style.width=pct+"%";uiDb.textContent=Number.isFinite(db)?db.toFixed(1)+" dBFS":"— dB";const bars=document.getElementById("meterBars");if(bars&&!bars.children.length)for(let i=0;i<28;i++){const b=document.createElement("span");b.className="meter-bar";bars.appendChild(b)}if(bars){const n=Math.round(pct/100*bars.children.length);[...bars.children].forEach((b,i)=>{b.className="meter-bar";if(i<n)b.classList.add(i>bars.children.length*.88?"on-3":i>bars.children.length*.7?"on-2":"on-1")})}
  uiVolumeValue.textContent=Math.round(Number(uiVolume.value)*100)+"%";document.querySelectorAll(".volume-preset").forEach(b=>b.classList.toggle("active",Math.abs(Number(b.dataset.volume)/100-Number(uiVolume.value))<0.005));
- const qvalues=[deviceReady?"Connected":(active?"Connecting":"Not connected"),peerConnected?"Connected":(active?(peer?.connectionState||"Connecting"):"Not connected"),serverReachable?"Connected":"Not connected","Not reported"];quickLabels.forEach((n,i)=>{n.textContent=qvalues[i];n.style.color=/connected|live/i.test(qvalues[i])?"var(--green)":qvalues[i]==="Connecting"?"var(--amber)":qvalues[i]==="Not reported"?"var(--text-faint)":"var(--red)"});
+ const qvalues=[deviceReady?"Connected":(active?"Connecting":"Not connected"),peerConnected?"Connected":(active?(peer?.connectionState||"Connecting"):"Not connected"),serverReachable?"Connected":"Not connected",deviceTelemetry?(deviceTelemetry.wifi_connected?"Connected":"Disconnected"):"No telemetry"];quickLabels.forEach((n,i)=>{n.textContent=qvalues[i];n.style.color=/connected|live/i.test(qvalues[i])?"var(--green)":qvalues[i]==="Connecting"?"var(--amber)":qvalues[i]==="No telemetry"?"var(--text-faint)":"var(--red)"});
  const menu=document.getElementById("deviceMenuStatus");if(menu)menu.textContent=deviceReady?"Connected":(active?"Connecting":"Not connected");if(uiLed)uiLed.disabled=true;
 }
 uiVolume.addEventListener("input",()=>{uiVolumeValue.textContent=Math.round(Number(uiVolume.value)*100)+"%";if(audioContext?.state==="suspended")void audioContext.resume().then(syncPlaybackGain).catch(()=>{});else if(typeof syncPlaybackGain==="function")syncPlaybackGain();document.querySelectorAll(".volume-preset").forEach(b=>b.classList.toggle("active",Math.abs(Number(b.dataset.volume)/100-Number(uiVolume.value))<0.005))});document.querySelectorAll(".volume-preset").forEach(b=>b.addEventListener("click",()=>{uiVolume.value=Number(b.dataset.volume)/100;uiVolume.dispatchEvent(new Event("input",{bubbles:true}));syncListenerDesign()}));uiMic.addEventListener("click",toggleListening);
 const actionRows=[...document.querySelectorAll("#panel-system .action-row")],restart=actionRows.find(x=>x.textContent.includes("Restart ESP32")),wifi=actionRows.find(x=>x.textContent.includes("Forget Wi-Fi"));if(restart)restart.onclick=()=>toast("Restart control is unavailable through the current WebRTC device protocol.");if(wifi)wifi.onclick=()=>toast("Wi-Fi reset control is unavailable through the current WebRTC device protocol.");actionRows.find(x=>x.textContent.includes("Factory Reset"))?.remove();
 document.querySelector("#panel-system .update-banner")?.remove();document.querySelectorAll("#panel-system .btn-pill").forEach(b=>b.remove());const otaTitle=document.querySelector("#panel-system .section-title");if(otaTitle){const note=document.createElement("div");note.className="card flat small";note.textContent="Firmware updates are not configured on this service.";otaTitle.after(note)}
 document.getElementById("deviceList").innerHTML='<div class="device-item selected"><div class="device-item-logo online"></div><div class="device-item-text"><h4>ESP32 INMP441</h4><p id="deviceMenuStatus">Checking connection…</p></div><span class="device-item-badge">Current</span></div>';
+document.getElementById("restartDeviceButton")?.addEventListener("click",()=>{if(!esp32Online){toast("ESP32 is offline.");return}if(!socket||socket.readyState!==WebSocket.OPEN||!sessionId){toast("Start listening first to establish the authenticated device session.");return}if(!window.confirm("Restart the ESP32 now? The audio connection will stop briefly."))return;if(!send({type:"webrtc_device_control",session_id:sessionId,command:"restart"})){toast("Could not send restart command.");return}toast("Restart command sent.");});
 setInterval(syncListenerDesign,250);setInterval(refreshEsp32Status,3000);refreshEsp32Status();syncListenerDesign();</script>
 </body>
 </html>
