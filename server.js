@@ -256,7 +256,9 @@ app.get("/api/webrtc/device-status", requireHttps, (req, res) => {
         online: status.device_connected,
         ready: status.device_connected,
         session_active: status.session_active,
-        listener_connected: status.listener_connected
+        listener_connected: status.listener_connected,
+        telemetry: status.device_telemetry,
+        telemetry_updated_at: status.telemetry_updated_at
     });
 });
 
