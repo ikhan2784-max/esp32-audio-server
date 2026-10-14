@@ -23,6 +23,8 @@ const TELEMETRY_NUMBER_RANGES = Object.freeze({
     uptime_ms: [0, Number.MAX_SAFE_INTEGER],
     free_heap: [0, Number.MAX_SAFE_INTEGER],
     min_free_heap: [0, Number.MAX_SAFE_INTEGER],
+    free_internal_heap: [0, Number.MAX_SAFE_INTEGER],
+    min_free_internal_heap: [0, Number.MAX_SAFE_INTEGER],
     free_psram: [0, Number.MAX_SAFE_INTEGER],
     total_psram: [0, Number.MAX_SAFE_INTEGER],
     audio_capture_errors: [0, Number.MAX_SAFE_INTEGER],
@@ -34,12 +36,52 @@ const TELEMETRY_NUMBER_RANGES = Object.freeze({
     audio_frames_dropped: [0, Number.MAX_SAFE_INTEGER],
     signaling_errors: [0, Number.MAX_SAFE_INTEGER],
     reset_reason: [0, 255],
+    wifi_last_disconnect_reason: [0, 255],
+    i2s_sample_rate_hz: [0, 96000],
+    i2s_estimated_sample_rate_hz: [0, 96000],
+    i2s_slot_bits: [0, 64],
+    pcm_bits: [0, 32],
+    audio_samples_captured: [0, Number.MAX_SAFE_INTEGER],
+    raw_buffer_overflows: [0, Number.MAX_SAFE_INTEGER],
+    raw_buffer_underflows: [0, Number.MAX_SAFE_INTEGER],
+    processed_buffer_overflows: [0, Number.MAX_SAFE_INTEGER],
+    processed_buffer_underflows: [0, Number.MAX_SAFE_INTEGER],
+    dsp_blocks_processed: [0, Number.MAX_SAFE_INTEGER],
+    dsp_samples_processed: [0, Number.MAX_SAFE_INTEGER],
+    dsp_input_underflows: [0, Number.MAX_SAFE_INTEGER],
+    dsp_output_overflows: [0, Number.MAX_SAFE_INTEGER],
+    dsp_input_peak: [0, 32768],
+    dsp_output_peak: [0, 32768],
+    dsp_input_avg_abs: [0, 32768],
+    dsp_output_avg_abs: [0, 32768],
+    dsp_measured_gain: [0, 100],
+    dsp_ns_suppressed: [0, Number.MAX_SAFE_INTEGER],
+    dsp_vad_speech_blocks: [0, Number.MAX_SAFE_INTEGER],
+    dsp_vad_silence_blocks: [0, Number.MAX_SAFE_INTEGER],
+    opus_encoded_frames: [0, Number.MAX_SAFE_INTEGER],
+    opus_encoded_bytes: [0, Number.MAX_SAFE_INTEGER],
+    opus_encode_errors: [0, Number.MAX_SAFE_INTEGER],
+    opus_dropped_blocks: [0, Number.MAX_SAFE_INTEGER],
+    opus_dropped_frames: [0, Number.MAX_SAFE_INTEGER],
+    opus_pcm_queue_depth: [0, 4096],
+    opus_encoded_queue_depth: [0, 4096],
+    opus_task_stack_high_water_bytes: [0, Number.MAX_SAFE_INTEGER],
+    webrtc_task_stack_high_water_bytes: [0, Number.MAX_SAFE_INTEGER],
+    largest_internal_block: [0, Number.MAX_SAFE_INTEGER],
 });
 const TELEMETRY_BOOLEAN_FIELDS = new Set([
     "wifi_connected", "hotspot_running", "health_ok", "health_fault_latched",
     "dsp_vad_voice", "peer_connected",
+    "i2s_initialized", "audio_capture_initialized", "audio_capture_running",
+    "dsp_initialized", "dsp_running", "webrtc_running", "signaling_connected",
+    "opus_running", "dsp_ns_enabled", "dsp_vad_enabled", "dsp_limiter_enabled",
+    "dsp_hpf_active",
 ]);
-const TELEMETRY_STRING_LIMITS = Object.freeze({ wifi_ssid: 32, ip: 15, firmware: 64 });
+const TELEMETRY_STRING_LIMITS = Object.freeze({
+    wifi_ssid: 32, ip: 15, wifi_gateway_ip: 15, firmware: 32,
+    firmware_version: 32, idf_version: 32, build_date: 16, build_time: 16,
+    build_id: 64, i2s_input_mode: 16,
+});
 
 function createWebRtcSignaling({
     WebSocket,
@@ -47,6 +89,7 @@ function createWebRtcSignaling({
     deviceRegistry,
     isListenerSessionValid,
     isListenerAuthorizedForDevice = () => true,
+    onHealthCheckResponse = () => {},
 }) {
     const credentials = deviceRegistry || createDeviceCredentialRegistry({ sourceToken });
     const states = new Map(credentials.list().map((deviceId) => [deviceId, {
@@ -459,6 +502,32 @@ function createWebRtcSignaling({
         return true;
     }
 
+    function handleDeviceHealthResponse(ws, message) {
+        if (message.type !== "webrtc_health_response") return false;
+        const state = stateFor(ws);
+        if (!state || ws !== state.device || ws.role !== "webrtc_device" ||
+            ws.authenticated !== true || typeof message.id !== "string" ||
+            !/^[A-Za-z0-9_-]{1,64}$/.test(message.id)) {
+            fail(ws, "invalid_health_response_sender");
+            return true;
+        }
+        const data = normalizeDeviceTelemetry(message.data);
+        if (!data) return true;
+        try { onHealthCheckResponse(state.deviceId, message.id, data); } catch {}
+        return true;
+    }
+
+    function requestDeviceHealth(deviceId, requestId) {
+        if (!isValidDeviceId(deviceId) || typeof requestId !== "string" ||
+            !/^[A-Za-z0-9_-]{1,64}$/.test(requestId)) return false;
+        const state = states.get(deviceId);
+        if (!state || !state.device || state.device.readyState !== WebSocket.OPEN ||
+            state.device.role !== "webrtc_device" || state.device.authenticated !== true) {
+            return false;
+        }
+        return send(state.device, { type: "webrtc_health_request", id: requestId });
+    }
+
     function handleDeviceControl(ws, message) {
         if (message.type !== "webrtc_device_control") return false;
         const state = stateFor(ws);
@@ -499,6 +568,7 @@ function createWebRtcSignaling({
         return handleJoin(ws, message) || handleSignal(ws, message) ||
             handleAudioControl(ws, message) || handleAudioControlAck(ws, message) ||
             handleAudioSettings(ws, message) || handleAudioSettingsAck(ws, message) ||
+            handleDeviceHealthResponse(ws, message) ||
             handleDeviceTelemetry(ws, message) ||
             handleDeviceControl(ws, message);
     }
@@ -539,7 +609,9 @@ function createWebRtcSignaling({
             session_active: state.sessionId !== null,
         };
         if (state.telemetry && Date.now() - state.telemetryAt <= TELEMETRY_MAX_AGE_MS) {
-            result.telemetry = state.telemetry;
+            const telemetryAgeMs = Math.max(0, Date.now() - state.telemetryAt);
+            result.telemetry = { ...state.telemetry, telemetry_age_ms: telemetryAgeMs };
+            result.telemetry_updated_at = state.telemetry.received_at;
         }
         return result;
     }
@@ -551,7 +623,7 @@ function createWebRtcSignaling({
         }));
     }
 
-    return { handleMessage, handleBinary, handleClose, getStatus, getStatuses };
+    return { handleMessage, handleBinary, handleClose, getStatus, getStatuses, requestDeviceHealth };
 }
 
 module.exports = { createWebRtcSignaling, MAX_SDP_CHARS, MAX_CANDIDATE_CHARS };

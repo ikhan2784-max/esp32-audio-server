@@ -37,6 +37,7 @@ const MAX_LEGACY_LISTENERS = 4;
 const WS_CLIENT_PING_MS            = 45000;
 const DEVICE_HEARTBEAT_INTERVAL_MS = 5000;
 const DEVICE_HEARTBEAT_TIMEOUT_MS  = 60000;
+const LISTENER_PONG_TIMEOUT_MS     = 90000;
 const SOURCE_KEEPALIVE_MS          = 60000;
 
 const app = express();
@@ -74,6 +75,19 @@ const authState = createAuthState({
 const healthRequests = new Map();
 const HEALTH_REQUEST_TIMEOUT_MS = 5000;
 let healthRequestCounter = 0;
+const deviceHealthRequests = new Map();
+const DEVICE_HEALTH_REQUEST_TIMEOUT_MS = 6000;
+const MAX_PENDING_DEVICE_HEALTH_REQUESTS = 4;
+const DEVICE_HEALTH_REQUEST_COOLDOWN_MS = 2000;
+const deviceHealthRequestAt = new Map();
+
+function completeDeviceHealthRequest(deviceId, requestId, data) {
+    const pending = deviceHealthRequests.get(requestId);
+    if (!pending || pending.deviceId !== deviceId) return;
+    clearTimeout(pending.timeout);
+    deviceHealthRequests.delete(requestId);
+    pending.resolve({ data, checked_at: new Date().toISOString() });
+}
 
 let lastAudioSequence = null;
 let audioSequenceGaps = 0;
@@ -115,6 +129,7 @@ const webrtcSignaling = createWebRtcSignaling({
         typeof ws.sessionValid === "function" && ws.sessionValid(),
     isListenerAuthorizedForDevice: (ws) => ws.sessionAuthenticated &&
         typeof ws.sessionValid === "function" && ws.sessionValid(),
+    onHealthCheckResponse: completeDeviceHealthRequest,
 });
 
 const listeners = new Set();
@@ -298,7 +313,7 @@ app.get("/api/webrtc/device-status", requireHttps, (req, res) => {
         ready: status.device_connected,
         session_active: status.session_active,
         listener_connected: status.listener_connected,
-        telemetry: status.device_telemetry,
+        telemetry: status.telemetry,
         telemetry_updated_at: status.telemetry_updated_at
     });
 });
@@ -331,6 +346,57 @@ app.get("/api/devices/:deviceId/status", requireHttps, (req, res) => {
     const status = webrtcSignaling.getStatus(deviceId);
     if (!status) return res.status(404).json({ ok: false, error: "Unknown device" });
     return res.json({ ok: true, device_id: deviceId, ...status });
+});
+
+app.post("/api/devices/:deviceId/health-check", requireHttps, requireSameOrigin, async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    if (!isAuthenticatedRequest(req)) {
+        return res.status(401).json({ ok: false, error: "Unauthorized" });
+    }
+    const deviceId = req.params.deviceId;
+    if (!isValidDeviceId(deviceId)) {
+        return res.status(400).json({ ok: false, error: "Invalid device ID" });
+    }
+    const current = webrtcSignaling.getStatus(deviceId);
+    if (!current || current.device_connected !== true) {
+        return res.status(503).json({ ok: false, error: "Device is offline" });
+    }
+    if (deviceHealthRequests.size >= MAX_PENDING_DEVICE_HEALTH_REQUESTS) {
+        return res.status(429).json({ ok: false, error: "Health check capacity reached" });
+    }
+    const now = Date.now();
+    const lastRequestAt = deviceHealthRequestAt.get(deviceId) || 0;
+    if (now - lastRequestAt < DEVICE_HEALTH_REQUEST_COOLDOWN_MS) {
+        return res.status(429).json({ ok: false, error: "Please wait before running another device health check" });
+    }
+    deviceHealthRequestAt.set(deviceId, now);
+
+    const requestId = crypto.randomUUID().replace(/-/g, "");
+    let resolvePending;
+    const responsePromise = new Promise((resolve) => { resolvePending = resolve; });
+    const timeout = setTimeout(() => {
+        deviceHealthRequests.delete(requestId);
+        resolvePending(null);
+    }, DEVICE_HEALTH_REQUEST_TIMEOUT_MS);
+    deviceHealthRequests.set(requestId, { deviceId, timeout, resolve: resolvePending });
+
+    if (!webrtcSignaling.requestDeviceHealth(deviceId, requestId)) {
+        clearTimeout(timeout);
+        deviceHealthRequests.delete(requestId);
+        return res.status(503).json({ ok: false, error: "Device health request could not be sent" });
+    }
+
+    const result = await responsePromise;
+    if (!result) {
+        return res.status(504).json({ ok: false, error: "Device health check timed out" });
+    }
+    return res.json({
+        ok: true,
+        device_id: deviceId,
+        request_id: requestId,
+        checked_at: result.checked_at,
+        data: result.data,
+    });
 });
 
 app.get("/api/esp32-health", requireHttps, async (req, res) => {
@@ -707,7 +773,10 @@ const heartbeat = setInterval(() => {
         if (ws.readyState !== WebSocket.OPEN) return;
         if (ws.pingOutstanding && ws.pingSentAt > 0) {
             const elapsed = now - ws.pingSentAt;
-            if (elapsed > DEVICE_HEARTBEAT_TIMEOUT_MS) {
+            const timeout = ws.role === "listener" || ws.role === "webrtc_listener"
+                ? LISTENER_PONG_TIMEOUT_MS
+                : DEVICE_HEARTBEAT_TIMEOUT_MS;
+            if (elapsed > timeout) {
                 console.log(
                     `Terminating dead WS (no pong in ${Math.floor(elapsed / 1000)}s): ` +
                     `role=${ws.role || "unknown"}`

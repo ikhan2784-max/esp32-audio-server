@@ -20,14 +20,54 @@ class MockSocket {
     last(type) { return this.messages.findLast((message) => message.type === type); }
 }
 
-function makeHarness() {
+function makeHarness(onHealthCheckResponse = () => {}) {
     const signaling = createWebRtcSignaling({
         WebSocket,
         sourceToken: "test-only-token",
-        isListenerSessionValid: (ws) => ws.sessionValid
+        isListenerSessionValid: (ws) => ws.sessionValid,
+        onHealthCheckResponse,
     });
     return { signaling, device: new MockSocket(), listener: new MockSocket(true) };
 }
+
+test("routes a bounded authenticated device health snapshot to its request callback", () => {
+    const responses = [];
+    const { signaling, device } = makeHarness((...args) => responses.push(args));
+    signaling.handleMessage(device, {
+        type: "webrtc_device_hello",
+        device: "ESP32-S3-INMP441",
+        source_token: "test-only-token",
+    });
+    const deviceId = device.last("webrtc_device_ready").device_id;
+    const requestId = "health_1234567890abcdef";
+
+    assert.equal(signaling.requestDeviceHealth(deviceId, requestId), true);
+    assert.deepEqual(device.last("webrtc_health_request"), {
+        type: "webrtc_health_request",
+        id: requestId,
+    });
+    assert.equal(signaling.requestDeviceHealth(deviceId, "bad id"), false);
+
+    assert.equal(signaling.handleMessage(device, {
+        type: "webrtc_health_response",
+        id: requestId,
+        data: {
+            wifi_connected: true,
+            i2s_sample_rate_hz: 16000,
+            firmware_version: "2.5.0",
+            build_id: "a".repeat(64),
+            dsp_input_peak: 1234,
+            source_token: "must-not-pass-through",
+        },
+    }), true);
+    assert.deepEqual(responses, [[deviceId, requestId, {
+        wifi_connected: true,
+        i2s_sample_rate_hz: 16000,
+        firmware_version: "2.5.0",
+        build_id: "a".repeat(64),
+        dsp_input_peak: 1234,
+    }]]);
+});
 
 function joinBoth(harness) {
     const { signaling, device, listener } = harness;

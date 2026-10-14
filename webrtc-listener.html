@@ -145,6 +145,36 @@
     .metric span { display:block; color:#839bad; font-size:.61rem; }
     .metric strong { display:block; margin-top:5px; color:#e2f3fd; font-size:.77rem; font-weight:700; overflow-wrap:anywhere; }
     .metric.wide { grid-column:1/-1; }
+    .health-summary { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:10px 0; padding:10px; border:1px solid #1b3a50; border-radius:10px; background:#081a27; color:#a9c0cf; font-size:.68rem; }
+    .health-card-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+    .health-card { min-width:0; padding:10px; border:1px solid #1a374b; border-radius:11px; background:linear-gradient(145deg,#0b1d2b,#081723); }
+    .health-card-head { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:8px; }
+    .health-card-head h3 { margin:0; color:#dceefa; font-size:.72rem; line-height:1.3; }
+    .health-card-head small { display:block; margin-top:3px; color:#7f98aa; font-size:.58rem; }
+    .health-status { flex:none; padding:4px 6px; border:1px solid #365167; border-radius:999px; background:#102434; color:#b8cad6; font-size:.56rem; font-weight:800; white-space:nowrap; }
+    .health-status.healthy { color:#65e7ae; border-color:#176447; background:#08251d; }
+    .health-status.warning { color:#f7c85d; border-color:#705c26; background:#2a2411; }
+    .health-status.critical { color:#ff938d; border-color:#784247; background:#2a1619; }
+    .health-status.not-tested { color:#a8bdcc; border-color:#385166; background:#102331; }
+    .health-status.unsupported { color:#98a8b4; border-color:#334553; background:#111e27; }
+    .health-check-list { display:grid; gap:5px; margin:0; padding:0; list-style:none; }
+    .health-check-item { display:grid; grid-template-columns:8px minmax(0,1fr); gap:6px; align-items:start; padding-top:5px; border-top:1px solid #142d3e; }
+    .health-check-item:first-child { padding-top:0; border-top:0; }
+    .health-check-dot { width:7px; height:7px; margin-top:4px; border-radius:50%; background:#8094a2; }
+    .health-check-dot.healthy { background:#38d99a; }
+    .health-check-dot.warning { background:#f4c34f; }
+    .health-check-dot.critical { background:#ff625d; }
+    .health-check-dot.unsupported { background:#667988; }
+    .health-check-label { color:#d3e3ed; font-size:.61rem; font-weight:650; line-height:1.3; }
+    .health-check-detail { margin-top:2px; color:#829aab; font-size:.57rem; line-height:1.35; overflow-wrap:anywhere; }
+    .health-protection-note { margin-top:9px; padding:9px; color:#b9d8e8; border:1px solid #20506a; border-radius:9px; background:#092032; font-size:.61rem; line-height:1.4; }
+    .health-check-actions { display:flex; flex-wrap:wrap; gap:7px; margin-top:8px; }
+    .manual-health-list { display:grid; gap:5px; }
+    .manual-health-item { display:flex; align-items:flex-start; gap:7px; padding:6px 7px; color:#c6d9e5; border:1px solid #183447; border-radius:8px; background:#081924; font-size:.62rem; line-height:1.35; }
+    .manual-health-item input { margin:1px 0 0; accent-color:#168fff; }
+    .health-collapsible { margin-top:10px; }
+    .health-collapsible > summary { cursor:pointer; color:#b9d7e7; font-size:.67rem; font-weight:750; }
+    .health-collapsible .helper { margin-bottom:7px; }
     .status-chip { display:inline-flex; align-items:center; gap:5px; padding:4px 7px; color:#80e6b9; border:1px solid #176447; border-radius:999px; background:#06251c; font-size:.61rem; font-weight:750; }
     .status-chip.offline { color:#ff928d; border-color:#714047; background:#291419; }
     .log-toolbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; margin-bottom:9px; }
@@ -190,6 +220,7 @@
       .brand-copy small { display:none; }
       .device-pill { padding:6px 7px; font-size:.58rem; }
       .mic-orb { width:88px; height:88px; }
+      .health-card-grid { grid-template-columns:1fr; }
     }
     @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration:.01ms !important; transition-duration:.01ms !important; } }
     /* Presentation polish: clearer hierarchy, softer surfaces, and accessible controls. */
@@ -494,7 +525,31 @@
     </section>
 
     <section class="tab-panel" id="panel-diagnostics" role="tabpanel" aria-labelledby="tab-diagnostics" hidden>
-      <div class="section-heading"><h2>SYSTEM</h2><button class="small-button" id="refreshDiagnostics" type="button">Refresh</button></div>
+      <div class="section-heading"><h2>DIAGNOSTICS</h2><button class="small-button" id="refreshDiagnostics" type="button">Refresh</button></div>
+      <section class="setting-group" id="deviceHealthDashboard">
+        <div class="section-heading"><h2>DEVICE HEALTH DASHBOARD</h2><button class="small-button health-check-button" id="runHealthCheck" type="button">Run Full Health Check</button></div>
+        <p class="helper" id="healthCheckStatus" role="status" aria-live="polite">Live device telemetry and browser status will appear here. Full Health Check requests a read-only firmware snapshot and checks the authenticated backend and current browser session.</p>
+        <div class="health-summary" id="healthSummary" role="status" aria-live="polite">No health snapshot yet · run Full Health Check to collect current firmware evidence.</div>
+        <div class="health-card-grid" id="healthCards" aria-live="polite"></div>
+        <div class="health-protection-note"><strong>Protected controls:</strong> watchdog and recovery, setup API authentication, memory/buffer safety, firmware integrity where supported, critical error logging, and physical BOOT recovery are not user-switchable here.</div>
+        <details class="health-collapsible" open>
+          <summary>Health Check Test Plan · <span id="manualHealthCheckCount">0/10</span> manual checks</summary>
+          <p class="helper">Checking an item records a manual completion only. It does not change the measured health status above. The Full Health Check button performs the automated read-only checks.</p>
+          <div class="manual-health-list" id="manualHealthCheckList">
+            <label class="manual-health-item"><input type="checkbox" data-manual-health="i2s">I²S microphone capture test</label>
+            <label class="manual-health-item"><input type="checkbox" data-manual-health="audio">Audio level and clipping test</label>
+            <label class="manual-health-item"><input type="checkbox" data-manual-health="dsp">DSP pipeline test</label>
+            <label class="manual-health-item"><input type="checkbox" data-manual-health="wifi">Wi-Fi signal and gateway test</label>
+            <label class="manual-health-item"><input type="checkbox" data-manual-health="render">Render connectivity and authentication test</label>
+            <label class="manual-health-item"><input type="checkbox" data-manual-health="webrtc">WebRTC signaling and media test</label>
+            <label class="manual-health-item"><input type="checkbox" data-manual-health="memory">Memory and task health test</label>
+            <label class="manual-health-item"><input type="checkbox" data-manual-health="nvs">NVS/configuration integrity test</label>
+            <label class="manual-health-item"><input type="checkbox" data-manual-health="logs">Log system test</label>
+            <label class="manual-health-item"><input type="checkbox" data-manual-health="power">Battery/power sensor test (if installed)</label>
+          </div>
+          <div class="health-check-actions"><button class="small-button" id="resetManualHealthChecks" type="button">Reset checklist</button><button class="small-button" id="copyHealthResults" type="button">Copy results</button></div>
+        </details>
+      </section>
       <section class="setting-group"><h2>DEVICE</h2><div class="diagnostic-grid">
         <div class="metric"><span>Device</span><strong id="diagDevice">ESP32-S3</strong></div><div class="metric"><span>Firmware</span><strong id="diagFirmware">—</strong></div>
         <div class="metric"><span>Uptime</span><strong id="diagUptime">—</strong></div><div class="metric"><span>Boot reason</span><strong id="diagBoot">—</strong></div>
@@ -524,11 +579,10 @@
     <section class="tab-panel" id="panel-logs" role="tabpanel" aria-labelledby="tab-logs" hidden>
       <div class="section-heading"><h2>EVENT LOG</h2><span class="status-chip"><span id="logCount">0</span> events</span></div>
       <section class="setting-group">
-        <div class="log-toolbar"><div class="filter-list" role="group" aria-label="Filter event log"><button class="filter-button" data-log-filter="all" aria-pressed="true" type="button">All</button><button class="filter-button" data-log-filter="info" aria-pressed="false" type="button">Info</button><button class="filter-button" data-log-filter="warning" aria-pressed="false" type="button">Warning</button><button class="filter-button" data-log-filter="error" aria-pressed="false" type="button">Error</button><button class="filter-button" data-log-filter="backend" aria-pressed="false" type="button">Backend</button><button class="filter-button" data-log-filter="health" aria-pressed="false" type="button">Health Check</button></div><label class="autoscroll-option"><input type="checkbox" id="autoScrollLogs" checked> Auto-scroll</label><div><button class="small-button health-check-button" id="runHealthCheck" type="button">Run health check</button> <button class="small-button danger" id="clearLogs" type="button">Clear</button> <button class="small-button" id="exportLogs" type="button">Export</button></div></div>
-        <p class="helper" id="healthCheckStatus" role="status" aria-live="polite">Health Check runs read-only browser, Render API, device, and WebRTC checks and records each result here.</p>
+        <div class="log-toolbar"><div class="filter-list" role="group" aria-label="Filter event log"><button class="filter-button" data-log-filter="all" aria-pressed="true" type="button">All</button><button class="filter-button" data-log-filter="info" aria-pressed="false" type="button">Info</button><button class="filter-button" data-log-filter="warning" aria-pressed="false" type="button">Warning</button><button class="filter-button" data-log-filter="error" aria-pressed="false" type="button">Error</button><button class="filter-button" data-log-filter="backend" aria-pressed="false" type="button">Backend</button><button class="filter-button" data-log-filter="health" aria-pressed="false" type="button">Health Check</button></div><label class="autoscroll-option"><input type="checkbox" id="autoScrollLogs" checked> Auto-scroll</label><div><button class="small-button danger" id="clearLogs" type="button">Clear</button> <button class="small-button" id="exportLogs" type="button">Export</button></div></div>
         <div class="log-list" id="logList" aria-live="polite"><div class="log-entry"><span class="log-time">—</span><span class="log-level info">INFO</span><span>Listener ready</span></div></div>
       </section>
-      <p class="helper">Health Check records browser support, playback state, Render health and authenticated APIs, selected-device status and telemetry, and WebRTC connection/RTP counters. It is read-only; it cannot inspect Render’s private host logs, and it never logs audio payloads or credentials.</p>
+      <p class="helper">Health Check entries include each measured result and evidence. The check is read-only; it cannot inspect Render’s private host logs, and it never logs audio payloads, Wi-Fi passwords, device tokens, or listener credentials.</p>
     </section>
 
     <section class="tab-panel" id="panel-system" role="tabpanel" aria-labelledby="tab-system" hidden>
@@ -674,6 +728,12 @@ let playbackElapsedMs = 0;
 let playbackStartedAtMs = 0;
 let playbackTimerInterval = null;
 let healthCheckRunning = false;
+let latestHealthSnapshot = null;
+let latestHealthSnapshotAt = 0;
+let latestBrowserHealthStats = null;
+let lastHealthRunEvidence = {};
+let lastOpusFrameObservation = null;
+let opusFramesPerSecond = null;
 const MAX_PENDING_CANDIDATES = 32;
 const MAX_RECONNECT_MS = 15000;
 const MAX_RECORDING_BYTES = 128 * 1024 * 1024;
@@ -790,13 +850,14 @@ function logHealthResult(results, label, passed, detail, warning = false) {
   addLog(`${marker} · ${label}: ${detail}`, level, "health");
 }
 
-async function fetchHealthCheck(url, responseType = "json", timeoutMs = 6000) {
+async function fetchHealthCheck(url, responseType = "json", timeoutMs = 6000, requestOptions = {}) {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, {
+      ...requestOptions,
       cache: "no-store",
-      credentials: "same-origin",
+      credentials: requestOptions.credentials || "same-origin",
       signal: controller.signal
     });
     if (!response.ok) return { ok: false, status: response.status, body: null };
@@ -814,14 +875,398 @@ async function fetchHealthCheck(url, responseType = "json", timeoutMs = 6000) {
   }
 }
 
+function makeHealthItem(label, status, detail, required = true) {
+  return { label, status, detail, required };
+}
+
+function healthBool(value, label, successDetail, failureDetail, failureStatus = "Warning", required = true) {
+  if (typeof value !== "boolean") return makeHealthItem(label, "Not Tested", "No current device measurement is available.", required);
+  return makeHealthItem(label, value ? "Healthy" : failureStatus,
+    value ? successDetail : failureDetail, required);
+}
+
+function healthCounter(value, label, description, required = true) {
+  if (!Number.isFinite(value)) return makeHealthItem(label, "Not Tested", "Counter is not reported by this firmware.", required);
+  const count = Math.max(0, Math.floor(value));
+  return makeHealthItem(label, count === 0 ? "Healthy" : "Warning",
+    `${description}: ${count}.`, required);
+}
+
+function healthGroupStatus(items) {
+  if (items.some((item) => item.status === "Critical")) return "Critical";
+  if (items.some((item) => item.status === "Warning")) return "Warning";
+  const required = items.filter((item) => item.required);
+  if (required.some((item) => item.status === "Not Tested")) return "Not Tested";
+  if (items.some((item) => item.status === "Healthy")) return "Healthy";
+  if (items.every((item) => item.status === "Unsupported")) return "Unsupported";
+  return "Not Tested";
+}
+
+function buildHealthCategories() {
+  const device = selectedDeviceStatus();
+  const telemetry = device?.telemetry || null;
+  const telemetryFresh = telemetry && Number.isFinite(telemetry.telemetry_age_ms) &&
+    telemetry.telemetry_age_ms >= 0 && telemetry.telemetry_age_ms <= 15000;
+  const reportFresh = latestHealthSnapshot && Date.now() - latestHealthSnapshotAt <= 30000;
+  const data = reportFresh ? latestHealthSnapshot : telemetryFresh ? telemetry : null;
+  const d = data || {};
+  const hasData = Boolean(data);
+  const captured = Number.isFinite(d.audio_samples_captured) && d.audio_samples_captured > 0;
+  const zeroCounters = (...values) => values.every((value) => Number.isFinite(value) && value === 0);
+  const liveTrack = Boolean(remoteStream && remoteStream.getAudioTracks().some((track) => track.readyState === "live"));
+  const playing = liveTrack && !audioEl.paused && !audioEl.ended;
+  const peerState = peer?.connectionState || "";
+  const signalingReady = Boolean(sessionId && socket && socket.readyState === WebSocket.OPEN);
+  const browser = latestBrowserHealthStats;
+  const rtpAvailable = browser && Number.isFinite(browser.packetsReceived);
+  const healthEvidence = lastHealthRunEvidence;
+
+  const micMode = d.i2s_input_mode;
+  const sampleRate = d.i2s_sample_rate_hz;
+  const slotBits = d.i2s_slot_bits;
+  const pcmBits = d.pcm_bits;
+  const rateBitsKnown = Number.isFinite(sampleRate) && Number.isFinite(slotBits) && Number.isFinite(pcmBits);
+  const inputPeak = d.dsp_input_peak;
+  const outputPeak = d.dsp_output_peak;
+  const rmsDb = d.dsp_vad_rms_db;
+  const micSignalObserved = captured && Number.isFinite(inputPeak) && inputPeak > 0;
+  const i2sDriverStatusKnown = typeof d.i2s_initialized === "boolean" &&
+    typeof d.audio_capture_running === "boolean";
+  const i2sDriverReady = i2sDriverStatusKnown && d.i2s_initialized &&
+    d.audio_capture_running && captured;
+  const telemetryAge = telemetry?.telemetry_age_ms;
+  const nowFresh = Number.isFinite(telemetryAge) && telemetryAge >= 0 && telemetryAge <= 15000;
+
+  const categories = [
+    { name: "Microphone & I²S", items: [
+      makeHealthItem("Microphone detected / initialized", !hasData || !captured ? "Not Tested" :
+        micSignalObserved ? "Healthy" : "Warning",
+        !hasData || !captured ? "No captured samples have been reported." : micSignalObserved ?
+          `Nonzero microphone samples have been observed since capture started (peak ${Math.floor(inputPeak)}); this is not a live electrical presence sensor.` :
+          "Capture is running but no nonzero microphone sample has been observed; microphone presence is unconfirmed."),
+      healthBool(i2sDriverStatusKnown ? i2sDriverReady : undefined, "I²S driver status",
+        "I²S clock information is available, the capture task is running, and samples have been captured.",
+        "I²S initialization, capture task, or sample progress is missing.", "Critical"),
+      makeHealthItem("Sample rate and bit depth", !rateBitsKnown ? "Not Tested" :
+        sampleRate === 16000 && slotBits === 32 && pcmBits === 16 ? "Healthy" : "Warning",
+        rateBitsKnown ? `${sampleRate} Hz configured · ${Number.isFinite(d.i2s_estimated_sample_rate_hz) ? `${d.i2s_estimated_sample_rate_hz} Hz driver clock estimate` : "driver clock estimate unavailable"} · ${slotBits}-bit I²S slot · ${pcmBits}-bit PCM; the validated default is 16 kHz mono PCM16.` : "Firmware has not reported the configured I²S and PCM formats."),
+      makeHealthItem("Left/right channel status", "Not Tested",
+        micMode ? `Selected input mode: ${micMode}; independent left/right signal levels are not exposed, so channel integrity is not verified.` : "Input mode and independent left/right channel measurements are unavailable.", false),
+      makeHealthItem("Actual input audio level (RMS/peak)", !Number.isFinite(rmsDb) || !Number.isFinite(inputPeak) ? "Not Tested" :
+        inputPeak >= 32767 ? "Warning" : captured ? "Healthy" : "Not Tested",
+        Number.isFinite(rmsDb) && Number.isFinite(inputPeak) ? `Latest VAD RMS ${rmsDb.toFixed(1)} dBFS · peak since DSP start ${Math.floor(inputPeak)}${captured ? "" : " · no captured-sample count"}.` : "Live level metrics are not available."),
+      makeHealthItem("Clipping percentage", "Unsupported", "This firmware reports peak and limiter counters, but not a sample-rail count needed to calculate a percentage.", false),
+      makeHealthItem("Silent/stuck microphone detection", "Unsupported", "No time-windowed stuck-sample detector is exposed yet.", false),
+      makeHealthItem("DMA buffer overruns and underruns", "Unsupported", "The I²S driver does not expose DMA overrun/underrun counters; app buffer errors and drops are reported separately.", false),
+      makeHealthItem("Dropped audio samples", !hasData ? "Not Tested" :
+        zeroCounters(d.audio_buffer_overflows, d.dsp_input_underflows, d.dsp_output_overflows, d.opus_dropped_blocks, d.opus_dropped_frames) ? "Healthy" : "Warning",
+        hasData ? `Audio buffer ${d.audio_buffer_overflows ?? "n/a"} · DSP underflow/overflow ${d.dsp_input_underflows ?? "n/a"}/${d.dsp_output_overflows ?? "n/a"} · Opus drops ${d.opus_dropped_blocks ?? "n/a"}/${d.opus_dropped_frames ?? "n/a"}.` : "Drop counters are not available."),
+      makeHealthItem("Microphone self-test", "Not Tested", "The online check does not inject a test signal or consume the live audio stream.", false),
+    ] },
+    { name: "Audio DSP", items: [
+      healthBool(hasData ? d.dsp_running : undefined, "DSP pipeline active", "DSP task is running.", "DSP task is not running.", "Critical"),
+      healthBool(hasData ? d.dsp_hpf_active : undefined, "High-pass/DC removal status", "The live DSP pipeline reports its HPF/DC stage active.", "HPF/DC stage is not active.", "Warning"),
+      healthBool(hasData ? d.dsp_ns_enabled : undefined, "Noise suppression status", d.dsp_ns_enabled ? "Runtime noise suppression is enabled." : "Runtime noise suppression is disabled by the current setting.", "Runtime noise-suppression state is not reported.", "Not Tested"),
+      makeHealthItem("VAD speech detection", !hasData || d.dsp_vad_enabled !== true || !Number.isFinite(rmsDb) ? "Not Tested" :
+        d.dsp_vad_voice === true ? "Healthy" : "Not Tested",
+        !hasData || !Number.isFinite(rmsDb) ? "VAD has no current measurement." : `VAD ${d.dsp_vad_voice ? "detected speech" : "did not detect speech in this snapshot"} · RMS ${rmsDb.toFixed(1)} dBFS; a quiet snapshot is not treated as a fault.`),
+      makeHealthItem("Input/output audio level comparison", !Number.isFinite(d.dsp_input_avg_abs) || !Number.isFinite(d.dsp_output_avg_abs) ? "Not Tested" : "Healthy",
+        Number.isFinite(d.dsp_input_avg_abs) && Number.isFinite(d.dsp_output_avg_abs) ? `Average absolute level ${d.dsp_input_avg_abs} → ${d.dsp_output_avg_abs}.` : "DSP input/output level comparison is not reported."),
+      makeHealthItem("Gain and limiter activity", !Number.isFinite(d.dsp_measured_gain) ? "Not Tested" :
+        Number(d.dsp_limiter_clipped || 0) > 0 ? "Warning" : "Healthy",
+        Number.isFinite(d.dsp_measured_gain) ? `Measured gain ${Number(d.dsp_measured_gain).toFixed(2)}× · limiter count ${d.dsp_limiter_clipped ?? "n/a"} · limiter ${d.dsp_limiter_enabled ? "enabled" : "disabled"}.` : "Gain/limiter metrics are not reported."),
+      makeHealthItem("Clipping after processing", !Number.isFinite(outputPeak) ? "Not Tested" :
+        outputPeak >= 32767 || Number(d.dsp_limiter_clipped || 0) > 0 ? "Warning" : "Healthy",
+        Number.isFinite(outputPeak) ? `Output peak ${Math.floor(outputPeak)} · limiter interventions ${d.dsp_limiter_clipped ?? "n/a"}; percentage is not available.` : "Processed peak telemetry is unavailable."),
+      makeHealthItem("Processing time per frame", "Unsupported", "Per-frame DSP execution timing is not instrumented.", false),
+      makeHealthItem("DSP CPU load", "Unsupported", "Per-task CPU utilization is not instrumented.", false),
+      makeHealthItem("DSP processing failures", !hasData ? "Not Tested" :
+        zeroCounters(d.dsp_errors, d.dsp_input_underflows, d.dsp_output_overflows) ? "Healthy" : "Critical",
+        hasData ? `DSP errors ${d.dsp_errors ?? "n/a"} · input underflows ${d.dsp_input_underflows ?? "n/a"} · output overflows ${d.dsp_output_overflows ?? "n/a"}.` : "DSP failure counters are not available."),
+    ] },
+    { name: "Wi-Fi & Hotspot", items: [
+      healthBool(hasData ? d.wifi_connected : undefined, "Wi-Fi connected/disconnected", "Station Wi-Fi is connected.", "Station Wi-Fi is disconnected.", "Critical"),
+      makeHealthItem("SSID, IP, RSSI signal strength", !hasData || !d.wifi_connected ? "Not Tested" : "Healthy",
+        hasData && d.wifi_connected ? `SSID ${d.wifi_ssid || "not reported"} · IP ${d.ip || "not reported"} · RSSI ${Number.isFinite(d.wifi_rssi) ? `${Math.round(d.wifi_rssi)} dBm` : "not reported"}.` : "No current station network details."),
+      makeHealthItem("Gateway and DNS reachability", !hasData || !d.wifi_connected ? "Not Tested" : "Not Tested",
+        d.wifi_gateway_ip ? `Gateway ${d.wifi_gateway_ip} is configured; DNS reachability is not actively probed.` : "Gateway/DNS reachability is not probed by the read-only check.", false),
+      makeHealthItem("Connection and reconnection attempts", !hasData ? "Not Tested" :
+        zeroCounters(d.wifi_retry_count, d.wifi_disconnect_count) ? "Healthy" : "Warning",
+        hasData ? `Retries ${d.wifi_retry_count ?? "n/a"} · disconnects ${d.wifi_disconnect_count ?? "n/a"}.` : "Wi-Fi retry counters are unavailable."),
+      makeHealthItem("Last disconnect reason", !hasData || !Number.isFinite(d.wifi_last_disconnect_reason) ? "Not Tested" :
+        Number(d.wifi_disconnect_count || 0) === 0 ? "Healthy" : "Warning",
+        Number.isFinite(d.wifi_last_disconnect_reason) ? Number(d.wifi_disconnect_count || 0) === 0 ? "No disconnect recorded since this counter reset." : `Last disconnect reason code ${d.wifi_last_disconnect_reason}.` : "Disconnect reason is not reported."),
+      makeHealthItem("Hotspot state and client count", !hasData ? "Not Tested" : "Healthy",
+        hasData ? `Hotspot ${d.hotspot_running ? "running" : "off"} · ${Number.isFinite(d.hotspot_clients) ? d.hotspot_clients : "unknown"} client(s).` : "Hotspot telemetry is unavailable."),
+      makeHealthItem("AP/STA coexistence health", !hasData || !d.wifi_connected || !d.hotspot_running ? "Not Tested" : "Healthy",
+        d.wifi_connected && d.hotspot_running ? "Station and hotspot are both active in this snapshot." : "AP/STA simultaneous operation is not currently observed." , false),
+      makeHealthItem("Wi-Fi scan and saved-network tests", "Not Tested", "Scanning or changing saved credentials is not performed by a read-only health check.", false),
+      makeHealthItem("Network stability and packet loss", !hasData ? "Not Tested" :
+        zeroCounters(d.wifi_disconnect_count, d.wifi_retry_count) ? "Healthy" : "Warning",
+        hasData ? `${d.wifi_disconnect_count ?? "n/a"} disconnect(s), ${d.wifi_retry_count ?? "n/a"} retry(ies); IP packet loss is not measured.` : "Network counters are unavailable."),
+      healthBool(hasData ? d.signaling_connected : undefined, "Internet reachability", "Authenticated Render signaling is connected from the ESP32.", "ESP32 has no active authenticated Render signaling connection.", "Warning"),
+    ] },
+    { name: "Render Backend", items: [
+      healthBool(healthEvidence.deviceSignaling, "DNS resolution", "ESP32 WSS signaling is connected; device-side name resolution succeeded.", "ESP32-side DNS/WSS connection is not confirmed.", "Warning"),
+      healthBool(healthEvidence.deviceSignaling, "HTTPS/TLS handshake", "ESP32 established its secure WSS connection to Render.", "ESP32-side TLS is not confirmed.", "Warning"),
+      healthBool(healthEvidence.deviceSignaling, "Authentication success/failure", "The device authenticated to the configured Render signaling service.", "Device authentication is not confirmed.", "Critical"),
+      healthBool(healthEvidence.deviceSignaling, "Signaling connection state", "Device signaling is connected.", "Device signaling is disconnected.", "Critical"),
+      healthBool(healthEvidence.deviceSignaling, "WebSocket state", "Authenticated device WebSocket is open.", "Device WebSocket is not connected.", "Critical"),
+      makeHealthItem("Server ping / round-trip time", "Unsupported", "Server-side device signaling RTT is not measured.", false),
+      makeHealthItem("Last successful heartbeat", !device || !Number.isFinite(telemetryAge) ? "Not Tested" :
+        nowFresh ? "Healthy" : "Warning",
+        Number.isFinite(telemetryAge) ? `Most recent device telemetry ${Math.floor(telemetryAge / 1000)}s ago.` : "No heartbeat/telemetry timestamp is available."),
+      makeHealthItem("Connection retry counter", "Unsupported", "A distinct device signaling reconnect counter is not exposed.", false),
+      healthCounter(hasData ? d.signaling_errors : undefined, "Backend/signaling error count", "Reported signaling errors"),
+      makeHealthItem("Server session state", !device ? "Not Tested" : device.session_active ? "Healthy" : "Not Tested",
+        device?.session_active ? "An authenticated listener/device session is active." : "No listener session is active; this is normal when audio is not being listened to.", false),
+    ] },
+    { name: "WebRTC & Opus", items: [
+      makeHealthItem("Peer connection state", !listenerActive || !peer ? "Not Tested" :
+        peerState === "connected" ? "Healthy" : peerState === "failed" ? "Critical" : peerState === "closed" ? "Critical" : "Warning",
+        listenerActive && peer ? `Browser peer connection: ${peerState || "unknown"}.` : "Start listening to establish a browser peer connection.", Boolean(listenerActive)),
+      makeHealthItem("ICE state and selected candidate", !listenerActive || !peer || !browser ? "Not Tested" :
+        peer.iceConnectionState === "connected" || peer.iceConnectionState === "completed" ? "Healthy" :
+          peer.iceConnectionState === "failed" ? "Critical" : "Warning",
+        listenerActive && peer ? `ICE ${peer.iceConnectionState || "unknown"}${browser?.candidatePair ? ` · ${browser.candidatePair}` : " · selected candidate details unavailable"}.` : "ICE is checked when listening is active.", Boolean(listenerActive)),
+      makeHealthItem("Signaling negotiation state", !listenerActive ? "Not Tested" :
+        signalingReady && sessionId ? "Healthy" : "Warning",
+        signalingReady ? `Authenticated listener signaling is ready · session ${String(sessionId).slice(0, 8)}…` : "No active negotiated listener signaling session.", Boolean(listenerActive)),
+      healthBool(hasData ? d.opus_running : undefined, "Opus encoder initialized", "Opus encoder worker is running.", "Opus encoder worker is not running.", "Warning", Boolean(listenerActive)),
+      makeHealthItem("Encoded audio frame rate", !Number.isFinite(opusFramesPerSecond) ? "Not Tested" : "Healthy",
+        Number.isFinite(opusFramesPerSecond) ? `${opusFramesPerSecond.toFixed(1)} encoded frame(s)/s observed between telemetry samples.` : "A frame-rate delta needs at least two telemetry observations." , false),
+      makeHealthItem("Audio packets sent and bytes transferred", !rtpAvailable ? "Not Tested" :
+        browser.packetsReceived > 0 ? "Healthy" : "Warning",
+        rtpAvailable ? `${browser.packetsReceived} received RTP packet(s) · ${browser.bytesReceived ?? "n/a"} byte(s).` : "Browser inbound RTP counters are unavailable.", Boolean(listenerActive)),
+      makeHealthItem("Transport packet loss and jitter", !rtpAvailable ? "Not Tested" :
+        Number(browser.packetsLost || 0) > 0 ? "Warning" : "Healthy",
+        rtpAvailable ? `${browser.packetsLost || 0} reported lost packet(s) · ${Number.isFinite(browser.jitterMs) ? `${browser.jitterMs.toFixed(1)} ms jitter` : "jitter unavailable"}.` : "WebRTC receiver statistics are unavailable.", Boolean(listenerActive)),
+      makeHealthItem("End-to-end latency estimate", !Number.isFinite(browser?.rttMs) ? "Not Tested" : "Healthy",
+        Number.isFinite(browser?.rttMs) ? `Selected ICE pair RTT ${browser.rttMs.toFixed(1)} ms; one-way latency is not directly measured.` : "No selected-candidate RTT measurement is available.", false),
+      makeHealthItem("Listener track and playback started", !listenerActive ? "Not Tested" :
+        liveTrack && playing ? "Healthy" : liveTrack ? "Warning" : "Critical",
+        !listenerActive ? "Start listening to test remote track and playback." : liveTrack ? playing ? "Live audio track received and browser playback is active." : "Live track received, but browser playback is paused." : "No remote audio track was received.", Boolean(listenerActive)),
+      makeHealthItem("Stalled stream / no-audio detection", !listenerActive ? "Not Tested" :
+        silentInputSinceMs !== null ? "Warning" : rtpAvailable && browser.packetsReceived > 0 && Number.isFinite(latestInputDbfs) ? "Healthy" : "Not Tested",
+        silentInputSinceMs !== null ? "Audio-level monitor detected sustained silence on an active stream." : rtpAvailable && browser.packetsReceived > 0 ? `RTP is arriving${Number.isFinite(latestInputDbfs) ? ` · input meter ${formatAudioLevelDbfs(latestInputDbfs)}` : ""}.` : "No active stream observation is available.", Boolean(listenerActive)),
+    ] },
+    { name: "ESP32 System", items: [
+      makeHealthItem("Firmware and build version", hasData && d.firmware && d.firmware_version ? "Healthy" : "Not Tested",
+        hasData && d.firmware ? `${d.firmware}${d.firmware_version ? ` v${d.firmware_version}` : ""}${d.build_id ? ` · build ${String(d.build_id).slice(0, 16)}` : ""}${d.idf_version ? ` · ESP-IDF ${d.idf_version}` : ""}${d.build_date && d.build_time ? ` · built ${d.build_date} ${d.build_time}` : ""}.` : "Running firmware identity is not reported."),
+      makeHealthItem("Device uptime", Number.isFinite(d.uptime_ms) ? "Healthy" : "Not Tested",
+        Number.isFinite(d.uptime_ms) ? formatDuration(d.uptime_ms / 1000) : "Uptime is not reported."),
+      makeHealthItem("Last boot/reset reason", Number.isFinite(d.reset_reason) ? "Healthy" : "Not Tested",
+        Number.isFinite(d.reset_reason) ? `Reset reason code ${d.reset_reason}.` : "Reset reason is not reported."),
+      makeHealthItem("Free internal heap and minimum", Number.isFinite(d.free_internal_heap ?? d.free_heap) && Number.isFinite(d.min_free_internal_heap ?? d.min_free_heap) ? "Healthy" : "Not Tested",
+        Number.isFinite(d.free_internal_heap ?? d.free_heap) ? `Free ${formatBytes(d.free_internal_heap ?? d.free_heap)} · minimum ${formatBytes(d.min_free_internal_heap ?? d.min_free_heap)}.` : "Heap counters are unavailable."),
+      makeHealthItem("PSRAM availability", Number.isFinite(d.total_psram) ? Number(d.total_psram) > 0 ? "Healthy" : "Unsupported" : "Not Tested",
+        Number.isFinite(d.total_psram) ? Number(d.total_psram) > 0 ? `${formatBytes(d.free_psram)} free of ${formatBytes(d.total_psram)}.` : "No PSRAM is available on this board/build." : "PSRAM size is not reported.", false),
+      makeHealthItem("Largest allocatable memory block", Number.isFinite(d.largest_internal_block) ? "Healthy" : "Unsupported",
+        Number.isFinite(d.largest_internal_block) ? formatBytes(d.largest_internal_block) : "Largest-block telemetry is not available.", false),
+      makeHealthItem("Task stack high-water marks", Number.isFinite(d.opus_task_stack_high_water_bytes) ? "Healthy" : "Not Tested",
+        Number.isFinite(d.opus_task_stack_high_water_bytes) ? `Opus task ${formatBytes(d.opus_task_stack_high_water_bytes)} · WebRTC task ${formatBytes(d.webrtc_task_stack_high_water_bytes)} remaining.` : "Task stack values are not available yet."),
+      makeHealthItem("CPU utilization estimate", "Unsupported", `Per-task CPU utilization is not instrumented${Number.isFinite(d.cpu_frequency_mhz) ? ` · CPU frequency ${d.cpu_frequency_mhz} MHz` : ""}.`, false),
+      makeHealthItem("Watchdog reset count", "Not Tested", "Only the current reset reason is reported; watchdog history count is not exposed.", false),
+      makeHealthItem("Crash and exception history", "Not Tested", "Crash-history records are not available through the health API.", false),
+      makeHealthItem("NVS read/write status", "Not Tested", "The online snapshot does not run NVS writes or expose a current NVS status flag.", false),
+      makeHealthItem("Task health and deadlock detection", !hasData ? "Not Tested" :
+        d.audio_capture_running && d.dsp_running && d.webrtc_running ? "Healthy" : "Warning",
+        hasData ? `Capture ${d.audio_capture_running ? "running" : "stopped"} · DSP ${d.dsp_running ? "running" : "stopped"} · WebRTC ${d.webrtc_running ? "running" : "stopped"}.` : "Task health telemetry is unavailable."),
+    ] },
+    { name: "Battery & Power", items: [
+      makeHealthItem("Supply voltage", "Unsupported", "No voltage sensor is reported by this hardware configuration.", false),
+      makeHealthItem("Battery percentage", "Unsupported", "No battery gauge is reported.", false),
+      makeHealthItem("Battery voltage and current", "Unsupported", "No battery voltage/current sensor is reported.", false),
+      makeHealthItem("Charging state", "Unsupported", "No charging-state sensor is reported.", false),
+      makeHealthItem("Low-voltage detection", "Unsupported", "No low-voltage monitor is reported.", false),
+      makeHealthItem("Brownout reset count", "Not Tested", "The current reset reason is available; a historical brownout counter is not exposed.", false),
+      makeHealthItem("Battery runtime estimate", "Unsupported", "No battery capacity or current-consumption gauge is reported.", false),
+      makeHealthItem("Power source USB/battery", "Unsupported", "The current hardware does not report its power source.", false),
+      makeHealthItem("Temperature sensor", Number.isFinite(d.temperature_c) ? "Healthy" : "Unsupported",
+        Number.isFinite(d.temperature_c) ? `ESP32 internal temperature ${d.temperature_c.toFixed(1)} °C; this is not a battery temperature reading.` : "No temperature reading is available.", false),
+    ] },
+    { name: "Security & Reliability", items: [
+      makeHealthItem("Setup authentication status", "Not Tested", "Setup-auth runtime state is not exposed to the listener dashboard.", false),
+      makeHealthItem("Failed login counter and lockout", "Not Tested", "Authentication attempt counters are intentionally not exposed by this health snapshot.", false),
+      makeHealthItem("Session expiry operation", "Not Tested", "The active session timeout setting is visible, but expiry is not triggered because it would interrupt this session.", false),
+      makeHealthItem("Unauthorized API request rejection", healthEvidence.unauthorizedApiRejected === true ? "Healthy" : healthEvidence.unauthorizedApiRejected === false ? "Warning" : "Not Tested",
+        healthEvidence.unauthorizedApiRejected === true ? "A same-origin API request without session credentials was rejected with HTTP 401." : healthEvidence.unauthorizedApiRejected === false ? "The unauthenticated API request was not rejected with HTTP 401." : "Run Full Health Check to verify the protected API rejects a request without session credentials.", false),
+      makeHealthItem("Recovery-mode verification", "Not Tested", "Physical BOOT recovery is not triggered remotely; verify it only as a separate manual test.", false),
+      makeHealthItem("Saved credential persistence", "Not Tested", "The health check does not read, print, or rewrite saved credentials.", false),
+      makeHealthItem("Firmware integrity check", "Unsupported", "Secure-boot/image-integrity result is not exposed by this firmware build.", false),
+      makeHealthItem("Reconnect after router restart", "Not Tested", "Requires a controlled router restart and is not performed by this button.", false),
+      makeHealthItem("Wi-Fi failure rollback", "Not Tested", "Would change network configuration; not run by the read-only check.", false),
+      makeHealthItem("Long-duration soak test", "Not Tested", "Requires an extended observation period; a single snapshot cannot validate it.", false),
+      makeHealthItem("Log retention and cleanup test", "Not Tested", "The check does not delete or rewrite logs.", false),
+    ] },
+  ];
+
+  const renderGroup = categories.find((category) => category.name === "Render Backend");
+  if (renderGroup && typeof healthEvidence.renderHealth === "boolean") {
+    renderGroup.items[0] = makeHealthItem("DNS resolution", healthEvidence.renderHealth ? "Healthy" : "Critical",
+      healthEvidence.renderHealth ? "Browser resolved the Render host and received a healthy HTTPS response." : "Browser could not reach the Render health endpoint.");
+    renderGroup.items[1] = makeHealthItem("HTTPS/TLS handshake", healthEvidence.renderHealth ? "Healthy" : "Critical",
+      healthEvidence.renderHealth ? "Browser HTTPS request completed successfully." : "Browser HTTPS request failed.");
+  }
+  if (renderGroup && typeof healthEvidence.authenticatedApi === "boolean") {
+    renderGroup.items[2] = makeHealthItem("Authentication success/failure", healthEvidence.authenticatedApi ? "Healthy" : "Warning",
+      healthEvidence.authenticatedApi ? "Authenticated device API returned successfully." : "Authenticated device API did not succeed.");
+  }
+  return categories;
+}
+
+function renderHealthDashboard(categories = buildHealthCategories()) {
+  const cards = document.getElementById("healthCards");
+  const summary = document.getElementById("healthSummary");
+  if (!cards || !summary) return categories;
+  cards.replaceChildren();
+  const counts = { Healthy: 0, Warning: 0, Critical: 0, "Not Tested": 0, Unsupported: 0 };
+  for (const category of categories) {
+    const status = healthGroupStatus(category.items);
+    const card = document.createElement("article");
+    card.className = "health-card";
+    const head = document.createElement("div");
+    head.className = "health-card-head";
+    const titleWrap = document.createElement("div");
+    const title = document.createElement("h3");
+    title.textContent = category.name;
+    const count = document.createElement("small");
+    count.textContent = `${category.items.length} checks`;
+    titleWrap.append(title, count);
+    const badge = document.createElement("span");
+    badge.className = `health-status ${status.toLowerCase().replaceAll(" ", "-")}`;
+    badge.textContent = status;
+    head.append(titleWrap, badge);
+    const list = document.createElement("ul");
+    list.className = "health-check-list";
+    for (const item of category.items) {
+      counts[item.status] = (counts[item.status] || 0) + 1;
+      const row = document.createElement("li");
+      row.className = "health-check-item";
+      const dot = document.createElement("span");
+      dot.className = `health-check-dot ${item.status.toLowerCase().replaceAll(" ", "-")}`;
+      dot.setAttribute("aria-hidden", "true");
+      const textWrap = document.createElement("div");
+      const label = document.createElement("div");
+      label.className = "health-check-label";
+      label.textContent = item.label;
+      const detail = document.createElement("div");
+      detail.className = "health-check-detail";
+      detail.textContent = `${item.status} · ${item.detail}`;
+      textWrap.append(label, detail);
+      row.append(dot, textWrap);
+      list.append(row);
+    }
+    card.append(head, list);
+    cards.append(card);
+  }
+  const total = Object.values(counts).reduce((sum, value) => sum + value, 0);
+  summary.textContent = `${total} checks · ${counts.Healthy} healthy · ${counts.Warning} warning · ${counts.Critical} critical · ${counts["Not Tested"]} not tested · ${counts.Unsupported} unsupported.`;
+  return categories;
+}
+
+function logHealthDashboard(categories) {
+  for (const category of categories) {
+    for (const item of category.items) {
+      const level = item.status === "Critical" ? "error" : item.status === "Warning" ? "warning" : "info";
+      addLog(`${item.status.toUpperCase()} · ${category.name} / ${item.label}: ${item.detail}`, level, "health");
+    }
+  }
+}
+
+async function getBrowserHealthStats() {
+  const snapshot = {
+    connectionState: peer?.connectionState || null,
+    iceState: peer?.iceConnectionState || null,
+    packetsReceived: null,
+    bytesReceived: null,
+    packetsLost: null,
+    jitterMs: null,
+    rttMs: null,
+    candidatePair: null,
+  };
+  if (!peer || typeof peer.getStats !== "function") return snapshot;
+  try {
+    const report = await peer.getStats();
+    let inbound = null;
+    let selectedPair = null;
+    report.forEach((stat) => {
+      if (stat.type === "inbound-rtp" && (stat.kind === "audio" || stat.mediaType === "audio")) inbound = stat;
+      if (stat.type === "candidate-pair" && (stat.selected === true || (stat.nominated === true && stat.state === "succeeded"))) selectedPair = stat;
+      if (stat.type === "transport" && stat.selectedCandidatePairId) {
+        const candidate = report.get(stat.selectedCandidatePairId);
+        if (candidate) selectedPair = candidate;
+      }
+    });
+    if (inbound) {
+      snapshot.packetsReceived = Number.isFinite(inbound.packetsReceived) ? inbound.packetsReceived : null;
+      snapshot.bytesReceived = Number.isFinite(inbound.bytesReceived) ? inbound.bytesReceived : null;
+      snapshot.packetsLost = Number.isFinite(inbound.packetsLost) ? inbound.packetsLost : null;
+      snapshot.jitterMs = Number.isFinite(inbound.jitter) ? inbound.jitter * 1000 : null;
+    }
+    if (selectedPair) {
+      snapshot.rttMs = Number.isFinite(selectedPair.currentRoundTripTime) ? selectedPair.currentRoundTripTime * 1000 : null;
+      snapshot.candidatePair = `${selectedPair.state || "selected"}${selectedPair.localCandidateId ? ` · local ${selectedPair.localCandidateId}` : ""}${selectedPair.remoteCandidateId ? ` · remote ${selectedPair.remoteCandidateId}` : ""}`;
+    }
+  } catch {}
+  return snapshot;
+}
+
+function updateManualHealthChecklist() {
+  const checks = Array.from(document.querySelectorAll("[data-manual-health]"));
+  let completed = 0;
+  for (const input of checks) {
+    if (input.checked) completed++;
+  }
+  const count = document.getElementById("manualHealthCheckCount");
+  if (count) count.textContent = `${completed}/${checks.length}`;
+  try {
+    localStorage.setItem("esp32-manual-health-checks", JSON.stringify(
+      Object.fromEntries(checks.map((input) => [input.dataset.manualHealth, input.checked]))));
+  } catch {}
+}
+
+function initializeManualHealthChecklist() {
+  const checks = Array.from(document.querySelectorAll("[data-manual-health]"));
+  try {
+    const saved = JSON.parse(localStorage.getItem("esp32-manual-health-checks") || "{}");
+    for (const input of checks) input.checked = saved[input.dataset.manualHealth] === true;
+  } catch {}
+  for (const input of checks) input.addEventListener("change", updateManualHealthChecklist);
+  document.getElementById("resetManualHealthChecks")?.addEventListener("click", () => {
+    for (const input of checks) input.checked = false;
+    updateManualHealthChecklist();
+  });
+  document.getElementById("copyHealthResults")?.addEventListener("click", async () => {
+    const categories = buildHealthCategories();
+    const lines = ["ESP32 Device Health Dashboard", new Date().toLocaleString()];
+    for (const category of categories) {
+      lines.push("", `${category.name}: ${healthGroupStatus(category.items)}`);
+      for (const item of category.items) lines.push(`- ${item.status}: ${item.label} — ${item.detail}`);
+    }
+    lines.push("", `Manual checklist: ${document.getElementById("manualHealthCheckCount")?.textContent || "0/10"}`);
+    try {
+      await navigator.clipboard.writeText(lines.join("\n"));
+      addLog("Health dashboard results copied", "info", "health");
+    } catch {
+      addLog("Could not copy health dashboard results; clipboard access is unavailable", "warning", "health");
+    }
+  });
+  updateManualHealthChecklist();
+}
+
 async function runHealthCheck() {
   if (healthCheckRunning) return;
   healthCheckRunning = true;
   runHealthCheckButton.disabled = true;
   runHealthCheckButton.textContent = "Checking…";
-  healthCheckStatusEl.textContent = "Running read-only browser, backend, device, and WebRTC checks…";
+  healthCheckStatusEl.textContent = "Running the read-only browser, Render, ESP32 firmware, and WebRTC health checks…";
   selectLogFilter("health");
   const results = [];
+  lastHealthRunEvidence = {};
+  latestHealthSnapshot = null;
+  latestHealthSnapshotAt = 0;
+  latestBrowserHealthStats = null;
   addLog("Health check started", "info", "health");
 
   try {
@@ -859,11 +1304,13 @@ async function runHealthCheck() {
       hasObservedLevel ? `${formatAudioLevelDbfs(observedLevel)} at the ${noiseSuppressionActive ? "processed output" : "incoming audio"} meter` : "no current Web Audio level sample", !hasObservedLevel);
     logHealthResult(results, "Noise suppression", true,
       noiseSuppressionActive ? "GTCRN enabled" : "off; direct WebRTC audio path selected");
+    latestBrowserHealthStats = await getBrowserHealthStats();
 
     const backendChecks = [
       (async () => {
         const result = await fetchHealthCheck("/health", "text");
         const passed = result.ok && result.body.trim().toUpperCase() === "OK";
+        lastHealthRunEvidence.renderHealth = passed;
         logHealthResult(results, "Render /health", passed,
           passed ? `HTTP ${result.status} · OK` : result.status ? `HTTP ${result.status}` : (result.detail || "unexpected response"));
       })(),
@@ -877,6 +1324,7 @@ async function runHealthCheck() {
       (async () => {
         const result = await fetchHealthCheck("/api/devices");
         const passed = result.ok && result.body?.ok === true && Array.isArray(result.body.devices);
+        lastHealthRunEvidence.deviceApi = passed;
         const devices = passed ? result.body.devices : [];
         const selectedFound = selectedDeviceId && devices.some((device) => device.device_id === selectedDeviceId);
         logHealthResult(results, "Authenticated device API", passed,
@@ -889,12 +1337,14 @@ async function runHealthCheck() {
       (async () => {
         const result = await fetchHealthCheck("/api/webrtc-status");
         const passed = result.ok && result.body?.ok === true && result.body?.transport === "webrtc";
+        lastHealthRunEvidence.renderSignalingApi = passed;
         logHealthResult(results, "WebRTC backend status", passed,
           passed ? `HTTP ${result.status} · signaling reports ${result.body.transport}` : result.status ? `HTTP ${result.status}` : (result.detail || "invalid JSON response"));
       })(),
       (async () => {
         const result = await fetchHealthCheck("/api/session/settings");
         const passed = result.ok && result.body?.ok === true && Number.isFinite(result.body?.timeout_minutes);
+        lastHealthRunEvidence.authenticatedApi = passed;
         logHealthResult(results, "Authenticated session API", passed,
           passed ? `HTTP ${result.status} · session active · ${result.body.timeout_minutes || "no idle timeout"} minute setting` : result.status ? `HTTP ${result.status}` : (result.detail || "invalid JSON response"));
       })()
@@ -905,21 +1355,49 @@ async function runHealthCheck() {
         const path = `/api/devices/${encodeURIComponent(selectedDeviceId)}/status`;
         const result = await fetchHealthCheck(path);
         const valid = result.ok && result.body?.ok === true && result.body?.device_id === selectedDeviceId;
+        lastHealthRunEvidence.selectedDeviceStatusApi = valid;
         logHealthResult(results, "Selected device status API", valid,
           valid ? `HTTP ${result.status} · status returned for ${selectedDeviceId}` : result.status ? `HTTP ${result.status}` : (result.detail || "invalid JSON response"));
         if (valid) {
           const online = result.body.device_connected === true;
+          lastHealthRunEvidence.deviceSignaling = online;
           logHealthResult(results, "ESP32 signaling connection", online,
             online ? "device is online and connected to Render" : "device is currently offline", !online);
           const telemetryAge = result.body.telemetry?.telemetry_age_ms;
           const freshTelemetry = Number.isFinite(telemetryAge) && telemetryAge >= 0 && telemetryAge <= 15000;
+          lastHealthRunEvidence.deviceTelemetry = freshTelemetry;
           logHealthResult(results, "ESP32 telemetry", freshTelemetry,
             freshTelemetry ? `fresh · ${Math.floor(telemetryAge / 1000)}s old` : "no fresh telemetry received in the last 15s", !freshTelemetry);
+        }
+      })());
+      backendChecks.push((async () => {
+        const path = `/api/devices/${encodeURIComponent(selectedDeviceId)}/health-check`;
+        const result = await fetchHealthCheck(path, "json", 8500, { method: "POST" });
+        const valid = result.ok && result.body?.ok === true && result.body?.device_id === selectedDeviceId &&
+          result.body?.data && typeof result.body.data === "object";
+        lastHealthRunEvidence.deviceSnapshot = valid;
+        if (valid) {
+          latestHealthSnapshot = result.body.data;
+          latestHealthSnapshotAt = Date.now();
+          observeOpusFrameRate(latestHealthSnapshot);
+          logHealthResult(results, "Firmware read-only health snapshot", true,
+            `request ${result.body.request_id} completed at ${new Date(result.body.checked_at).toLocaleTimeString()}`);
+        } else {
+          const detail = result.status ? `HTTP ${result.status}${result.body?.error ? ` · ${result.body.error}` : ""}` : (result.detail || "device snapshot unavailable");
+          logHealthResult(results, "Firmware read-only health snapshot", false, detail, true);
         }
       })());
     } else {
       logHealthResult(results, "Selected device status API", false, "skipped because no device is selected", true);
     }
+
+    backendChecks.push((async () => {
+      const result = await fetchHealthCheck("/api/webrtc-status", "json", 6000, { credentials: "omit" });
+      const rejected = !result.ok && result.status === 401;
+      lastHealthRunEvidence.unauthorizedApiRejected = rejected;
+      logHealthResult(results, "Unauthorized API rejection", rejected,
+        rejected ? "request without session cookies received HTTP 401" : `expected HTTP 401, received ${result.status || "no response"}`);
+    })());
 
     if (peer) {
       const peerState = peer.connectionState;
@@ -943,19 +1421,21 @@ async function runHealthCheck() {
     }
 
     await Promise.all(backendChecks);
-    const failed = results.filter((item) => !item.passed && !item.warning).length;
-    const warnings = results.filter((item) => item.warning).length;
-    const passed = results.filter((item) => item.passed).length;
-    const summary = `${passed} passed · ${warnings} warning(s) · ${failed} failed`;
-    healthCheckStatusEl.textContent = `Health check complete: ${summary}. Results are in the Health Check log.`;
-    addLog(`Health check complete · ${summary}`, failed ? "error" : warnings ? "warning" : "info", "health");
+    const categories = renderHealthDashboard();
+    logHealthDashboard(categories);
+    const allItems = categories.flatMap((category) => category.items);
+    const totals = { Healthy: 0, Warning: 0, Critical: 0, "Not Tested": 0, Unsupported: 0 };
+    for (const item of allItems) totals[item.status] = (totals[item.status] || 0) + 1;
+    const summary = `${allItems.length} checks · ${totals.Healthy} healthy · ${totals.Warning} warning · ${totals.Critical} critical · ${totals["Not Tested"]} not tested · ${totals.Unsupported} unsupported`;
+    healthCheckStatusEl.textContent = `Full Health Check complete: ${summary}. Each result and its evidence is recorded in the Health Check event log.`;
+    addLog(`Full Health Check complete · ${summary}`, totals.Critical ? "error" : totals.Warning ? "warning" : "info", "health");
   } catch {
     healthCheckStatusEl.textContent = "Health check stopped unexpectedly; see the Health Check log for completed checks.";
     addLog("Health check stopped unexpectedly", "error", "health");
   } finally {
     healthCheckRunning = false;
     runHealthCheckButton.disabled = false;
-    runHealthCheckButton.textContent = "Run health check";
+    runHealthCheckButton.textContent = "Run Full Health Check";
     renderLogs();
   }
 }
@@ -1097,10 +1577,25 @@ function formatBytes(value) {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
+function observeOpusFrameRate(data) {
+  if (!data || !Number.isFinite(data.opus_encoded_frames)) return;
+  const count = Number(data.opus_encoded_frames);
+  const now = Date.now();
+  if (lastOpusFrameObservation) {
+    const elapsedMs = now - lastOpusFrameObservation.at;
+    const delta = count - lastOpusFrameObservation.count;
+    if (elapsedMs >= 1000 && delta >= 0) opusFramesPerSecond = delta / (elapsedMs / 1000);
+    if (delta !== 0 || elapsedMs >= 5000) lastOpusFrameObservation = { count, at: now };
+  } else {
+    lastOpusFrameObservation = { count, at: now };
+  }
+}
+
 function updateTelemetryViews(device) {
   const telemetry = device?.telemetry || null;
-  const receivedAt = telemetry?.received_at ? Date.parse(telemetry.received_at) : NaN;
-  const isFresh = telemetry && Number.isFinite(receivedAt) && Date.now() - receivedAt <= 15000;
+  const telemetryAgeMs = telemetry?.telemetry_age_ms;
+  const isFresh = telemetry && Number.isFinite(telemetryAgeMs) &&
+    telemetryAgeMs >= 0 && telemetryAgeMs <= 15000;
   if (!isFresh) {
     setMetric("diagFirmware", "Waiting for device telemetry");
     setMetric("diagUptime", "—");
@@ -1128,6 +1623,8 @@ function updateTelemetryViews(device) {
     setQuickStatus("quickWifi", "N/A", true);
     return;
   }
+
+  observeOpusFrameRate(telemetry);
 
   const wifiConnected = telemetry.wifi_connected === true;
   const wifiText = wifiConnected ? "Connected" : "Disconnected";
@@ -1159,7 +1656,7 @@ function updateTelemetryViews(device) {
   setMetric("networkDrops", Number.isFinite(telemetry.wifi_disconnect_count) ? String(Math.floor(telemetry.wifi_disconnect_count)) : "—");
   setMetric("networkRetries", Number.isFinite(telemetry.wifi_retry_count) ? String(Math.floor(telemetry.wifi_retry_count)) : "—");
   setMetric("networkIp", telemetry.ip || "—");
-  setMetric("networkUpdated", `Telemetry received ${new Date(receivedAt).toLocaleTimeString()}.`);
+  setMetric("networkUpdated", `Telemetry received ${Math.floor(telemetryAgeMs / 1000)}s ago.`);
   setMetric("systemHotspotStatus", telemetry.hotspot_running === true
     ? `Running · ${Math.floor(telemetry.hotspot_clients || 0)} client(s)` : "Not running");
   const hotspotToggle = document.getElementById("hotspotToggle");
@@ -1208,6 +1705,7 @@ async function refreshAppStatus() {
     deviceStatusLabel.textContent = selected ? (online ? "ONLINE" : "OFFLINE") : "NO DEVICE";
     setQuickStatus("quickDevice", selected ? (online ? "ONLINE" : "OFFLINE") : "NOT CONFIGURED", !online);
     updateTelemetryViews(selected);
+    renderHealthDashboard();
     deviceSelectStatusEl.textContent = selected
       ? `${selectedDeviceId} is ${online ? "connected to Render signaling" : "offline"}.`
       : "Configure device credentials on the Render service to add ESP32 boards.";
@@ -1253,11 +1751,13 @@ async function refreshDiagnostics() {
     populateDeviceSelect(response.devices);
     const device = selectedDeviceStatus();
     updateTelemetryViews(device);
+    renderHealthDashboard();
     setMetric("diagDevice", device ? `${selectedDeviceId} · ${device.device_connected ? "online" : "offline"}` : "No device selected");
     setMetric("diagSignaling", device?.device_connected ? "ESP32 signaling connected" : "ESP32 signaling offline");
     setMetric("diagPeer", peer?.connectionState || (device?.session_active ? "Session active" : "No listener session"));
-    setMetric("diagUpdated", device?.telemetry?.received_at
-      ? `Updated ${new Date().toLocaleTimeString()} · device telemetry received ${new Date(device.telemetry.received_at).toLocaleTimeString()}`
+    const telemetryAgeMs = device?.telemetry?.telemetry_age_ms;
+    setMetric("diagUpdated", Number.isFinite(telemetryAgeMs)
+      ? `Updated ${new Date().toLocaleTimeString()} · device telemetry received ${Math.floor(telemetryAgeMs / 1000)}s ago`
       : `Updated ${new Date().toLocaleTimeString()} · waiting for fresh device telemetry`);
     setMetric("networkSignaling", device?.device_connected ? "Connected" : "Device offline");
     void refreshBackendHealth();
@@ -1908,7 +2408,10 @@ async function updateMediaStatus(targetPeer) {
 function startMediaStats(targetPeer) {
   if (statsTimer) clearInterval(statsTimer);
   void updateMediaStatus(targetPeer);
-  statsTimer = setInterval(() => { void updateMediaStatus(targetPeer); }, 2000);
+  statsTimer = setInterval(async () => {
+    await updateMediaStatus(targetPeer);
+    renderHealthDashboard();
+  }, 2000);
 }
 
 function send(message) {
@@ -2566,6 +3069,8 @@ new MutationObserver(() => {
 }).observe(errorEl, { childList: true, characterData: true, subtree: true });
 
 void refreshAppStatus();
+initializeManualHealthChecklist();
+renderHealthDashboard();
 void loadSessionTimeout();
 appStatusTimer = setInterval(() => { void refreshAppStatus(); }, 10000);
 document.addEventListener("visibilitychange", () => {
