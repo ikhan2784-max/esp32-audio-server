@@ -4,69 +4,318 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title>Phase 5 WebRTC Listener</title>
+  <meta name="theme-color" content="#06131f">
+  <title>ESP32 Audio Listener</title>
   <style>
-    :root { color-scheme: dark; font-family: system-ui, sans-serif; background:#0b1020; color:#e9eefc; }
-    body { margin:0; padding:24px; min-height:100vh; display:grid; place-items:center; }
-    main { width:min(100%, 620px); background:#131c33; border:1px solid #263553; border-radius:18px; padding:24px; box-shadow:0 18px 55px #0006; }
-    h1 { margin:0 0 6px; font-size:1.4rem; } p { color:#aab7d0; line-height:1.5; }
-    .state { border:1px solid #314264; border-radius:12px; padding:14px; margin:18px 0; }
-    .state strong { color:#83b7ff; } .hint { font-size:.9rem; }
-    #mediaStatus { color:#aab7d0; font-size:.9rem; overflow-wrap:anywhere; }
-    .actions { display:flex; flex-wrap:wrap; gap:10px; margin:18px 0; }
-    .processing { display:flex; flex-wrap:wrap; align-items:center; gap:8px 14px; margin-top:14px; color:#aab7d0; font-size:.92rem; }
-    .processing label { display:flex; align-items:center; gap:8px; color:#e9eefc; }
-    .processing input { accent-color:#78adff; }
-    .recording-source { display:flex; flex-direction:column; gap:6px; margin:12px 0; color:#e9eefc; font-size:.92rem; }
-    .recording-source select { width:100%; border:1px solid #314264; border-radius:8px; padding:9px; color:#e9eefc; background:#0b1020; font:inherit; }
-    .gain-control { border:1px solid #314264; border-radius:12px; padding:14px; margin:16px 0; }
-    .gain-heading { display:flex; justify-content:space-between; gap:12px; font-weight:650; }
-    #micGain { width:100%; accent-color:#78adff; margin:12px 0 4px; }
-    #micGainStatus { display:block; color:#aab7d0; font-size:.88rem; min-height:1.3em; }
-    #processingStatus { color:#aab7d0; }
-    button { border:0; border-radius:10px; padding:11px 16px; font:inherit; font-weight:650; color:#071120; background:#78adff; cursor:pointer; }
-    button.secondary { background:#344463; color:#eef3ff; } button:disabled { opacity:.45; cursor:not-allowed; }
-    audio { width:100%; margin-top:12px; }
-    #error { color:#ff9292; min-height:1.4em; }
-    footer { border-top:1px solid #263553; margin-top:20px; padding-top:14px; color:#8797b4; font-size:.82rem; }
+    :root {
+      color-scheme: dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #020a12;
+      color: #edf7ff;
+      --surface: #071522;
+      --surface-raised: #0b1c2a;
+      --surface-soft: #0d2131;
+      --border: #173348;
+      --border-bright: #15547a;
+      --blue: #0b84ff;
+      --cyan: #27b9ff;
+      --green: #21d994;
+      --muted: #8ba1b5;
+      --red: #ff605e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 18px 12px;
+      background: radial-gradient(ellipse at 50% -20%, #123652 0, #071522 44%, #020a12 80%);
+    }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+    .app-shell {
+      width: min(100%, 520px);
+      min-height: min(900px, calc(100vh - 36px));
+      margin: 0 auto;
+      padding: 16px;
+      overflow: hidden;
+      background: linear-gradient(160deg, #081927, #04101a 76%);
+      border: 1px solid #11608a;
+      border-radius: 24px;
+      box-shadow: 0 24px 70px #000a, inset 0 1px #ffffff0a;
+    }
+    .app-header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:3px 2px 15px; }
+    .brand { display:flex; align-items:center; gap:10px; min-width:0; }
+    .brand-icon { display:grid; place-items:center; width:42px; height:42px; flex:none; color:var(--cyan); border:1px solid #138bd1; border-radius:12px; background:#08243a; box-shadow:0 0 18px #0782d32e; }
+    .brand-icon svg { width:25px; height:25px; }
+    .brand-copy { min-width:0; }
+    .brand-copy strong { display:block; overflow:hidden; color:#f4faff; font-size:1rem; letter-spacing:.045em; text-overflow:ellipsis; white-space:nowrap; }
+    .brand-copy span { display:block; margin-top:2px; color:#8da8bc; font-size:.7rem; }
+    .device-pill { display:flex; align-items:center; gap:6px; flex:none; padding:7px 9px; color:#8da8bc; border:1px solid #254157; border-radius:999px; background:#0a1b28; font-size:.65rem; font-weight:800; letter-spacing:.04em; }
+    .status-dot { width:7px; height:7px; border-radius:50%; background:#8294a3; box-shadow:0 0 8px currentColor; }
+    .device-pill.online { color:#61e8ad; border-color:#14704f; background:#06251d; }
+    .device-pill.online .status-dot { background:var(--green); }
+    .device-pill.offline { color:#ff8987; border-color:#703e42; background:#291417; }
+    .device-pill.offline .status-dot { background:var(--red); }
+    .tabbar { display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:4px; padding:5px; border:1px solid #17364b; border-radius:15px; background:#06121d; }
+    .tab-button { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; min-height:55px; padding:6px 2px; color:#91a7b9; border:0; border-radius:10px; background:transparent; font-size:.63rem; font-weight:650; }
+    .tab-button svg { width:19px; height:19px; stroke:currentColor; }
+    .tab-button:hover { color:#eaf7ff; background:#0c2434; }
+    .tab-button[aria-selected="true"] { color:#fff; background:linear-gradient(180deg,#138cff,#0873e7); box-shadow:0 5px 16px #087cf34d; }
+    .tab-panel { display:none; padding:17px 1px 4px; animation:panel-in .16s ease-out; }
+    .tab-panel.active { display:block; }
+    @keyframes panel-in { from { opacity:.55; transform:translateY(3px); } to { opacity:1; transform:none; } }
+    .section-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 1px 11px; }
+    .section-heading h1, .section-heading h2 { display:flex; align-items:center; gap:7px; margin:0; color:#dff4ff; font-size:.78rem; font-weight:800; letter-spacing:.08em; }
+    .section-heading h1 svg, .section-heading h2 svg { width:15px; height:15px; color:var(--cyan); stroke:currentColor; }
+    .live-state { max-width:58%; overflow:hidden; color:#65e6ac; font-size:.7rem; font-weight:700; text-overflow:ellipsis; white-space:nowrap; }
+    .live-state::before { content:""; display:inline-block; width:6px; height:6px; margin:0 6px 1px 0; border-radius:50%; background:currentColor; }
+    .panel-card { margin:9px 0; padding:13px; border:1px solid var(--border); border-radius:14px; background:linear-gradient(150deg,#0c1e2c,#091723); box-shadow:inset 0 1px #ffffff05; }
+    .hero-card { display:flex; flex-direction:column; align-items:center; padding:18px 14px 14px; text-align:center; }
+    .mic-orb { display:grid; place-items:center; width:100px; height:100px; margin:2px auto 13px; color:#62caff; border:1px solid #1686ca; border-radius:50%; background:radial-gradient(circle at 50% 40%,#10517a 0,#092b46 48%,#071724 75%); box-shadow:0 0 0 9px #0b2a3a6e,0 0 32px #008bf04a; }
+    .mic-orb svg { width:38px; height:38px; stroke:currentColor; }
+    .hero-caption { margin:0 0 12px; color:#9bb3c4; font-size:.77rem; }
+    .listen-actions { display:grid; width:100%; grid-template-columns:1fr 1fr; gap:8px; }
+    .action-button { display:flex; align-items:center; justify-content:center; gap:7px; min-height:43px; padding:10px 11px; color:white; border:1px solid #208ce9; border-radius:10px; background:linear-gradient(#168fff,#0872e6); box-shadow:0 5px 14px #007cf333; font-size:.76rem; font-weight:800; letter-spacing:.015em; }
+    .action-button svg { width:16px; height:16px; stroke:currentColor; }
+    .action-button.stop { border-color:#263f52; background:#122737; box-shadow:none; }
+    .action-button.record { border-color:#c84242; background:linear-gradient(#ff5753,#e53935); box-shadow:0 5px 14px #f13c3333; }
+    button:disabled { opacity:.43; cursor:not-allowed; box-shadow:none; }
+    .spec-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:7px; margin:9px 0; }
+    .spec-card { min-width:0; padding:9px 4px; text-align:center; border:1px solid #1a374b; border-radius:10px; background:#091b28; }
+    .spec-card strong { display:block; color:#eaf7ff; font-size:.82rem; font-weight:750; }
+    .spec-card span { display:block; margin-top:3px; color:#819bae; font-size:.56rem; letter-spacing:.07em; }
+    .card-title { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px; color:#cce7f6; font-size:.75rem; font-weight:750; }
+    .card-title .eyebrow { color:var(--cyan); font-size:.66rem; letter-spacing:.07em; }
+    .level-label { display:flex; justify-content:space-between; align-items:center; color:#b9d0df; font-size:.7rem; }
+    .level-label output { color:#e5f4ff; font-size:.75rem; font-variant-numeric:tabular-nums; }
+    .level-track { height:12px; margin:8px 0 2px; overflow:hidden; border:1px solid #183448; border-radius:5px; background:repeating-linear-gradient(90deg,#102b37 0 8px,#081a26 8px 11px); }
+    .level-fill { width:0; height:100%; border-radius:4px; background:linear-gradient(90deg,#1ac27b,#32dd90 65%,#fac950 84%,#ff665e); transition:width .22s ease; }
+    .volume-row { display:flex; align-items:center; gap:9px; margin-top:10px; color:#8ca6b9; }
+    .volume-row svg { width:17px; height:17px; flex:none; stroke:currentColor; }
+    input[type="range"] { width:100%; accent-color:#178eff; }
+    .volume-row input { margin:0; }
+    .volume-row output { width:38px; color:#d8ecfa; text-align:right; font-size:.7rem; }
+    .record-card { border-color:#653235; background:linear-gradient(145deg,#25171c,#111821); }
+    .record-row { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    .record-row .action-button { min-width:145px; }
+    #recordStatus { color:#f3b7b4; font-size:.66rem; text-align:right; }
+    .record-options { margin-top:9px; color:#a0b3c1; font-size:.68rem; }
+    .record-options summary { cursor:pointer; }
+    .recording-source { display:flex; flex-direction:column; gap:6px; margin:9px 0 0; color:#d8e8f2; font-size:.74rem; text-align:left; }
+    .recording-source select { width:100%; border:1px solid #314a5c; border-radius:8px; padding:8px; color:#e9f4fa; background:#081925; font:inherit; }
+    .quick-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; }
+    .quick-tile { min-width:0; padding:8px 4px; text-align:center; border:1px solid #173649; border-radius:10px; background:#091b28; }
+    .quick-tile strong { display:block; overflow:hidden; color:#e2f4ff; font-size:.64rem; text-overflow:ellipsis; white-space:nowrap; }
+    .quick-tile span { display:block; margin-top:4px; color:#62dea9; font-size:.55rem; font-weight:800; letter-spacing:.04em; }
+    .quick-tile .bad { color:#ff8b85; }
+    .settings-stack { display:grid; gap:9px; }
+    .setting-group { padding:12px; border:1px solid var(--border); border-radius:14px; background:linear-gradient(150deg,#0c1e2c,#091723); }
+    .setting-group h2 { margin:0 0 10px; color:#cce7f6; font-size:.75rem; letter-spacing:.05em; }
+    .choice-list { display:grid; gap:6px; }
+    .choice-row { display:flex; align-items:center; gap:9px; padding:9px 10px; color:#d9e9f2; border:1px solid #1a3549; border-radius:9px; background:#091a27; font-size:.74rem; }
+    .choice-row input { accent-color:#168bff; }
+    .choice-row small { margin-left:auto; color:#8099aa; font-size:.65rem; }
+    .choice-row.disabled { opacity:.45; }
+    .setting-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:9px 0; border-top:1px solid #173044; color:#d8e8f2; font-size:.73rem; }
+    .setting-row:first-of-type { border-top:0; }
+    .toggle { position:relative; width:37px; height:21px; flex:none; }
+    .toggle input { width:1px; height:1px; opacity:0; }
+    .toggle span { position:absolute; inset:0; border:1px solid #476174; border-radius:99px; background:#263c4c; transition:.15s; pointer-events:none; }
+    .toggle span::before { content:""; position:absolute; width:15px; height:15px; left:2px; top:2px; border-radius:50%; background:#bfd0dc; transition:.15s; }
+    .toggle input:checked + span { border-color:#1689e9; background:#0878df; }
+    .toggle input:checked + span::before { left:18px; background:#fff; }
+    .gain-control { padding:0; margin:0; border:0; background:transparent; }
+    .gain-heading { display:flex; justify-content:space-between; gap:10px; color:#e0edf4; font-size:.75rem; font-weight:700; }
+    #micGain { width:100%; margin:12px 0 5px; }
+    #micGainValue { color:#61bfff; font-variant-numeric:tabular-nums; }
+    #micGainStatus, #processingStatus { display:block; min-height:1.2em; color:#8da6b7; font-size:.66rem; }
+    .helper { margin:8px 0 0; color:#8199aa; font-size:.66rem; line-height:1.45; }
+    .readonly-tag { color:#8ca5b6; font-size:.65rem; }
+    .diagnostic-grid { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
+    .metric { padding:10px; border:1px solid #19364a; border-radius:10px; background:#091a27; }
+    .metric span { display:block; color:#839bad; font-size:.61rem; }
+    .metric strong { display:block; margin-top:5px; color:#e2f3fd; font-size:.77rem; font-weight:700; overflow-wrap:anywhere; }
+    .metric.wide { grid-column:1/-1; }
+    .status-chip { display:inline-flex; align-items:center; gap:5px; padding:4px 7px; color:#80e6b9; border:1px solid #176447; border-radius:999px; background:#06251c; font-size:.61rem; font-weight:750; }
+    .status-chip.offline { color:#ff928d; border-color:#714047; background:#291419; }
+    .log-toolbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; margin-bottom:9px; }
+    .filter-list { display:flex; gap:5px; }
+    .filter-button { padding:6px 8px; color:#a8bfce; border:1px solid #234256; border-radius:999px; background:#091a27; font-size:.63rem; }
+    .filter-button[aria-pressed="true"] { color:white; border-color:#087cf0; background:#087cf0; }
+    .small-button { padding:7px 9px; color:#cce5f3; border:1px solid #2a4b60; border-radius:8px; background:#102433; font-size:.67rem; font-weight:700; }
+    .small-button.danger { color:#ff9a97; border-color:#794148; background:#25171c; }
+    .log-list { display:grid; gap:5px; max-height:420px; overflow:auto; padding:2px; }
+    .log-entry { display:grid; grid-template-columns:63px 55px 1fr; gap:6px; padding:7px 5px; border-bottom:1px solid #152c3d; color:#b9ccda; font: .65rem/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap:anywhere; }
+    .log-time { color:#7793a8; }
+    .log-level { font-weight:800; }
+    .log-level.info { color:#50caff; }
+    .log-level.warning { color:#f7c654; }
+    .log-level.error { color:#ff706c; }
+    .system-actions { display:grid; gap:7px; }
+    .system-action { display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; padding:10px; color:#e1eef5; border:1px solid #1a394d; border-radius:10px; background:#091b28; text-align:left; font-size:.73rem; }
+    .system-action span { color:#8ca6b7; font-size:.65rem; }
+    .system-action.danger { color:#ff8884; border-color:#61363b; }
+    .system-action:disabled { opacity:.5; }
+    .notice { padding:9px 10px; color:#a8c2d1; border:1px solid #224359; border-radius:9px; background:#0a1c29; font-size:.68rem; line-height:1.4; }
+    .notice.error { color:#ff9c98; border-color:#66363a; background:#211518; }
+    .notice[hidden] { display:none; }
+    .setting-footnote { margin-top:8px; color:#7c95a7; font-size:.63rem; line-height:1.4; }
+    .audio-control { display:block; width:100%; height:34px; margin-top:10px; }
+    #error { min-height:1.25em; margin:7px 2px; color:#ff9691; font-size:.7rem; line-height:1.4; }
+    #mediaStatus { overflow-wrap:anywhere; color:#9bb0bf; font-size:.68rem; line-height:1.4; }
+    .footer { margin-top:14px; padding:10px 1px 1px; color:#71899b; border-top:1px solid #173044; font-size:.63rem; line-height:1.4; text-align:center; }
+    .hidden-audio-label { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; }
+    .muted { color:#8099aa; }
+    @media (max-width:390px) {
+      body { padding:0; }
+      .app-shell { min-height:100vh; padding:12px; border:0; border-radius:0; }
+      .brand-copy strong { font-size:.9rem; }
+      .device-pill { padding:6px 7px; font-size:.58rem; }
+      .mic-orb { width:88px; height:88px; }
+      .record-row .action-button { min-width:0; }
+    }
+    @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration:.01ms !important; transition-duration:.01ms !important; } }
   </style>
 </head>
 <body>
-  <main>
-    <h1>WebRTC audio listener</h1>
-    <p>Phase 5 connection check. Audio is received over a one-way WebRTC peer connection. Recording, when started, stays in this browser.</p>
-    <div class="state" aria-live="polite">Connection: <strong id="state">Stopped</strong></div>
-    <div class="actions">
-      <button id="start">Start listening</button>
-      <button class="secondary" id="stop" disabled>Stop</button>
-      <button class="secondary" id="record" disabled>Record on this device</button>
-      <button class="secondary" id="stopRecord" disabled>Stop recording</button>
-    </div>
-    <label class="recording-source" for="recordSource">Recording source
-      <select id="recordSource">
-        <option value="raw" selected>Raw incoming WebRTC audio (before GTCRN)</option>
-        <option value="filtered">Listener output (GTCRN when enabled)</option>
-      </select>
-    </label>
-    <p class="hint">Raw recording is selected for noise diagnosis. It does not change filtered listener playback.</p>
-    <audio id="audio" controls autoplay playsinline></audio>
-    <section class="gain-control" aria-labelledby="gainHeading">
-      <label class="gain-heading" id="gainHeading" for="micGain">
-        <span>ESP32 microphone gain</span>
-        <output id="micGainValue" for="micGain">100%</output>
-      </label>
-      <input id="micGain" type="range" min="50" max="150" step="5" value="100" disabled>
-      <span id="micGainStatus" role="status" aria-live="polite">Start listening and connect to adjust microphone gain.</span>
-      <p class="hint">Changes the ESP32 audio after DSP and before Opus. This is separate from headphone/browser volume. 100% keeps the current level; high settings can clip. The value is temporary for this session.</p>
+  <main class="app-shell">
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="3" width="16" height="18" rx="4"/><path d="M9 9a3 3 0 0 1 6 0v3a3 3 0 0 1-6 0V9Zm-3 3a6 6 0 0 0 12 0m-6 6v3m-3 0h6"/></svg></div>
+        <div class="brand-copy"><strong>ESP32 INMP441</strong><span>Secure Live Audio Listener</span></div>
+      </div>
+      <div id="deviceOnlinePill" class="device-pill"><i class="status-dot" aria-hidden="true"></i><span id="deviceStatusLabel">CHECKING</span></div>
+    </header>
+
+    <nav class="tabbar" role="tablist" aria-label="Listener app sections">
+      <button class="tab-button" type="button" role="tab" id="tab-listener" aria-controls="panel-listener" aria-selected="true" data-tab="listener"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0m-7 7v3m-4 0h8"/></svg><span>Listener</span></button>
+      <button class="tab-button" type="button" role="tab" id="tab-settings" aria-controls="panel-settings" aria-selected="false" data-tab="settings"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="m19.4 15 .1.1 1.2 2.1-2 2-2.2-1.2a8 8 0 0 1-1.5.6L14.4 21h-2.8l-.6-2.4a8 8 0 0 1-1.5-.6L7.3 19.2l-2-2 1.2-2.2a8 8 0 0 1-.6-1.5L3.5 13v-2.8l2.4-.6a8 8 0 0 1 .6-1.5L5.3 6l2-2 2.2 1.2a8 8 0 0 1 1.5-.6L11.6 2h2.8l.6 2.4a8 8 0 0 1 1.5.6L18.7 3.8l2 2-1.2 2.2a8 8 0 0 1 .6 1.5l2.4.6V13l-2.4.6a8 8 0 0 1-.7 1.4Z"/></svg><span>Settings</span></button>
+      <button class="tab-button" type="button" role="tab" id="tab-diagnostics" aria-controls="panel-diagnostics" aria-selected="false" data-tab="diagnostics"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M3 12h4l2-7 4 14 2-7h6"/></svg><span>Diagnostics</span></button>
+      <button class="tab-button" type="button" role="tab" id="tab-logs" aria-controls="panel-logs" aria-selected="false" data-tab="logs"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 12h7m-7 4h7"/></svg><span>Logs</span></button>
+      <button class="tab-button" type="button" role="tab" id="tab-system" aria-controls="panel-system" aria-selected="false" data-tab="system"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-1.7 1.7-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5v.2h-2.4v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1L8 17l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H6.7v-2.4h.2a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9L8 8.6 9.7 7l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.5v-.2h2.4v.2a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3L18.1 7l1.7 1.7-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.5 1h.2V14h-.2a1.7 1.7 0 0 0-1.5 1Z"/></svg><span>System</span></button>
+    </nav>
+
+    <section class="tab-panel active" id="panel-listener" role="tabpanel" aria-labelledby="tab-listener">
+      <div class="section-heading"><h1><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3v18m-8-9h16"/></svg>LIVE AUDIO</h1><span class="live-state" id="state" aria-live="polite">Stopped</span></div>
+      <section class="panel-card hero-card" aria-label="Live audio listener">
+        <div class="mic-orb" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.6"><rect x="9" y="2.5" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0m-7 7v3m-4 0h8"/></svg></div>
+        <p class="hero-caption">One-way WebRTC audio from your ESP32</p>
+        <div class="listen-actions">
+          <button class="action-button" id="start" type="button"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="m8 5 11 7-11 7z"/></svg>Start listening</button>
+          <button class="action-button stop" id="stop" type="button" disabled><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>Stop</button>
+        </div>
+        <audio id="audio" class="audio-control" controls autoplay playsinline aria-label="Audio playback controls"></audio>
+      </section>
+
+      <div class="spec-grid" aria-label="Current audio format">
+        <div class="spec-card"><strong>16 kHz</strong><span>RATE</span></div><div class="spec-card"><strong>16-bit</strong><span>DEPTH</span></div><div class="spec-card"><strong>Mono</strong><span>CHANNEL</span></div><div class="spec-card"><strong>Mic 1</strong><span>INPUT</span></div>
+      </div>
+
+      <section class="panel-card">
+        <div class="card-title"><span class="eyebrow">AUDIO LEVEL</span><output id="listenerDb">Waiting for audio</output></div>
+        <div class="level-label"><span id="levelSource">Incoming WebRTC audio</span><span id="levelWord">Idle</span></div>
+        <div class="level-track" role="meter" aria-label="Audio output level" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="level-fill" id="audioLevelFill"></div></div>
+        <label class="volume-row" for="playVolume"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M4 10v4h4l5 4V6l-5 4H4Z"/><path d="M17 9a5 5 0 0 1 0 6m2-9a9 9 0 0 1 0 12"/></svg><input id="playVolume" type="range" min="0" max="100" value="100" aria-label="Listener playback volume"><output id="playVolumeValue">100%</output></label>
+      </section>
+
+      <section class="panel-card record-card">
+        <div class="card-title"><span class="eyebrow">LOCAL RECORDING · WAV</span><span id="recordStatus">Not recording</span></div>
+        <div class="record-row">
+          <button class="action-button record" id="record" type="button" disabled><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="5"/></svg>Start recording</button>
+          <button class="action-button stop" id="stopRecord" type="button" disabled>Stop recording</button>
+        </div>
+        <details class="record-options"><summary>Recording options</summary><label class="recording-source" for="recordSource">Source · WAV / 16-bit PCM<select id="recordSource"><option value="raw" selected>Raw incoming WebRTC audio</option><option value="filtered">GTCRN-processed listener output</option></select></label><p class="helper">WAV files are saved locally. The microphone on this phone or computer is never requested.</p></details>
+      </section>
+
+      <section class="panel-card">
+        <div class="card-title"><span class="eyebrow">QUICK STATUS</span><span class="muted">Live</span></div>
+        <div class="quick-grid">
+          <div class="quick-tile"><strong>ESP32</strong><span id="quickDevice">CHECKING</span></div><div class="quick-tile"><strong>WebRTC</strong><span id="quickWebRtc">IDLE</span></div><div class="quick-tile"><strong>Render</strong><span id="quickRender">CHECKING</span></div><div class="quick-tile"><strong>Wi-Fi</strong><span id="quickWifi">—</span></div>
+        </div>
+      </section>
+      <p id="error" role="status" aria-live="polite"></p>
+      <details class="panel-card"><summary class="card-title">Connection details</summary><p id="mediaStatus" role="status" aria-live="polite">Audio: waiting for a remote track.</p></details>
     </section>
-    <div class="processing">
-      <label><input id="noiseSuppression" type="checkbox" checked> AI noise suppression (GTCRN)</label>
-      <span id="processingStatus" role="status" aria-live="polite">GTCRN will activate when listening starts.</span>
-    </div>
-    <p id="mediaStatus" role="status" aria-live="polite">Audio: waiting for a remote track.</p>
-    <p id="error" role="status"></p>
-    <p class="hint">If the browser blocks playback, press play above. Some networks require a TURN relay; this Render signaling path currently uses direct ICE connectivity.</p>
-    <footer>ESP32 microphone → WebRTC/Opus → this listener · no listener microphone is requested</footer>
+
+    <section class="tab-panel" id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
+      <div class="section-heading"><h2> AUDIO SETTINGS</h2><span class="status-chip">Firmware profile</span></div>
+      <div class="settings-stack">
+        <section class="setting-group"><h2>MICROPHONE MODE</h2><div class="choice-list">
+          <label class="choice-row"><input type="radio" name="micMode" checked disabled><span>Mic 1</span><small>Active</small></label>
+          <label class="choice-row disabled"><input type="radio" name="micMode" disabled><span>Mic 2</span><small>Not available</small></label>
+          <label class="choice-row disabled"><input type="radio" name="micMode" disabled><span>Both (Mono)</span><small>Not available</small></label>
+          <label class="choice-row disabled"><input type="radio" name="micMode" disabled><span>Both (Stereo)</span><small>Not available</small></label>
+        </div><p class="helper">This build is using the left I²S channel. Microphone selection is not remotely configurable yet.</p></section>
+        <section class="setting-group"><h2>AUDIO QUALITY</h2><div class="choice-list">
+          <label class="choice-row"><input type="radio" name="audioQuality" checked disabled><span>16 kHz / 16-bit</span><small>Voice profile</small></label>
+          <label class="choice-row disabled"><input type="radio" name="audioQuality" disabled><span>44.1 kHz / 24-bit</span><small>Unavailable</small></label>
+        </div><p class="helper">Capture currently uses 16 kHz mono PCM16 and WebRTC Opus. Higher-rate selection is not exposed by the current firmware.</p></section>
+        <section class="setting-group"><h2>DEVICE GAIN</h2><div class="gain-control">
+          <label class="gain-heading" id="gainHeading" for="micGain"><span>Microphone gain</span><output id="micGainValue" for="micGain">100%</output></label>
+          <input id="micGain" type="range" min="50" max="150" step="5" value="100" disabled>
+          <span id="micGainStatus" role="status" aria-live="polite">Start listening and connect to adjust microphone gain.</span>
+          <p class="helper">Session-only gain after the ESP32 DSP, before Opus. 100% is 1.0×. Higher settings may clip.</p>
+        </div></section>
+        <section class="setting-group"><h2>AUDIO PROCESSING</h2>
+          <div class="setting-row"><span>Browser AI noise suppression (GTCRN)</span><label class="toggle" aria-label="Enable GTCRN noise suppression"><input id="noiseSuppression" type="checkbox" checked><span></span></label></div>
+          <span id="processingStatus" role="status" aria-live="polite">GTCRN will activate when listening starts.</span>
+          <div class="setting-row"><span>ESP32 voice detection (VAD)</span><span class="readonly-tag">Firmware controlled</span></div>
+          <div class="setting-row"><span>ESP32 limiter</span><span class="readonly-tag">Firmware controlled</span></div>
+        </section>
+      </div>
+    </section>
+
+    <section class="tab-panel" id="panel-diagnostics" role="tabpanel" aria-labelledby="tab-diagnostics" hidden>
+      <div class="section-heading"><h2>SYSTEM</h2><button class="small-button" id="refreshDiagnostics" type="button">Refresh</button></div>
+      <section class="setting-group"><h2>DEVICE</h2><div class="diagnostic-grid">
+        <div class="metric"><span>Device</span><strong id="diagDevice">ESP32-S3</strong></div><div class="metric"><span>Firmware</span><strong id="diagFirmware">—</strong></div>
+        <div class="metric"><span>Uptime</span><strong id="diagUptime">—</strong></div><div class="metric"><span>Boot reason</span><strong id="diagBoot">—</strong></div>
+        <div class="metric"><span>Temperature</span><strong id="diagTemp">—</strong></div><div class="metric"><span>Wi-Fi RSSI</span><strong id="diagRssi">—</strong></div>
+      </div></section>
+      <section class="setting-group"><h2>MEMORY</h2><div class="diagnostic-grid">
+        <div class="metric"><span>Free heap</span><strong id="diagHeap">—</strong></div><div class="metric"><span>Minimum heap</span><strong id="diagMinHeap">—</strong></div>
+        <div class="metric"><span>Free PSRAM</span><strong id="diagPsram">—</strong></div><div class="metric"><span>Audio / sender / monitor stack</span><strong id="diagStacks">—</strong></div>
+      </div></section>
+      <section class="setting-group"><h2>NETWORK & WEBRTC</h2><div class="diagnostic-grid">
+        <div class="metric"><span>Render signaling</span><strong id="diagSignaling">—</strong></div><div class="metric"><span>WebRTC device</span><strong id="diagPeer">—</strong></div>
+        <div class="metric"><span>Audio packets</span><strong id="diagPackets">—</strong></div><div class="metric"><span>Wi-Fi drops</span><strong id="diagWifiDrops">—</strong></div>
+        <div class="metric wide"><span>Device errors / transmit latency</span><strong id="diagErrors">—</strong></div>
+      </div></section>
+      <p class="helper" id="diagUpdated">Diagnostics are read from the authenticated Render and ESP32 health endpoints.</p>
+    </section>
+
+    <section class="tab-panel" id="panel-logs" role="tabpanel" aria-labelledby="tab-logs" hidden>
+      <div class="section-heading"><h2>EVENT LOG</h2><span class="status-chip"><span id="logCount">0</span> events</span></div>
+      <section class="setting-group">
+        <div class="log-toolbar"><div class="filter-list" role="group" aria-label="Filter event log"><button class="filter-button" data-log-filter="all" aria-pressed="true" type="button">All</button><button class="filter-button" data-log-filter="info" aria-pressed="false" type="button">Info</button><button class="filter-button" data-log-filter="warning" aria-pressed="false" type="button">Warning</button><button class="filter-button" data-log-filter="error" aria-pressed="false" type="button">Error</button></div><div><button class="small-button danger" id="clearLogs" type="button">Clear</button> <button class="small-button" id="exportLogs" type="button">Export</button></div></div>
+        <div class="log-list" id="logList" aria-live="polite"><div class="log-entry"><span class="log-time">—</span><span class="log-level info">INFO</span><span>Listener ready</span></div></div>
+      </section>
+      <p class="helper">This page records connection and playback events locally in this tab. Audio is never written to the event log.</p>
+    </section>
+
+    <section class="tab-panel" id="panel-system" role="tabpanel" aria-labelledby="tab-system" hidden>
+      <div class="section-heading"><h2>FIRMWARE UPDATE (OTA)</h2><span class="readonly-tag">Not configured</span></div>
+      <section class="setting-group"><div class="metric"><span>Current version</span><strong id="systemFirmware">—</strong></div><div class="metric" style="margin-top:7px"><span>Update status</span><strong>OTA endpoint is not available in this build.</strong></div><button class="system-action" type="button" disabled style="margin-top:8px">Check for update <span>Unavailable</span></button><button class="system-action" type="button" disabled style="margin-top:7px">Update now <span>Unavailable</span></button></section>
+      <div class="section-heading"><h2>SYSTEM ACTIONS</h2></div>
+      <section class="setting-group system-actions">
+        <button class="system-action" id="rebootDevice" type="button">Restart ESP32 <span>›</span></button>
+        <button class="system-action" id="forgetWifi" type="button">Forget Wi-Fi <span>›</span></button>
+        <button class="system-action danger" id="factoryReset" type="button" disabled>Factory reset <span>Deferred</span></button>
+        <div id="systemActionStatus" class="notice" role="status" aria-live="polite" hidden></div>
+      </section>
+      <div class="section-heading"><h2>SECURITY</h2></div>
+      <section class="setting-group">
+        <div class="setting-row"><span>Listener PIN</span><span class="readonly-tag">•••••• · Required</span></div>
+        <div class="setting-row"><span>Device authentication</span><span class="status-chip">On</span></div>
+        <div class="setting-row"><span>Session timeout</span><span class="readonly-tag">30 min idle</span></div>
+        <p class="helper">Timeout and authentication policy are enforced by the server for this session.</p>
+      </section>
+      <div class="section-heading"><h2>LED SETTINGS</h2></div>
+      <section class="setting-group"><div class="setting-row"><span>Status LED</span><span class="readonly-tag">Firmware control unavailable</span></div></section>
+      <button class="small-button" id="logout" type="button" style="width:100%;margin-top:8px">Sign out</button>
+    </section>
+
+    <footer class="footer">ESP32 microphone → Render signaling → WebRTC listener · one-way audio · recording stays on this device</footer>
   </main>
 <script src="/session-activity.js"></script>
 <script>
@@ -86,6 +335,27 @@ const stopButton = document.getElementById("stop");
 const recordButton = document.getElementById("record");
 const stopRecordButton = document.getElementById("stopRecord");
 const recordSourceEl = document.getElementById("recordSource");
+const recordStatusEl = document.getElementById("recordStatus");
+const logListEl = document.getElementById("logList");
+const logCountEl = document.getElementById("logCount");
+const deviceOnlinePill = document.getElementById("deviceOnlinePill");
+const deviceStatusLabel = document.getElementById("deviceStatusLabel");
+const audioLevelFill = document.getElementById("audioLevelFill");
+const audioLevelMeter = document.querySelector(".level-track[role='meter']");
+const playVolumeEl = document.getElementById("playVolume");
+const playVolumeValueEl = document.getElementById("playVolumeValue");
+const levelSourceEl = document.getElementById("levelSource");
+
+const MAX_LOG_ENTRIES = 200;
+let logEntries = [];
+let activeLogFilter = "all";
+let lastDeviceOnline = null;
+let lastRenderReachable = null;
+let lastSignalingState = null;
+let appStatusTimer = null;
+let diagnosticsBusy = false;
+let recordTimer = null;
+let recordStartedAt = 0;
 
 let socket = null;
 let peer = null;
@@ -100,10 +370,18 @@ let pendingCandidates = [];
 let pendingLocalCandidates = [];
 let localDescriptionSent = false;
 let localIceComplete = false;
-let recorder = null;
 let recordingSourceLabel = "raw";
 let recordedChunks = [];
 let recordedBytes = 0;
+let recordingActive = false;
+let recordingFinalizing = false;
+let recordingSampleRate = 0;
+let recordingChannels = 0;
+let recordingSourceNode = null;
+let recordingProcessor = null;
+let recordingSilenceGain = null;
+let recordingFlushTimer = null;
+let wavCaptureWorkletLoaded = false;
 let sessionRedirectTimer = null;
 let audioContext = null;
 let mediaElementSource = null;
@@ -124,9 +402,330 @@ let audioProcessingStatus = "GTCRN will activate when listening starts.";
 const MAX_PENDING_CANDIDATES = 32;
 const MAX_RECONNECT_MS = 15000;
 const MAX_RECORDING_BYTES = 128 * 1024 * 1024;
+const WAV_HEADER_BYTES = 44;
 const WS_RECONNECT_CLOSE_CODE = 3000;
 
-function setState(value) { stateEl.textContent = value; }
+const WAV_CAPTURE_WORKLET_SOURCE = `
+class WavCaptureProcessor extends AudioWorkletProcessor {
+  constructor(options) {
+    super();
+    this.channels = Math.max(1, Math.min(2, options.processorOptions.channels || 1));
+    this.batchFrames = 4096;
+    this.buffer = new ArrayBuffer(this.batchFrames * this.channels * 2);
+    this.view = new DataView(this.buffer);
+    this.offset = 0;
+    this.capturing = true;
+    this.port.onmessage = (event) => {
+      if (event.data && event.data.type === "stop") {
+        this.capturing = false;
+        this.flush();
+        this.port.postMessage({ type: "flushed" });
+      }
+    };
+  }
+
+  sendBatch() {
+    const buffer = this.buffer;
+    this.port.postMessage({ type: "pcm", buffer, byteLength: this.offset }, [buffer]);
+    this.buffer = new ArrayBuffer(this.batchFrames * this.channels * 2);
+    this.view = new DataView(this.buffer);
+    this.offset = 0;
+  }
+
+  flush() {
+    if (this.offset > 0) this.sendBatch();
+  }
+
+  process(inputs, outputs) {
+    for (const channel of outputs[0] || []) channel.fill(0);
+    if (!this.capturing) return true;
+    const input = inputs[0];
+    if (!input || !input.length) return true;
+    const frames = input[0].length;
+    for (let frame = 0; frame < frames; frame++) {
+      for (let channel = 0; channel < this.channels; channel++) {
+        const source = input[Math.min(channel, input.length - 1)];
+        const sample = Math.max(-1, Math.min(1, source ? source[frame] : 0));
+        const pcm = sample < 0 ? Math.round(sample * 0x8000) : Math.round(sample * 0x7fff);
+        this.view.setInt16(this.offset, pcm, true);
+        this.offset += 2;
+      }
+      if (this.offset >= this.buffer.byteLength) this.sendBatch();
+    }
+    return true;
+  }
+}
+registerProcessor("wav-capture", WavCaptureProcessor);
+`;
+
+function renderLogs() {
+  const visibleEntries = activeLogFilter === "all"
+    ? logEntries
+    : logEntries.filter((entry) => entry.level === activeLogFilter);
+  logCountEl.textContent = String(logEntries.length);
+  logListEl.replaceChildren();
+  if (!visibleEntries.length) {
+    const empty = document.createElement("div");
+    empty.className = "log-entry";
+    empty.textContent = "No events in this filter.";
+    logListEl.append(empty);
+    return;
+  }
+  for (const entry of visibleEntries) {
+    const row = document.createElement("div");
+    row.className = "log-entry";
+    const time = document.createElement("span");
+    time.className = "log-time";
+    time.textContent = entry.at.toLocaleTimeString();
+    const level = document.createElement("span");
+    level.className = `log-level ${entry.level}`;
+    level.textContent = entry.level.toUpperCase();
+    const message = document.createElement("span");
+    message.textContent = entry.message;
+    row.append(time, level, message);
+    logListEl.append(row);
+  }
+  logListEl.scrollTop = logListEl.scrollHeight;
+}
+
+function addLog(message, level = "info") {
+  const safeLevel = ["info", "warning", "error"].includes(level) ? level : "info";
+  logEntries.push({ at: new Date(), level: safeLevel, message: String(message).slice(0, 400) });
+  if (logEntries.length > MAX_LOG_ENTRIES) logEntries.splice(0, logEntries.length - MAX_LOG_ENTRIES);
+  renderLogs();
+}
+
+function setState(value) {
+  const next = String(value);
+  const previous = stateEl.textContent;
+  stateEl.textContent = next;
+  if (next !== previous) {
+    const lower = next.toLowerCase();
+    const level = /fail|error|disconnected|sign-in required/.test(lower)
+      ? "error"
+      : /reconnect|waiting|checking/.test(lower) ? "warning" : "info";
+    addLog(`Listener: ${next}`, level);
+  }
+}
+
+function setQuickStatus(id, value, bad = false) {
+  const element = document.getElementById(id);
+  element.textContent = value;
+  element.classList.toggle("bad", bad);
+}
+
+function setMetric(id, value) {
+  document.getElementById(id).textContent = value;
+}
+
+function updateAudioLevelMeter() {
+  const filtered = noiseSuppressionActive && outputAnalyser;
+  const dbfs = filtered ? latestOutputDbfs : latestInputDbfs;
+  levelSourceEl.textContent = filtered ? "GTCRN processed output" : "Incoming WebRTC audio";
+  document.getElementById("listenerDb").textContent = formatAudioLevelDbfs(dbfs);
+  const percent = Number.isFinite(dbfs) ? Math.max(0, Math.min(100, Math.round((dbfs + 60) * (100 / 60)))) : 0;
+  audioLevelFill.style.width = `${percent}%`;
+  audioLevelMeter.setAttribute("aria-valuenow", String(percent));
+  document.getElementById("levelWord").textContent = !remoteStream
+    ? "Idle"
+    : !Number.isFinite(dbfs) || dbfs < -55 ? "Quiet"
+      : dbfs > -6 ? "Very loud" : dbfs > -24 ? "Strong" : "Listening";
+}
+
+function resetAudioLevelMeter() {
+  latestInputDbfs = null;
+  latestOutputDbfs = null;
+  audioLevelFill.style.width = "0%";
+  audioLevelMeter.setAttribute("aria-valuenow", "0");
+  document.getElementById("listenerDb").textContent = "Waiting for audio";
+  document.getElementById("levelWord").textContent = "Idle";
+  levelSourceEl.textContent = "Incoming WebRTC audio";
+}
+
+async function refreshAppStatus() {
+  const [deviceResult, webrtcResult] = await Promise.allSettled([
+    getJson("/api/device-status"),
+    getJson("/api/webrtc-status")
+  ]);
+  const renderReachable = deviceResult.status === "fulfilled";
+  if (lastRenderReachable !== null && renderReachable !== lastRenderReachable) {
+    addLog(renderReachable ? "Render status API reachable" : "Render status API unavailable", renderReachable ? "info" : "error");
+  }
+  lastRenderReachable = renderReachable;
+  setQuickStatus("quickRender", renderReachable ? "CONNECTED" : "UNAVAILABLE", !renderReachable);
+
+  if (renderReachable) {
+    const device = deviceResult.value;
+    const online = Boolean(device.online);
+    deviceOnlinePill.classList.toggle("online", online);
+    deviceOnlinePill.classList.toggle("offline", !online);
+    deviceStatusLabel.textContent = online ? "ONLINE" : "OFFLINE";
+    setQuickStatus("quickDevice", online ? "ONLINE" : "OFFLINE", !online);
+    setQuickStatus("quickWifi", online ? "CONNECTED" : "OFFLINE", !online);
+    if (lastDeviceOnline !== null && online !== lastDeviceOnline) {
+      addLog(online ? "ESP32 connected to Render" : "ESP32 disconnected from Render", online ? "info" : "warning");
+    }
+    lastDeviceOnline = online;
+  } else {
+    deviceOnlinePill.classList.remove("online", "offline");
+    deviceStatusLabel.textContent = "UNKNOWN";
+    setQuickStatus("quickDevice", "UNKNOWN", true);
+    setQuickStatus("quickWifi", "UNKNOWN", true);
+  }
+
+  if (webrtcResult.status === "fulfilled") {
+    const status = webrtcResult.value;
+    const signalingState = status.device_connected ? "device connected" : "device disconnected";
+    if (lastSignalingState !== null && signalingState !== lastSignalingState) {
+      addLog(`WebRTC signaling: ${signalingState}`, status.device_connected ? "info" : "warning");
+    }
+    lastSignalingState = signalingState;
+    const peerState = peer?.connectionState;
+    const label = peerState === "connected" ? "CONNECTED"
+      : status.session_active || sessionId ? "CONNECTING"
+        : "IDLE";
+    setQuickStatus("quickWebRtc", label, peerState === "failed");
+  } else {
+    setQuickStatus("quickWebRtc", "UNKNOWN", true);
+  }
+}
+
+async function refreshDiagnostics() {
+  if (diagnosticsBusy) return;
+  diagnosticsBusy = true;
+  const refreshButton = document.getElementById("refreshDiagnostics");
+  refreshButton.disabled = true;
+  setMetric("diagUpdated", "Refreshing authenticated device diagnostics…");
+  const [deviceResult, webrtcResult, healthResult] = await Promise.allSettled([
+    getJson("/api/device-status"),
+    getJson("/api/webrtc-status"),
+    getJson("/api/esp32-health")
+  ]);
+  if (deviceResult.status === "fulfilled") {
+    const device = deviceResult.value;
+    setMetric("diagDevice", device.online ? "ESP32-S3 · online" : "ESP32-S3 · offline");
+  } else {
+    setMetric("diagDevice", "Status unavailable");
+  }
+  if (webrtcResult.status === "fulfilled") {
+    const status = webrtcResult.value;
+    setMetric("diagSignaling", status.device_connected ? "ESP32 signaling connected" : "ESP32 signaling offline");
+    setMetric("diagPeer", peer?.connectionState || (status.session_active ? "Session active" : "No listener session"));
+  } else {
+    setMetric("diagSignaling", "Unavailable");
+    setMetric("diagPeer", peer?.connectionState || "Unavailable");
+  }
+
+  let healthError = "";
+  if (healthResult.status === "fulfilled") {
+    const health = healthResult.value;
+    const number = (value) => value === null || value === undefined || value === ""
+      ? null
+      : Number.isFinite(Number(value)) ? Number(value) : null;
+    const kb = (value) => number(value) === null ? "—" : `${Math.round(number(value) / 1024)} KB`;
+    const count = (value) => number(value) === null ? "—" : String(number(value));
+    setMetric("diagDevice", health.chip || (deviceResult.status === "fulfilled" && deviceResult.value.online ? "ESP32-S3 · online" : "ESP32-S3"));
+    setMetric("diagFirmware", health.version || "—");
+    setMetric("diagUptime", formatDuration(health.uptime_sec));
+    setMetric("diagBoot", health.boot_reason || "—");
+    setMetric("diagTemp", number(health.temp_c) === null ? "—" : `${number(health.temp_c).toFixed(1)} °C`);
+    setMetric("diagRssi", number(health.wifi_rssi) === null ? "—" : `${number(health.wifi_rssi)} dBm`);
+    setMetric("diagHeap", kb(health.free_heap));
+    setMetric("diagMinHeap", kb(health.min_heap));
+    setMetric("diagPsram", kb(health.free_psram));
+    setMetric("diagStacks", `${count(health.stack_audio)} / ${count(health.stack_sender)} / ${count(health.stack_monitor)}`);
+    setMetric("diagPackets", `${count(health.packets)} packets · ${number(health.bytes) === null ? "—" : `${(number(health.bytes) / 1048576).toFixed(1)} MB`}`);
+    setMetric("diagWifiDrops", count(health.wifi_drops));
+    setMetric("diagErrors", `${count(health.send_err)} send / ${count(health.i2s_err)} I²S · ${count(health.tx_max_us)} µs max TX / ${count(health.tx_slow)} slow`);
+    setMetric("systemFirmware", health.version || "—");
+    setQuickStatus("quickWifi", number(health.wifi_rssi) === null ? "UNKNOWN" : `RSSI ${number(health.wifi_rssi)} dBm`, number(health.wifi_rssi) === null);
+  } else {
+    healthError = healthResult.reason?.message || "ESP32 health unavailable";
+    addLog(`ESP32 health unavailable: ${healthError}`, "warning");
+  }
+  const updated = new Date().toLocaleTimeString();
+  setMetric("diagUpdated", healthError ? `Last checked ${updated} · ${healthError}` : `Updated ${updated}`);
+  refreshButton.disabled = false;
+  diagnosticsBusy = false;
+}
+
+function formatDuration(seconds) {
+  if (seconds === null || seconds === undefined || seconds === ""
+      || !Number.isFinite(Number(seconds)) || Number(seconds) < 0) return "—";
+  const total = Math.floor(Number(seconds));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const remainder = total % 60;
+  return `${hours}h ${minutes}m ${remainder}s`;
+}
+
+async function getJson(url) {
+  const response = await fetch(url, { cache: "no-store", credentials: "same-origin" });
+  if (response.status === 401) {
+    window.location.assign("/");
+    throw new Error("Listener session expired");
+  }
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+function setAppTab(name, focus = false) {
+  const buttons = Array.from(document.querySelectorAll("[data-tab]"));
+  for (const button of buttons) {
+    const selected = button.dataset.tab === name;
+    button.setAttribute("aria-selected", String(selected));
+    button.tabIndex = selected ? 0 : -1;
+    const panel = document.getElementById(`panel-${button.dataset.tab}`);
+    panel.hidden = !selected;
+    panel.classList.toggle("active", selected);
+    if (selected && focus) button.focus();
+  }
+  if (name === "diagnostics" || name === "system") void refreshDiagnostics();
+}
+
+document.querySelectorAll("[data-tab]").forEach((button, index, buttons) => {
+  button.addEventListener("click", () => setAppTab(button.dataset.tab));
+  button.addEventListener("keydown", (event) => {
+    let nextIndex = index;
+    if (event.key === "ArrowRight") nextIndex = (index + 1) % buttons.length;
+    else if (event.key === "ArrowLeft") nextIndex = (index + buttons.length - 1) % buttons.length;
+    else if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = buttons.length - 1;
+    else return;
+    event.preventDefault();
+    setAppTab(buttons[nextIndex].dataset.tab, true);
+  });
+});
+
+document.querySelectorAll("[data-log-filter]").forEach((button) => {
+  button.addEventListener("click", () => {
+    activeLogFilter = button.dataset.logFilter;
+    document.querySelectorAll("[data-log-filter]").forEach((item) => {
+      item.setAttribute("aria-pressed", String(item === button));
+    });
+    renderLogs();
+  });
+});
+
+document.getElementById("clearLogs").addEventListener("click", () => {
+  logEntries = [];
+  renderLogs();
+});
+
+document.getElementById("exportLogs").addEventListener("click", () => {
+  const content = logEntries.map((entry) =>
+    `${entry.at.toISOString()} [${entry.level.toUpperCase()}] ${entry.message}`
+  ).join("\n");
+  const url = URL.createObjectURL(new Blob([content || "No listener events recorded.\n"], { type: "text/plain" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `ESP32-listener-log-${new Date().toISOString().replace(/[:.]/g, "-")}.txt`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+
+addLog("Listener page ready");
+renderLogs();
 
 function refreshMicGainAvailability() {
   const connected = !!sessionId && !!peer && peer.connectionState === "connected" &&
@@ -345,7 +944,7 @@ function restoreDirectAudio(message) {
     audioEl.srcObject = remoteStream;
     void audioEl.play().catch(() => setState("Audio ready — press play"));
   }
-  if (recorder && recorder.state !== "inactive" && recordingSourceLabel === "filtered") {
+  if ((recordingActive || recordingFinalizing) && recordingSourceLabel === "filtered") {
     recordingSourceLabel = "direct-fallback";
   }
   setAudioProcessingStatus("Direct WebRTC audio restored; noise suppression is off");
@@ -429,6 +1028,7 @@ async function updateMediaStatus(targetPeer) {
   const playbackState = `player ${playback}, volume ${Math.round(audioEl.volume * 100)}%`;
   latestInputDbfs = readAudioLevelDbfs(inputAnalyser);
   latestOutputDbfs = readAudioLevelDbfs(outputAnalyser);
+  updateAudioLevelMeter();
   const graphLevels = noiseSuppressionActive && inputAnalyser && outputAnalyser
     ? `; Web Audio input ${formatAudioLevelDbfs(latestInputDbfs)}, output ${formatAudioLevelDbfs(latestOutputDbfs)}`
     : "";
@@ -480,7 +1080,7 @@ function send(message) {
 function closePeer() {
   if (statsTimer) clearInterval(statsTimer);
   statsTimer = null;
-  if (recorder && recorder.state !== "inactive") stopRecording();
+  if (recordingActive) stopRecording();
   if (peer) {
     try { peer.ontrack = null; peer.onicecandidate = null; peer.close(); } catch {}
   }
@@ -494,6 +1094,7 @@ function closePeer() {
   remoteStream = null;
   audioEl.pause();
   audioEl.srcObject = null;
+  resetAudioLevelMeter();
   mediaStatusEl.textContent = "Audio: waiting for a remote track.";
   refreshAudioProcessingStatus();
   recordButton.disabled = true;
@@ -712,70 +1313,230 @@ async function handleSignal(message) {
   }
 }
 
-function startRecording() {
+function createWavHeader(dataBytes, sampleRate, channels) {
+  if (!Number.isSafeInteger(dataBytes) || dataBytes < 0 || dataBytes > 0xffffffff - 36 ||
+      !Number.isInteger(sampleRate) || sampleRate < 1 || ![1, 2].includes(channels) || dataBytes % (channels * 2) !== 0) {
+    throw new Error("The WAV recording is too large to save.");
+  }
+  const header = new ArrayBuffer(WAV_HEADER_BYTES);
+  const view = new DataView(header);
+  const writeTag = (offset, tag) => {
+    for (let index = 0; index < tag.length; index++) view.setUint8(offset + index, tag.charCodeAt(index));
+  };
+  writeTag(0, "RIFF");
+  view.setUint32(4, 36 + dataBytes, true);
+  writeTag(8, "WAVE");
+  writeTag(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, channels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * channels * 2, true);
+  view.setUint16(32, channels * 2, true);
+  view.setUint16(34, 16, true);
+  writeTag(36, "data");
+  view.setUint32(40, dataBytes, true);
+  return header;
+}
+
+function cleanupWavCapture() {
+  if (recordingSourceNode) {
+    try { recordingSourceNode.disconnect(); } catch {}
+    recordingSourceNode = null;
+  }
+  if (recordingProcessor) {
+    recordingProcessor.port.onmessage = null;
+    try { recordingProcessor.port.close(); } catch {}
+    try { recordingProcessor.disconnect(); } catch {}
+    recordingProcessor = null;
+  }
+  if (recordingSilenceGain) {
+    try { recordingSilenceGain.disconnect(); } catch {}
+    recordingSilenceGain = null;
+  }
+}
+
+function finishWavRecording() {
+  if (!recordingFinalizing) return;
+  recordingFinalizing = false;
+  if (recordingFlushTimer) clearTimeout(recordingFlushTimer);
+  recordingFlushTimer = null;
+  cleanupWavCapture();
+  if (recordTimer) clearInterval(recordTimer);
+  recordTimer = null;
+  recordSourceEl.disabled = false;
+  stopRecordButton.disabled = true;
+  recordButton.disabled = !(remoteStream && remoteStream.getAudioTracks().some((track) => track.readyState === "live"));
+
+  const durationSeconds = (Date.now() - recordStartedAt) / 1000;
+  if (!recordedBytes) {
+    recordedChunks = [];
+    recordStatusEl.textContent = "No audio saved";
+    recordingSampleRate = 0;
+    recordingChannels = 0;
+    return;
+  }
+
+  try {
+    const header = createWavHeader(recordedBytes, recordingSampleRate, recordingChannels);
+    const blob = new Blob([header, ...recordedChunks], { type: "audio/wav" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `ESP32-audio-${recordingSourceLabel}-${new Date().toISOString().replace(/[:.]/g, "-")}.wav`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    recordStatusEl.textContent = `Saved WAV · ${formatDuration(durationSeconds)}`;
+    addLog("WAV audio recording saved to this device");
+    setTimeout(() => {
+      if (!recordingActive && !recordingFinalizing) recordStatusEl.textContent = "Not recording";
+    }, 5000);
+  } catch (error) {
+    errorEl.textContent = `WAV recording could not be saved: ${error.message}`;
+    recordStatusEl.textContent = "WAV save failed";
+  } finally {
+    recordedChunks = [];
+    recordedBytes = 0;
+    recordingSampleRate = 0;
+    recordingChannels = 0;
+  }
+}
+
+function receiveWavChunk(event) {
+  const message = event.data;
+  if (!message) return;
+  if (message.type === "pcm") {
+    if (!recordingActive && !recordingFinalizing) return;
+    const chunkBytes = Number(message.byteLength);
+    if (!(message.buffer instanceof ArrayBuffer) || !Number.isInteger(chunkBytes) || chunkBytes < 0 ||
+        chunkBytes > message.buffer.byteLength || chunkBytes % (recordingChannels * 2) !== 0) {
+      errorEl.textContent = "WAV recorder returned an invalid audio buffer.";
+      if (recordingActive) stopRecording();
+      return;
+    }
+    if (recordedBytes + chunkBytes > MAX_RECORDING_BYTES - WAV_HEADER_BYTES) {
+      errorEl.textContent = "WAV recording stopped at the local storage limit; the captured audio is being saved.";
+      if (recordingActive) stopRecording();
+      return;
+    }
+    if (chunkBytes) {
+      recordedChunks.push(new Uint8Array(message.buffer, 0, chunkBytes));
+      recordedBytes += chunkBytes;
+    }
+    return;
+  }
+  if (message.type === "flushed" && recordingFinalizing) finishWavRecording();
+}
+
+async function startRecording() {
+  if (recordingActive || recordingFinalizing) return;
   const liveTracks = remoteStream ? remoteStream.getAudioTracks().filter((track) => track.readyState === "live") : [];
   if (!liveTracks.length) {
     errorEl.textContent = "No live incoming WebRTC audio track is available to record.";
     return;
   }
-  if (typeof MediaRecorder === "undefined") {
-    errorEl.textContent = "This browser does not support local audio recording.";
+  if (!audioContext || audioContext.state === "closed" || !audioContext.audioWorklet || typeof AudioWorkletNode === "undefined") {
+    errorEl.textContent = "This browser does not support local WAV recording.";
     return;
   }
-  const mimeType = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4"]
-    .find((candidate) => MediaRecorder.isTypeSupported(candidate));
   recordedChunks = [];
   recordedBytes = 0;
+  recordButton.disabled = true;
+  recordSourceEl.disabled = true;
+  recordStatusEl.textContent = "Preparing WAV recorder…";
   try {
     const useFilteredOutput = recordSourceEl.value === "filtered";
     recordingSourceLabel = useFilteredOutput ? (noiseSuppressionActive ? "filtered" : "listener-output") : "raw";
     if (useFilteredOutput && !processedDestination) {
       errorEl.textContent = "Filtered output is not ready. Start listening again, or select raw incoming audio.";
+      recordButton.disabled = false;
+      recordSourceEl.disabled = false;
+      recordStatusEl.textContent = "Not recording";
       return;
     }
     const recordingStream = useFilteredOutput ? processedDestination.stream : new MediaStream(liveTracks);
-    recorder = new MediaRecorder(recordingStream, mimeType ? { mimeType } : {});
-    recorder.ondataavailable = (event) => {
-      if (event.data && event.data.size) {
-        if (recordedBytes + event.data.size > MAX_RECORDING_BYTES) {
-          errorEl.textContent = "Recording stopped at the local storage limit.";
-          stopRecording();
-          return;
-        }
-        recordedBytes += event.data.size;
-        recordedChunks.push(event.data);
+    const recordingTrack = recordingStream.getAudioTracks().find((track) => track.readyState === "live");
+    if (!recordingTrack) throw new Error("The selected audio source has no live track.");
+    const trackSettings = typeof recordingTrack.getSettings === "function" ? recordingTrack.getSettings() : {};
+    const trackChannels = Number(trackSettings.channelCount);
+    recordingChannels = Number.isInteger(trackChannels) && trackChannels > 0 ? Math.min(trackChannels, 2) : 1;
+    recordingSampleRate = audioContext.sampleRate;
+    if (recordingSampleRate < 8000 || recordingSampleRate > 96000) {
+      throw new Error(`Unsupported WAV sample rate: ${recordingSampleRate} Hz.`);
+    }
+    if (audioContext.state === "suspended") await audioContext.resume();
+    if (!wavCaptureWorkletLoaded) {
+      const moduleUrl = URL.createObjectURL(new Blob([WAV_CAPTURE_WORKLET_SOURCE], { type: "application/javascript" }));
+      try {
+        await audioContext.audioWorklet.addModule(moduleUrl);
+        wavCaptureWorkletLoaded = true;
+      } finally {
+        URL.revokeObjectURL(moduleUrl);
       }
-    };
-    recorder.onstop = () => {
-      if (!recordedChunks.length) {
-        errorEl.textContent = "No recorded audio data was produced.";
-        return;
+    }
+
+    recordingSourceNode = audioContext.createMediaStreamSource(recordingStream);
+    recordingProcessor = new AudioWorkletNode(audioContext, "wav-capture", {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      channelCount: recordingChannels,
+      channelCountMode: "explicit",
+      channelInterpretation: "speakers",
+      outputChannelCount: [recordingChannels],
+      processorOptions: { channels: recordingChannels }
+    });
+    recordingSilenceGain = audioContext.createGain();
+    recordingSilenceGain.gain.value = 0;
+    recordingProcessor.port.onmessage = receiveWavChunk;
+    recordingProcessor.addEventListener("processorerror", () => {
+      errorEl.textContent = "WAV audio capture stopped unexpectedly; saving the captured portion.";
+      if (recordingActive) {
+        recordingActive = false;
+        recordingFinalizing = true;
+        finishWavRecording();
       }
-      const recordingType = recorder.mimeType || mimeType || "application/octet-stream";
-      const blob = new Blob(recordedChunks, { type: recordingType });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      const suffix = recordingType.includes("mp4") ? "m4a" : recordingType.includes("ogg") ? "ogg" : "webm";
-      link.download = `ESP32-audio-${recordingSourceLabel}-${new Date().toISOString().replace(/[:.]/g, "-")}.${suffix}`;
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-      recordedChunks = [];
-    };
-    recorder.start(1000);
-    recordSourceEl.disabled = true;
-    recordButton.disabled = true;
+    }, { once: true });
+    recordingSourceNode.connect(recordingProcessor);
+    recordingProcessor.connect(recordingSilenceGain);
+    recordingSilenceGain.connect(audioContext.destination);
+    recordingActive = true;
+    recordStartedAt = Date.now();
+    recordStatusEl.textContent = "Recording · 00:00";
+    if (recordTimer) clearInterval(recordTimer);
+    recordTimer = setInterval(() => {
+      const seconds = Math.floor((Date.now() - recordStartedAt) / 1000);
+      recordStatusEl.textContent = `Recording · ${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+    }, 1000);
+    addLog(`Local WAV recording started (${recordingSourceLabel} audio)`);
     stopRecordButton.disabled = false;
   } catch (error) {
+    recordingActive = false;
+    recordingFinalizing = false;
+    if (recordTimer) clearInterval(recordTimer);
+    recordTimer = null;
+    cleanupWavCapture();
+    recordedChunks = [];
+    recordedBytes = 0;
+    recordingSampleRate = 0;
+    recordingChannels = 0;
+    recordButton.disabled = !(remoteStream && remoteStream.getAudioTracks().some((track) => track.readyState === "live"));
+    recordSourceEl.disabled = false;
+    recordStatusEl.textContent = "Not recording";
     errorEl.textContent = `Recording unavailable: ${error.message}`;
   }
 }
 
 function stopRecording() {
-  if (recorder && recorder.state !== "inactive") recorder.stop();
-  recordSourceEl.disabled = false;
-  recordButton.disabled = !(remoteStream && remoteStream.getAudioTracks().some((track) => track.readyState === "live"));
+  if (!recordingActive) return;
+  recordingActive = false;
+  recordingFinalizing = true;
+  recordStatusEl.textContent = "Finalizing WAV…";
+  if (recordTimer) clearInterval(recordTimer);
+  recordTimer = null;
   stopRecordButton.disabled = true;
+  recordingFlushTimer = setTimeout(finishWavRecording, 1500);
+  if (recordingProcessor) recordingProcessor.port.postMessage({ type: "stop" });
+  else finishWavRecording();
 }
 
 startButton.onclick = async () => {
@@ -819,13 +1580,80 @@ micGainEl.addEventListener("input", () => {
 });
 micGainEl.addEventListener("change", sendMicGain);
 
+playVolumeEl.addEventListener("input", () => {
+  const percent = Number(playVolumeEl.value);
+  audioEl.volume = Math.max(0, Math.min(1, percent / 100));
+  playVolumeValueEl.textContent = `${percent}%`;
+  syncPlaybackGain();
+});
+
+document.getElementById("refreshDiagnostics").addEventListener("click", () => {
+  void refreshDiagnostics();
+});
+
+function showSystemAction(message, error = false) {
+  const status = document.getElementById("systemActionStatus");
+  status.hidden = false;
+  status.classList.toggle("error", error);
+  status.textContent = message;
+}
+
+async function runDeviceAction(path, button, actionName) {
+  button.disabled = true;
+  showSystemAction(`${actionName} request sent…`);
+  try {
+    const response = await fetch(path, { method: "POST", cache: "no-store", credentials: "same-origin" });
+    if (response.status === 401) {
+      window.location.assign("/");
+      throw new Error("Listener session expired");
+    }
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const result = await response.json();
+    if (!result.source_connected) {
+      showSystemAction(`Render accepted the ${actionName.toLowerCase()} request, but the ESP32 is not connected.`, true);
+      addLog(`${actionName} not delivered: ESP32 is offline`, "warning");
+    } else {
+      showSystemAction(`${actionName} command sent to the ESP32.`);
+      addLog(`${actionName} command sent to ESP32`, "warning");
+    }
+  } catch (error) {
+    showSystemAction(`${actionName} failed: ${error.message}`, true);
+    addLog(`${actionName} failed: ${error.message}`, "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+document.getElementById("rebootDevice").addEventListener("click", (event) => {
+  if (!window.confirm("Restart the ESP32 now? The audio stream will disconnect briefly.")) return;
+  void runDeviceAction("/api/esp32/reboot", event.currentTarget, "Restart");
+});
+
+document.getElementById("forgetWifi").addEventListener("click", (event) => {
+  if (!window.confirm("Forget the ESP32 Wi-Fi credentials? It will disconnect and require Wi-Fi setup again.")) return;
+  void runDeviceAction("/api/esp32/forget-wifi", event.currentTarget, "Forget Wi-Fi");
+});
+
+document.getElementById("logout").addEventListener("click", async () => {
+  try {
+    await fetch("/api/logout", { method: "POST", cache: "no-store", credentials: "same-origin" });
+  } finally {
+    window.location.assign("/");
+  }
+});
+
+new MutationObserver(() => {
+  const message = errorEl.textContent.trim();
+  if (message) addLog(message, "error");
+}).observe(errorEl, { childList: true, characterData: true, subtree: true });
+
 stopButton.onclick = () => {
   manualStop = true;
   listenerActive = false;
   window.setListenerActive(false);
   if (reconnectTimer) clearTimeout(reconnectTimer);
   reconnectTimer = null;
-  if (recorder && recorder.state !== "inactive") stopRecording();
+  if (recordingActive) stopRecording();
   if (socket) socket.close(1000, "Listener stopped");
   socket = null;
   sessionId = null;
@@ -836,6 +1664,12 @@ stopButton.onclick = () => {
   setState("Stopped");
 };
 
+void refreshAppStatus();
+appStatusTimer = setInterval(() => { void refreshAppStatus(); }, 10000);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) void refreshAppStatus();
+});
+
 recordButton.onclick = startRecording;
 stopRecordButton.onclick = stopRecording;
 window.addEventListener("pagehide", () => {
@@ -843,6 +1677,8 @@ window.addEventListener("pagehide", () => {
   listenerActive = false;
   window.setListenerActive(false);
   if (socket) socket.close(1000, "Page closed");
+  if (appStatusTimer) clearInterval(appStatusTimer);
+  if (recordTimer) clearInterval(recordTimer);
   closePeer();
   if (audioContext && audioContext.state !== "closed") void audioContext.close();
 });
