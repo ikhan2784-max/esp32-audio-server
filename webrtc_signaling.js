@@ -25,6 +25,8 @@ function createWebRtcSignaling({ WebSocket, sourceToken, isListenerSessionValid 
     let device = null;
     let listener = null;
     let sessionId = null;
+    let telemetry = null;
+    let telemetryUpdatedAt = 0;
 
     function send(ws, value) {
         if (!ws || ws.readyState !== WebSocket.OPEN ||
@@ -244,10 +246,61 @@ function createWebRtcSignaling({ WebSocket, sourceToken, isListenerSessionValid 
         return true;
     }
 
+
+    function handleDeviceTelemetry(ws, message) {
+        if (message.type !== "webrtc_device_telemetry") return false;
+        if (ws !== device || ws.role !== "webrtc_device" || !ws.authenticated) {
+            fail(ws, "device_authentication_required");
+            return true;
+        }
+        if (!message.data || typeof message.data !== "object" || Array.isArray(message.data)) return true;
+        const input = message.data;
+        const output = {};
+        const booleans = ["wifi_connected", "peer_connected", "health_ok", "health_fault_latched", "dsp_vad_voice"];
+        const numbers = ["wifi_rssi", "wifi_retry_count", "wifi_disconnect_count", "uptime_ms",
+            "free_heap", "min_free_heap", "free_psram", "total_psram", "audio_capture_errors",
+            "audio_buffer_overflows", "dsp_errors", "dsp_limiter_clipped", "audio_frames_sent",
+            "audio_frames_dropped", "signaling_errors", "reset_reason"];
+        for (const key of booleans) if (typeof input[key] === "boolean") output[key] = input[key];
+        for (const key of numbers) {
+            if (Number.isFinite(input[key]) && input[key] >= 0 && input[key] <= Number.MAX_SAFE_INTEGER) {
+                output[key] = Math.floor(input[key]);
+            }
+        }
+        if (Number.isFinite(input.dsp_vad_rms_db) && input.dsp_vad_rms_db >= -150 && input.dsp_vad_rms_db <= 20) output.dsp_vad_rms_db = input.dsp_vad_rms_db;
+        for (const key of ["wifi_ssid", "ip", "firmware"]) {
+            if (typeof input[key] === "string") output[key] = input[key].replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 64);
+        }
+        telemetry = output;
+        telemetryUpdatedAt = Date.now();
+        return true;
+    }
+
+    function handleDeviceControl(ws, message) {
+        if (message.type !== "webrtc_device_control") return false;
+        const senderIsListener = ws === listener && ws.role === "webrtc_listener" && ws.authenticated;
+        if (!senderIsListener || sessionId === null || message.session_id !== sessionId) {
+            fail(ws, "invalid_signaling_session");
+            return true;
+        }
+        if (typeof isListenerSessionValid !== "function" || !isListenerSessionValid(ws)) {
+            fail(ws, "listener_session_expired");
+            return true;
+        }
+        if (!controlRateAllowed(ws) || message.command !== "restart") {
+            send(ws, { type: "webrtc_device_control_ack", command: "restart", ok: false });
+            return true;
+        }
+        const ok = send(device, { type: "webrtc_device_control", session_id: sessionId, command: "restart" });
+        send(ws, { type: "webrtc_device_control_ack", command: "restart", ok });
+        return true;
+    }
+
     function handleMessage(ws, message) {
         if (!message || typeof message !== "object" || Array.isArray(message)) return false;
         return handleJoin(ws, message) || handleSignal(ws, message) ||
-            handleAudioControl(ws, message) || handleAudioControlAck(ws, message);
+            handleAudioControl(ws, message) || handleAudioControlAck(ws, message) ||
+            handleDeviceTelemetry(ws, message) || handleDeviceControl(ws, message);
     }
 
     function handleBinary(ws) {
@@ -260,6 +313,8 @@ function createWebRtcSignaling({ WebSocket, sourceToken, isListenerSessionValid 
         if (ws === device) {
             endSession("device_disconnected", ws);
             device = null;
+            telemetry = null;
+            telemetryUpdatedAt = 0;
         }
         if (ws === listener) {
             endSession("listener_disconnected", ws);
@@ -272,6 +327,8 @@ function createWebRtcSignaling({ WebSocket, sourceToken, isListenerSessionValid 
             device_connected: !!device && device.readyState === WebSocket.OPEN,
             listener_connected: !!listener && listener.readyState === WebSocket.OPEN,
             session_active: sessionId !== null,
+            device_telemetry: telemetry && Date.now() - telemetryUpdatedAt <= 15000 ? telemetry : null,
+            telemetry_updated_at: telemetry && Date.now() - telemetryUpdatedAt <= 15000 ? telemetryUpdatedAt : null,
         };
     }
 
