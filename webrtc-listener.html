@@ -899,6 +899,21 @@ function healthCounter(value, label, description, required = true) {
     `${description}: ${count}.`, required);
 }
 
+function healthCounterStatus(values, positiveStatus) {
+  const counters = Array.isArray(values) ? values : [];
+  const reported = counters.filter((value) => Number.isFinite(value));
+  if (!reported.length) return "Not Tested";
+  if (reported.some((value) => value > 0)) return positiveStatus;
+  return reported.length === counters.length ? "Healthy" : "Not Tested";
+}
+
+function healthBooleanGroupStatus(values, falseStatus = "Warning") {
+  const states = Array.isArray(values) ? values : [];
+  if (states.some((value) => value === false)) return falseStatus;
+  return states.length > 0 && states.every((value) => value === true)
+    ? "Healthy" : "Not Tested";
+}
+
 function healthGroupStatus(items) {
   if (items.some((item) => item.status === "Critical")) return "Critical";
   if (items.some((item) => item.status === "Warning")) return "Warning";
@@ -919,7 +934,6 @@ function buildHealthCategories() {
   const d = data || {};
   const hasData = Boolean(data);
   const captured = Number.isFinite(d.audio_samples_captured) && d.audio_samples_captured > 0;
-  const zeroCounters = (...values) => values.every((value) => Number.isFinite(value) && value === 0);
   const liveTrack = Boolean(remoteStream && remoteStream.getAudioTracks().some((track) => track.readyState === "live"));
   const playing = liveTrack && !audioEl.paused && !audioEl.ended;
   const peerState = peer?.connectionState || "";
@@ -943,6 +957,9 @@ function buildHealthCategories() {
     d.audio_capture_running && captured;
   const telemetryAge = telemetry?.telemetry_age_ms;
   const nowFresh = Number.isFinite(telemetryAge) && telemetryAge >= 0 && telemetryAge <= 15000;
+  const taskStates = [d.audio_capture_running, d.dsp_running, d.webrtc_running];
+  const taskStateText = (value) => value === true ? "running" :
+    value === false ? "stopped" : "not reported";
 
   const categories = [
     { name: "Microphone & I²S", items: [
@@ -966,7 +983,7 @@ function buildHealthCategories() {
       makeHealthItem("Silent/stuck microphone detection", "Unsupported", "No time-windowed stuck-sample detector is exposed yet.", false),
       makeHealthItem("DMA buffer overruns and underruns", "Unsupported", "The I²S driver does not expose DMA overrun/underrun counters; app buffer errors and drops are reported separately.", false),
       makeHealthItem("Dropped audio samples", !hasData ? "Not Tested" :
-        zeroCounters(d.audio_buffer_overflows, d.dsp_input_underflows, d.dsp_output_overflows, d.opus_dropped_blocks, d.opus_dropped_frames) ? "Healthy" : "Warning",
+        healthCounterStatus([d.audio_buffer_overflows, d.dsp_input_underflows, d.dsp_output_overflows, d.opus_dropped_blocks, d.opus_dropped_frames], "Warning"),
         hasData ? `Audio buffer ${d.audio_buffer_overflows ?? "n/a"} · DSP underflow/overflow ${d.dsp_input_underflows ?? "n/a"}/${d.dsp_output_overflows ?? "n/a"} · Opus drops ${d.opus_dropped_blocks ?? "n/a"}/${d.opus_dropped_frames ?? "n/a"}.` : "Drop counters are not available."),
       makeHealthItem("Microphone self-test", "Not Tested", "The online check does not inject a test signal or consume the live audio stream.", false),
     ] },
@@ -988,7 +1005,7 @@ function buildHealthCategories() {
       makeHealthItem("Processing time per frame", "Unsupported", "Per-frame DSP execution timing is not instrumented.", false),
       makeHealthItem("DSP CPU load", "Unsupported", "Per-task CPU utilization is not instrumented.", false),
       makeHealthItem("DSP processing failures", !hasData ? "Not Tested" :
-        zeroCounters(d.dsp_errors, d.dsp_input_underflows, d.dsp_output_overflows) ? "Healthy" : "Critical",
+        healthCounterStatus([d.dsp_errors, d.dsp_input_underflows, d.dsp_output_overflows], "Warning"),
         hasData ? `DSP errors ${d.dsp_errors ?? "n/a"} · input underflows ${d.dsp_input_underflows ?? "n/a"} · output overflows ${d.dsp_output_overflows ?? "n/a"}.` : "DSP failure counters are not available."),
     ] },
     { name: "Wi-Fi & Hotspot", items: [
@@ -998,7 +1015,7 @@ function buildHealthCategories() {
       makeHealthItem("Gateway and DNS reachability", !hasData || !d.wifi_connected ? "Not Tested" : "Not Tested",
         d.wifi_gateway_ip ? `Gateway ${d.wifi_gateway_ip} is configured; DNS reachability is not actively probed.` : "Gateway/DNS reachability is not probed by the read-only check.", false),
       makeHealthItem("Connection and reconnection attempts", !hasData ? "Not Tested" :
-        zeroCounters(d.wifi_retry_count, d.wifi_disconnect_count) ? "Healthy" : "Warning",
+        healthCounterStatus([d.wifi_retry_count, d.wifi_disconnect_count], "Warning"),
         hasData ? `Retries ${d.wifi_retry_count ?? "n/a"} · disconnects ${d.wifi_disconnect_count ?? "n/a"}.` : "Wi-Fi retry counters are unavailable."),
       makeHealthItem("Last disconnect reason", !hasData || !Number.isFinite(d.wifi_last_disconnect_reason) ? "Not Tested" :
         Number(d.wifi_disconnect_count || 0) === 0 ? "Healthy" : "Warning",
@@ -1009,7 +1026,7 @@ function buildHealthCategories() {
         d.wifi_connected && d.hotspot_running ? "Station and hotspot are both active in this snapshot." : "AP/STA simultaneous operation is not currently observed." , false),
       makeHealthItem("Wi-Fi scan and saved-network tests", "Not Tested", "Scanning or changing saved credentials is not performed by a read-only health check.", false),
       makeHealthItem("Network stability and packet loss", !hasData ? "Not Tested" :
-        zeroCounters(d.wifi_disconnect_count, d.wifi_retry_count) ? "Healthy" : "Warning",
+        healthCounterStatus([d.wifi_disconnect_count, d.wifi_retry_count], "Warning"),
         hasData ? `${d.wifi_disconnect_count ?? "n/a"} disconnect(s), ${d.wifi_retry_count ?? "n/a"} retry(ies); IP packet loss is not measured.` : "Network counters are unavailable."),
       healthBool(hasData ? d.signaling_connected : undefined, "Internet reachability", "Authenticated Render signaling is connected from the ESP32.", "ESP32 has no active authenticated Render signaling connection.", "Warning"),
     ] },
@@ -1077,8 +1094,8 @@ function buildHealthCategories() {
       makeHealthItem("Crash and exception history", "Not Tested", "Crash-history records are not available through the health API.", false),
       makeHealthItem("NVS read/write status", "Not Tested", "The online snapshot does not run NVS writes or expose a current NVS status flag.", false),
       makeHealthItem("Task health and deadlock detection", !hasData ? "Not Tested" :
-        d.audio_capture_running && d.dsp_running && d.webrtc_running ? "Healthy" : "Warning",
-        hasData ? `Capture ${d.audio_capture_running ? "running" : "stopped"} · DSP ${d.dsp_running ? "running" : "stopped"} · WebRTC ${d.webrtc_running ? "running" : "stopped"}.` : "Task health telemetry is unavailable."),
+        healthBooleanGroupStatus(taskStates),
+        hasData ? `Capture ${taskStateText(d.audio_capture_running)} · DSP ${taskStateText(d.dsp_running)} · WebRTC ${taskStateText(d.webrtc_running)}.` : "Task health telemetry is unavailable."),
     ] },
     { name: "Battery & Power", items: [
       makeHealthItem("Supply voltage", "Unsupported", "No voltage sensor is reported by this hardware configuration.", false),
