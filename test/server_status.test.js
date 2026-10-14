@@ -60,6 +60,34 @@ test("WebRTC status is authenticated, uncached, and reports the single-device si
         assert.equal(login.status, 200);
         const cookie = login.headers.get("set-cookie").split(";", 1)[0];
 
+        const loginPage = await fetch(baseUrl, { headers: secureHeaders });
+        assert.equal(loginPage.status, 200);
+        const loginHtml = await loginPage.text();
+        assert.match(loginHtml, /<title>Listening Device \| Secure Access<\/title>/);
+        assert.doesNotMatch(loginHtml, /ESP32 INMP441|Secure Live Audio Listener/);
+        assert.match(loginHtml, /window\.location\.href="\/phase5-listener"/);
+
+        const authenticatedRoot = await fetch(baseUrl, {
+            headers: { ...secureHeaders, cookie },
+            redirect: "manual",
+        });
+        assert.equal(authenticatedRoot.status, 302);
+        assert.equal(authenticatedRoot.headers.get("location"), "/phase5-listener");
+
+        const legacyListener = await fetch(`${baseUrl}/listener`, {
+            headers: { ...secureHeaders, cookie },
+            redirect: "manual",
+        });
+        assert.equal(legacyListener.status, 302);
+        assert.equal(legacyListener.headers.get("location"), "/phase5-listener");
+
+        const listenerPage = await fetch(`${baseUrl}/phase5-listener`, {
+            headers: { ...secureHeaders, cookie },
+        });
+        assert.equal(listenerPage.status, 200);
+        assert.match(listenerPage.headers.get("cache-control"), /no-store/);
+        assert.match(await listenerPage.text(), /<title>Listening Device<\/title>/);
+
         const response = await fetch(statusUrl, {
             headers: { ...secureHeaders, cookie },
         });

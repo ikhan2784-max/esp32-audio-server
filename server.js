@@ -192,7 +192,7 @@ function requireSameOrigin(req, res, next) {
 }
 
 app.get("/", requireHttps, (req, res) => {
-    if (isAuthenticatedRequest(req)) return res.redirect("/listener");
+    if (isAuthenticatedRequest(req)) return res.redirect("/phase5-listener");
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
@@ -269,14 +269,14 @@ app.get("/session-activity.js", requireHttps, (req, res) => {
 
 app.get("/listener", requireHttps, (req, res) => {
     if (!isAuthenticatedRequest(req)) return res.redirect("/");
-    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-    res.setHeader("Pragma", "no-cache");
-    res.setHeader("Expires", "0");
-    res.sendFile(__dirname + "/listener.html");
+    return res.redirect("/phase5-listener");
 });
 
 app.get("/phase5-listener", requireHttps, (req, res) => {
     if (!isAuthenticatedRequest(req)) return res.redirect("/");
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
     res.sendFile(__dirname + "/webrtc-listener.html");
 });
 
