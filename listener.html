@@ -2809,6 +2809,20 @@ function toggleHotspotPassword(){toast("Hotspot credentials are managed by ESP32
 function setQuality(){toast("The ESP32 WebRTC stream uses its configured audio format.")}function updateGain(){toast("Use the microphone gain control when the WebRTC link is connected.")}function setGainPreset(){toast("Use the microphone gain control when the WebRTC link is connected.")}
 document.getElementById("deviceSelector").addEventListener("click",toggleDeviceDropdown);document.getElementById("deviceBackdrop").addEventListener("click",closeDeviceDropdown);document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeDeviceDropdown();closeAddDevice()}});
 document.querySelectorAll(".tab-btn").forEach(t=>t.addEventListener("click",()=>{const k=t.dataset.tab;document.querySelectorAll(".tab-btn").forEach(x=>x.classList.toggle("active",x===t));document.querySelectorAll(".panel").forEach(p=>p.classList.toggle("active",p.id==="panel-"+k))}));
+let swipeStart=null;
+document.addEventListener("touchstart",event=>{
+ const touch=event.changedTouches[0],panel=event.target.closest(".panel.active");
+ if(!panel||event.touches.length!==1||event.target.closest("button,input,textarea,select,a,label,.volume-presets")){swipeStart=null;return}
+ swipeStart={x:touch.clientX,y:touch.clientY};
+},{passive:true});
+document.addEventListener("touchend",event=>{
+ if(!swipeStart)return;
+ const touch=event.changedTouches[0],dx=touch.clientX-swipeStart.x,dy=touch.clientY-swipeStart.y;swipeStart=null;
+ if(Math.abs(dx)<65||Math.abs(dx)<Math.abs(dy)*1.25)return;
+ const tabs=[...document.querySelectorAll(".tab-btn")],current=tabs.findIndex(tab=>tab.classList.contains("active")),next=current+(dx<0?1:-1);
+ if(next>=0&&next<tabs.length)tabs[next].click();
+},{passive:true});
+
 const uiNoise=document.querySelector("#panel-settings .switch-row input");const otherSwitches=[...document.querySelectorAll("#panel-settings .switch-row input")].slice(1);if(uiNoise){uiNoise.checked=noiseSuppressionEl.checked;uiNoise.addEventListener("change",()=>{noiseSuppressionEl.checked=uiNoise.checked;noiseSuppressionEl.dispatchEvent(new Event("change"))})}otherSwitches.forEach(x=>x.disabled=true);
 document.querySelectorAll('input[name="micMode"],input[name="quality"],input[name="timeout"],input[name="ledMode"],#panel-system .switch input').forEach(x=>x.disabled=true);
 const ledGroup=document.querySelector("#panel-system .radio-group");let uiLed=null;if(ledGroup){const row=document.createElement("div");row.className="switch-row";row.innerHTML='<span class="sw-label">Blue RGB LED</span><label class="switch"><input id="blueLedToggle" type="checkbox" disabled><span class="slider-sw"></span></label>';ledGroup.replaceWith(row);uiLed=row.querySelector("input")}
