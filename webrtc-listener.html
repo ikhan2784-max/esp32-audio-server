@@ -1576,29 +1576,30 @@ async function updateMediaStatus(targetPeer) {
   const graphLevels = noiseSuppressionActive && inputAnalyser && outputAnalyser
     ? `; Web Audio input ${formatAudioLevelDbfs(latestInputDbfs)}, output ${formatAudioLevelDbfs(latestOutputDbfs)}`
     : "";
-  const silentFilterWarning = noiseSuppressionActive && packets > 0
-    && Number.isFinite(latestInputDbfs) && latestInputDbfs > -80
-    && (latestOutputDbfs === Number.NEGATIVE_INFINITY
-      || (Number.isFinite(latestOutputDbfs) && latestOutputDbfs < -85))
-    ? "; GTCRN output is near silence despite input"
-    : "";
-  const silentInputWarning = noiseSuppressionActive && packets > 0
-    && Number.isFinite(inboundAudio?.audioLevel) && inboundAudio.audioLevel > 0.002
-    && (latestInputDbfs === Number.NEGATIVE_INFINITY
-      || (Number.isFinite(latestInputDbfs) && latestInputDbfs < -85))
-    ? "; Web Audio input is silent despite received audio"
-    : "";
   const inboundSignalPresent = Number.isFinite(inboundAudio?.audioLevel) && inboundAudio.audioLevel > 0.002;
+  // GTCRN intentionally attenuates room noise and silence. Only treat silent
+  // output as a graph failure when the pre-filter signal is clearly active.
+  const activeInputSignalPresent = Number.isFinite(inboundAudio?.audioLevel)
+    && inboundAudio.audioLevel > 0.01
+    && Number.isFinite(latestInputDbfs) && latestInputDbfs > -55;
   const webAudioInputSilent = latestInputDbfs === Number.NEGATIVE_INFINITY
     || (Number.isFinite(latestInputDbfs) && latestInputDbfs < -85);
   const webAudioOutputSilent = latestOutputDbfs === Number.NEGATIVE_INFINITY
     || (Number.isFinite(latestOutputDbfs) && latestOutputDbfs < -85);
+  const silentFilterWarning = noiseSuppressionActive && packets > 0
+    && activeInputSignalPresent && webAudioOutputSilent
+    ? "; GTCRN output is near silence during active input"
+    : "";
+  const silentInputWarning = noiseSuppressionActive && packets > 0
+    && inboundSignalPresent && webAudioInputSilent
+    ? "; Web Audio input is silent despite received audio"
+    : "";
   const graphHasSignalMismatch = noiseSuppressionActive && packets > 0
     && (inboundSignalPresent && webAudioInputSilent
-      || Number.isFinite(latestInputDbfs) && latestInputDbfs > -80 && webAudioOutputSilent);
+      || activeInputSignalPresent && webAudioOutputSilent);
   silentInputSinceMs = graphHasSignalMismatch ? (silentInputSinceMs ?? Date.now()) : null;
   if (silentInputSinceMs !== null && Date.now() - silentInputSinceMs >= 5000) {
-    restoreDirectAudio("GTCRN audio path stayed silent while WebRTC audio was arriving. Direct playback is restored; noise suppression is off.");
+    restoreDirectAudio("GTCRN output stayed silent during active incoming audio. Direct WebRTC playback is restored; noise suppression is off.");
   }
   const receiveState = packets > 0
     ? `${codecLabel}; RTP ${packets} packets / ${bytes} bytes${packetLoss}${packetDiscard}${jitterMs === null ? "" : `, jitter ${jitterMs} ms`}; ${decodedSamples}${concealment}${silentConcealment}${concealmentEvents}${level === null ? "" : `, level ${level}`}`
