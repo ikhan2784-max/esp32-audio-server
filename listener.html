@@ -1592,7 +1592,7 @@
           </div>
           <div class="info-pill">
             <svg viewBox="0 0 24 24"><path d="M12 2v6M12 16v6M4.93 4.93l4.24 4.24M14.83 14.83l4.24 4.24"/></svg>
-            <span class="pv">WSS Audio</span>
+            <span class="pv">WebRTC Audio</span>
             <span class="pl" style="color:var(--green);">Connected</span>
           </div>
           <div class="info-pill">
@@ -1602,7 +1602,7 @@
           </div>
           <div class="info-pill">
             <svg viewBox="0 0 24 24"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
-            <span class="pv">Wi-Fi</span>
+            <span class="pv">ESP32 Wi-Fi</span>
             <span class="pl" style="color:var(--green);">Connected</span>
           </div>
         </div>
@@ -1669,29 +1669,21 @@
           </div>
 
           <div class="gain-slider-wrap">
-            <input type="range" class="slider" min="0" max="100" value="100" id="gainSlider"
-                   style="width:100%;" disabled>
+            <input type="range" class="slider" min="50" max="150" step="5" value="100" id="gainSlider" aria-label="ESP32 microphone gain, 50 to 150 percent" style="width:100%;">
 
             <div class="gain-track-labels" id="gainLabels">
-              <span data-val="0">0</span>
-              <span data-val="16">16</span>
-              <span data-val="32">32</span>
-              <span data-val="64">64</span>
-              <span data-val="100">100</span>
+              <span data-val="50">50%</span><span data-val="75">75%</span><span data-val="100">100%</span><span data-val="125">125%</span><span data-val="150">150%</span>
             </div>
           </div>
 
           <!-- Preset chips -->
           <div class="gain-presets">
-            <button class="gain-preset" data-gain="16"  disabled>16</button>
-            <button class="gain-preset" data-gain="32"  disabled>32</button>
-            <button class="gain-preset" data-gain="64"  disabled>64</button>
-            <button class="gain-preset active" data-gain="100" disabled>100</button>
+            <button class="gain-preset" type="button" data-gain="50" disabled>50%</button><button class="gain-preset" type="button" data-gain="75" disabled>75%</button><button class="gain-preset active" type="button" data-gain="100" disabled>100%</button><button class="gain-preset" type="button" data-gain="125" disabled>125%</button><button class="gain-preset" type="button" data-gain="150" disabled>150%</button>
           </div>
 
           <div class="gain-note">
             <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-            <span>Gain is expressed as a percentage of the INMP441's full-scale input. Higher values boost quiet sounds but may clip loud ones.</span>
+            <span>Sets the ESP32 microphone gain from 50% to 150%. Available while the WebRTC connection is active; higher gain can clip loud sounds.</span>
           </div>
         </div>
 
@@ -2068,12 +2060,15 @@ const MAX_RECONNECT_MS = 15000;
 const MAX_RECORDING_BYTES = 128 * 1024 * 1024;
 const WS_RECONNECT_CLOSE_CODE = 3000;
 
-function setState(value) { stateEl.textContent = value; }
+function addProjectLog(level,message) { const box=document.getElementById("logBox"); if(!box||!message)return; const entry=document.createElement("div"); entry.className="project-log-entry"; entry.dataset.level=level; entry.textContent="["+new Date().toLocaleTimeString()+"] ["+level+"] "+message; box.appendChild(entry); while(box.children.length>500)box.firstElementChild.remove(); const filter=document.querySelector(".filter-chip.active")?.dataset.filter||"all"; entry.hidden=filter!=="all"&&entry.dataset.level!==filter; box.scrollTop=box.scrollHeight; }
+function applyProjectLogFilter(filter){document.querySelectorAll(".filter-chip").forEach(b=>b.classList.toggle("active",b.dataset.filter===filter));document.querySelectorAll("#logBox .project-log-entry").forEach(e=>e.hidden=filter!=="all"&&e.dataset.level!==filter)}
+let lastLoggedState="";function setState(value){stateEl.textContent=value;if(value&&value!==lastLoggedState){lastLoggedState=value;addProjectLog(/failed|error|rejected|busy/i.test(value)?"ERROR":/waiting|reconnect|not connected/i.test(value)?"WARNING":"INFO",value)}}
 
 function refreshMicGainAvailability() {
   const connected = !!sessionId && !!peer && peer.connectionState === "connected" &&
     !!socket && socket.readyState === WebSocket.OPEN;
   micGainEl.disabled = !connected;
+  const visibleGain=document.getElementById("gainSlider");if(visibleGain){visibleGain.disabled=!connected;if(document.activeElement!==visibleGain)visibleGain.value=micGainEl.value;const value=Number(micGainEl.value);document.getElementById("gainDb").textContent=value+"%";document.getElementById("gainFactor").textContent=(value/100).toFixed(2)+"x";document.querySelectorAll(".gain-preset").forEach(b=>{b.disabled=!connected;b.classList.toggle("active",Number(b.dataset.gain)===value)})}
   if (!connected && sessionId) micGainStatusEl.textContent = "Available when the WebRTC audio connection is up.";
   else if (!connected) micGainStatusEl.textContent = "Start listening and connect to adjust microphone gain.";
 }
@@ -2101,11 +2096,13 @@ function handleMicGainAck(message) {
   if (message.session_id !== sessionId || message.command !== "mic_gain") return;
   const gainPercent = Number(message.gain_percent);
   if (!message.ok) {
+    addProjectLog("ERROR","ESP32 rejected microphone gain change.");
     micGainStatusEl.textContent = "The ESP32 rejected the gain change.";
     return;
   }
   if (gainPercent !== Number(micGainEl.value)) return;
   micGainStatusEl.textContent = `ESP32 gain set to ${gainPercent}%.`;
+  addProjectLog("INFO",`ESP32 microphone gain set to ${gainPercent}%.`);
 }
 
 function setAudioProcessingStatus(value) {
@@ -2482,7 +2479,7 @@ function connectSocket() {
         startButton.disabled = false;
         stopButton.disabled = true;
         setState("Another listener is already active");
-        errorEl.textContent = "This device already has an active WebRTC listener.";
+        errorEl.textContent = "Another listener is already connected. Only one listener is supported at a time.";
         return;
       }
       if (message.reason === "listener_session_required" || message.reason === "listener_session_expired") {
@@ -2706,8 +2703,10 @@ function startRecording() {
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       recordedChunks = [];
+      addProjectLog("INFO","Recording saved to this device.");
     };
     recorder.start(1000);
+    addProjectLog("INFO","Recording started ("+recordingSourceLabel+").");
     recordSourceEl.disabled = true;
     recordButton.disabled = true;
     stopRecordButton.disabled = false;
@@ -2717,7 +2716,7 @@ function startRecording() {
 }
 
 function stopRecording() {
-  if (recorder && recorder.state !== "inactive") recorder.stop();
+  if (recorder && recorder.state !== "inactive") {recorder.stop();addProjectLog("INFO","Recording stopped.");}
   recordSourceEl.disabled = false;
   recordButton.disabled = !(remoteStream && remoteStream.getAudioTracks().some((track) => track.readyState === "live"));
   stopRecordButton.disabled = true;
@@ -2798,7 +2797,7 @@ let esp32Online=false,serverReachable=false,serverListenerConnected=false,uiReco
 async function refreshEsp32Status(){try{const response=await fetch("/api/webrtc/device-status",{credentials:"same-origin",cache:"no-store"});if(!response.ok)throw new Error("HTTP "+response.status);const data=await response.json();esp32Online=!!data.online;serverListenerConnected=!!data.listener_connected;serverReachable=true}catch{esp32Online=false;serverListenerConnected=false;serverReachable=false}syncListenerDesign()}
 const uiAudio=document.getElementById("audioBtn"),uiAudioText=document.getElementById("audioBtnText"),uiMic=document.getElementById("micOuter"),uiBadge=document.getElementById("listeningBadge"),uiRec=document.getElementById("recBtn"),uiRecText=document.getElementById("recBtnText"),uiVolume=document.getElementById("volume"),uiVolumeValue=document.getElementById("volumeValue"),uiLevel=document.getElementById("level"),uiDb=document.getElementById("dbValue");
 function toggleListening(){(listenerActive?stopButton:startButton).click()}function toggleRecording(){(stopRecordButton.disabled?recordButton:stopRecordButton).click()}
-function clearProjectLogs(){const n=document.getElementById("logBox");if(n)n.replaceChildren()}function copyProjectLogs(){const n=document.getElementById("logBox");if(n&&navigator.clipboard)navigator.clipboard.writeText(n.innerText).catch(()=>{})}
+function clearProjectLogs(){const n=document.getElementById("logBox");if(n)n.replaceChildren()}function copyProjectLogs(){const n=document.getElementById("logBox"),text=[...(n?.querySelectorAll(".project-log-entry")||[])].map(e=>e.textContent).join("\n");if(!text.trim()){toast("There are no logs to export.");return}const blob=new Blob([text],{type:"text/plain;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="esp32-listener-log.txt";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)}
 function toast(message){const n=document.getElementById("toast");n.textContent=message;n.classList.add("show");clearTimeout(n._hideTimer);n._hideTimer=setTimeout(()=>n.classList.remove("show"),2600)}
 function toggleDeviceDropdown(){const d=document.getElementById("deviceDropdown"),b=document.getElementById("deviceBackdrop"),s=document.getElementById("deviceSelector"),open=!d.classList.contains("show");d.classList.toggle("show",open);b.classList.toggle("show",open);s.classList.toggle("open",open)}
 function closeDeviceDropdown(){document.getElementById("deviceDropdown").classList.remove("show");document.getElementById("deviceBackdrop").classList.remove("show");document.getElementById("deviceSelector").classList.remove("open")}
@@ -2809,6 +2808,9 @@ function toggleHotspotPassword(){toast("Hotspot credentials are managed by ESP32
 function setQuality(){toast("The ESP32 WebRTC stream uses its configured audio format.")}function updateGain(){toast("Use the microphone gain control when the WebRTC link is connected.")}function setGainPreset(){toast("Use the microphone gain control when the WebRTC link is connected.")}
 document.getElementById("deviceSelector").addEventListener("click",toggleDeviceDropdown);document.getElementById("deviceBackdrop").addEventListener("click",closeDeviceDropdown);document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeDeviceDropdown();closeAddDevice()}});
 document.querySelectorAll(".tab-btn").forEach(t=>t.addEventListener("click",()=>{const k=t.dataset.tab;document.querySelectorAll(".tab-btn").forEach(x=>x.classList.toggle("active",x===t));document.querySelectorAll(".panel").forEach(p=>p.classList.toggle("active",p.id==="panel-"+k))}));
+document.querySelectorAll(".filter-chip").forEach(button=>button.addEventListener("click",()=>applyProjectLogFilter(button.dataset.filter)));
+const visibleGainSlider=document.getElementById("gainSlider");let gainSendTimer=null;visibleGainSlider.addEventListener("input",()=>{micGainEl.value=visibleGainSlider.value;micGainValueEl.value=visibleGainSlider.value+"%";refreshMicGainAvailability();if(gainSendTimer)clearTimeout(gainSendTimer);gainSendTimer=setTimeout(()=>{gainSendTimer=null;sendMicGain()},1500)});visibleGainSlider.addEventListener("change",()=>{if(gainSendTimer)clearTimeout(gainSendTimer);gainSendTimer=null;sendMicGain()});document.querySelectorAll(".gain-preset").forEach(button=>button.addEventListener("click",()=>{visibleGainSlider.value=button.dataset.gain;visibleGainSlider.dispatchEvent(new Event("input",{bubbles:true}));visibleGainSlider.dispatchEvent(new Event("change",{bubbles:true}))}));
+let lastLoggedError="";new MutationObserver(()=>{const message=errorEl.textContent.trim();if(message&&message!==lastLoggedError){lastLoggedError=message;addProjectLog("ERROR",message)}}).observe(errorEl,{childList:true,characterData:true,subtree:true});
 let swipeStart=null;
 document.addEventListener("touchstart",event=>{
  const touch=event.changedTouches[0];
@@ -2823,7 +2825,21 @@ document.addEventListener("touchend",event=>{
  if(next>=0&&next<tabs.length)tabs[next].click();
 },{passive:true});
 
-const uiNoise=document.querySelector("#panel-settings .switch-row input");const otherSwitches=[...document.querySelectorAll("#panel-settings .switch-row input")].slice(1);if(uiNoise){uiNoise.checked=noiseSuppressionEl.checked;uiNoise.addEventListener("change",()=>{noiseSuppressionEl.checked=uiNoise.checked;noiseSuppressionEl.dispatchEvent(new Event("change"))})}otherSwitches.forEach(x=>x.disabled=true);
+
+let pullStart=null,pullDistance=0;const pullStyle=document.createElement("style");pullStyle.textContent="html,body{overscroll-behavior-y:contain}.pull-refresh-indicator{position:fixed;z-index:9999;top:env(safe-area-inset-top,0px);left:50%;transform:translate(-50%,-150%);opacity:0;display:flex;align-items:center;gap:9px;padding:10px 16px;border:1px solid #2b4b77;border-radius:999px;background:#111827;color:#dbeafe;font:600 12px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;box-shadow:0 8px 24px #0008;transition:opacity .12s;pointer-events:none;white-space:nowrap}.pull-refresh-indicator.show{opacity:1}";document.head.appendChild(pullStyle);const pullIndicator=document.createElement("div");pullIndicator.className="pull-refresh-indicator";pullIndicator.setAttribute("role","status");pullIndicator.textContent="↓  Pull down to refresh";document.body.appendChild(pullIndicator);
+document.addEventListener("touchstart",event=>{const touch=event.changedTouches[0];if(event.touches.length!==1||window.scrollY>1||event.target.closest("button,input,textarea,select,a,label,.add-device-modal.show,.device-dropdown.show")){pullStart=null;return}pullStart={x:touch.clientX,y:touch.clientY}},{passive:true});
+document.addEventListener("touchmove",event=>{if(!pullStart)return;const touch=event.touches[0],dx=touch.clientX-pullStart.x,dy=touch.clientY-pullStart.y;if(dy<0||Math.abs(dx)>Math.max(14,dy*.8)||window.scrollY>1){pullStart=null;pullIndicator.classList.remove("show");return}if(dy>8){pullDistance=Math.min(110,dy*.55);pullIndicator.textContent=pullDistance>=72?"↻  Release to refresh":"↓  Pull down to refresh";pullIndicator.style.transform="translate(-50%,"+(Math.min(12,pullDistance-42))+"px)";pullIndicator.classList.add("show");if(event.cancelable)event.preventDefault()}},{passive:false});
+function clearPullIndicator(){pullStart=null;pullDistance=0;pullIndicator.classList.remove("show");pullIndicator.style.transform="translate(-50%,-150%)"}
+document.addEventListener("touchend",event=>{if(!pullStart){clearPullIndicator();return}const touch=event.changedTouches[0],dy=touch.clientY-pullStart.y;if(dy>=132&&window.scrollY<=1){pullIndicator.textContent="↻  Refreshing…";pullIndicator.style.transform="translate(-50%,12px)";setTimeout(()=>window.location.reload(),120);pullStart=null;return}clearPullIndicator()},{passive:true});document.addEventListener("touchcancel",clearPullIndicator,{passive:true});
+const uiNoise=document.querySelector("#panel-settings .switch-row input");
+refreshMicGainAvailability();
+const logStyle=document.createElement("style");logStyle.textContent=".project-log-entry{padding:3px 0;font:11px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;color:#cbd5e1}.project-log-entry[data-level=WARNING]{color:#fbbf24}.project-log-entry[data-level=ERROR]{color:#fca5a5}.project-log-entry[hidden]{display:none}";document.head.appendChild(logStyle);
+const settingsNotes=document.querySelector("#panel-settings .section-title");if(settingsNotes){const note=document.createElement("div");note.className="card flat small";note.textContent="Microphone mode and audio format are set by the ESP32 firmware. Microphone gain can be adjusted while connected.";settingsNotes.after(note)}
+const diagnosticsTitle=document.querySelector("#panel-diagnostics .section-title");if(diagnosticsTitle){const note=document.createElement("div");note.className="card flat small";note.textContent="Detailed chip, memory, Wi-Fi, and uptime telemetry is not currently sent by this ESP32 WebRTC firmware, so those values may show as unavailable.";diagnosticsTitle.after(note)}
+const settingsPanel=document.getElementById("panel-settings"),wifiTitle=[...settingsPanel.querySelectorAll(".section-title")].find(n=>n.textContent.includes("WI-FI SETTINGS"));if(wifiTitle){let node=wifiTitle.nextElementSibling;while(node&&!node.classList.contains("section-title")){const next=node.nextElementSibling;node.remove();node=next}const hotspotTitle=node;if(hotspotTitle){const hotspotCard=hotspotTitle.nextElementSibling;hotspotTitle.remove();hotspotCard?.remove()}const note=document.createElement("div");note.className="card flat small";note.textContent="Wi-Fi scanning, network changes, and hotspot settings are not exposed by the current ESP32 WebRTC firmware.";wifiTitle.replaceWith(note)}
+const timeoutRow=document.querySelector("#panel-system #sessionTimeoutDisplay")?.closest(".row");if(timeoutRow){timeoutRow.classList.remove("clickable");timeoutRow.removeAttribute("onclick");timeoutRow.querySelector("#sessionTimeoutDisplay").textContent="Managed by server";timeoutRow.querySelector(".chevron")?.remove()}
+const securityTitle=[...document.querySelectorAll("#panel-system .section-title")].find(n=>n.textContent.includes("SECURITY"));if(securityTitle){const card=securityTitle.nextElementSibling;if(card){card.replaceChildren();card.className="card flat small";card.textContent="Sign-in, PIN requirements, and session security are managed by the server.";}}
+const ledTitle=[...document.querySelectorAll("#panel-system .section-title")].find(n=>n.textContent.includes("LED SETTINGS"));if(ledTitle){const ledCard=ledTitle.nextElementSibling;if(ledCard){const note=document.createElement("div");note.className="card flat small";note.textContent="LED controls are not available over the current ESP32 WebRTC firmware connection.";ledCard.after(note)}}const otherSwitches=[...document.querySelectorAll("#panel-settings .switch-row input")].slice(1);if(uiNoise){uiNoise.checked=noiseSuppressionEl.checked;uiNoise.addEventListener("change",()=>{noiseSuppressionEl.checked=uiNoise.checked;noiseSuppressionEl.dispatchEvent(new Event("change"));addProjectLog("INFO",noiseSuppressionEl.checked?"Noise suppression enabled.":"Noise suppression disabled.")})}otherSwitches.forEach((x,i)=>{x.disabled=true;const label=x.closest(".switch-row")?.querySelector(".sw-label");if(label)label.textContent=i===0?"Voice Detection (unavailable)":"Limiter (unavailable)"});
 document.querySelectorAll('input[name="micMode"],input[name="quality"],input[name="timeout"],input[name="ledMode"],#panel-system .switch input').forEach(x=>x.disabled=true);
 const ledGroup=document.querySelector("#panel-system .radio-group");let uiLed=null;if(ledGroup){const row=document.createElement("div");row.className="switch-row";row.innerHTML='<span class="sw-label">Blue RGB LED</span><label class="switch"><input id="blueLedToggle" type="checkbox" disabled><span class="slider-sw"></span></label>';ledGroup.replaceWith(row);uiLed=row.querySelector("input")}
 const quickLabels=[...document.querySelectorAll('#panel-listener .info-pills[style*="margin-bottom"] .info-pill .pl')];
@@ -2838,7 +2854,7 @@ function syncListenerDesign(){
  rateNode.textContent=peerConnected?(rate?(Number(rate[1])/1000)+" kHz":(audioContext?(audioContext.sampleRate/1000)+" kHz":"Live")):"—";codecNode.textContent=peerConnected?(codec?codec[1].toUpperCase():"WebRTC"):"—";channelNode.textContent=peerConnected?((Number(channels?.[1]||settings.channelCount||1)===1)?"Mono":(channels?.[1]||settings.channelCount)+" ch"):"—";inputNode.textContent=peerConnected?(track.muted?"No signal":"Live"):"Waiting";
  const db=latestOutputDbfs,pct=Number.isFinite(db)?Math.max(0,Math.min(100,Math.round(100*Math.pow(10,db/20)))):0;uiLevel.style.width=pct+"%";uiDb.textContent=Number.isFinite(db)?db.toFixed(1)+" dBFS":"— dB";const bars=document.getElementById("meterBars");if(bars&&!bars.children.length)for(let i=0;i<28;i++){const b=document.createElement("span");b.className="meter-bar";bars.appendChild(b)}if(bars){const n=Math.round(pct/100*bars.children.length);[...bars.children].forEach((b,i)=>{b.className="meter-bar";if(i<n)b.classList.add(i>bars.children.length*.88?"on-3":i>bars.children.length*.7?"on-2":"on-1")})}
  uiVolumeValue.textContent=Math.round(Number(uiVolume.value)*100)+"%";document.querySelectorAll(".volume-preset").forEach(b=>b.classList.toggle("active",Math.abs(Number(b.dataset.volume)/100-Number(uiVolume.value))<0.005));
- const qvalues=[deviceReady?"Connected":(active?"Connecting":"Not connected"),peerConnected?"Connected":(active?(peer?.connectionState||"Connecting"):"Not connected"),serverReachable?"Connected":"Not connected",deviceReady?"Connected":"Not connected"];quickLabels.forEach((n,i)=>{n.textContent=qvalues[i];n.style.color=/connected|live/i.test(qvalues[i])?"var(--green)":qvalues[i]==="Connecting"?"var(--amber)":"var(--red)"});
+ const qvalues=[deviceReady?"Connected":(active?"Connecting":"Not connected"),peerConnected?"Connected":(active?(peer?.connectionState||"Connecting"):"Not connected"),serverReachable?"Connected":"Not connected","Not reported"];quickLabels.forEach((n,i)=>{n.textContent=qvalues[i];n.style.color=/connected|live/i.test(qvalues[i])?"var(--green)":qvalues[i]==="Connecting"?"var(--amber)":qvalues[i]==="Not reported"?"var(--text-faint)":"var(--red)"});
  const menu=document.getElementById("deviceMenuStatus");if(menu)menu.textContent=deviceReady?"Connected":(active?"Connecting":"Not connected");if(uiLed)uiLed.disabled=true;
 }
 uiVolume.addEventListener("input",()=>{uiVolumeValue.textContent=Math.round(Number(uiVolume.value)*100)+"%";if(audioContext?.state==="suspended")void audioContext.resume().then(syncPlaybackGain).catch(()=>{});else if(typeof syncPlaybackGain==="function")syncPlaybackGain();document.querySelectorAll(".volume-preset").forEach(b=>b.classList.toggle("active",Math.abs(Number(b.dataset.volume)/100-Number(uiVolume.value))<0.005))});document.querySelectorAll(".volume-preset").forEach(b=>b.addEventListener("click",()=>{uiVolume.value=Number(b.dataset.volume)/100;uiVolume.dispatchEvent(new Event("input",{bubbles:true}));syncListenerDesign()}));uiMic.addEventListener("click",toggleListening);
