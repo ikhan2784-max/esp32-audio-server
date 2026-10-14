@@ -219,12 +219,12 @@
       </section>
 
       <section class="panel-card record-card">
-        <div class="card-title"><span class="eyebrow">LOCAL RECORDING</span><span id="recordStatus">Not recording</span></div>
+        <div class="card-title"><span class="eyebrow">LOCAL RECORDING · WAV</span><span id="recordStatus">Not recording</span></div>
         <div class="record-row">
           <button class="action-button record" id="record" type="button" disabled><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="5"/></svg>Start recording</button>
           <button class="action-button stop" id="stopRecord" type="button" disabled>Stop recording</button>
         </div>
-        <details class="record-options"><summary>Recording options</summary><label class="recording-source" for="recordSource">Source stays on this device<select id="recordSource"><option value="raw" selected>Raw incoming WebRTC audio</option><option value="filtered">GTCRN-processed listener output</option></select></label><p class="helper">The microphone on this phone or computer is never requested.</p></details>
+        <details class="record-options"><summary>Recording options</summary><label class="recording-source" for="recordSource">Source · WAV / 16-bit PCM<select id="recordSource"><option value="raw" selected>Raw incoming WebRTC audio</option><option value="filtered">GTCRN-processed listener output</option></select></label><p class="helper">WAV files are saved locally. The microphone on this phone or computer is never requested.</p></details>
       </section>
 
       <section class="panel-card">
@@ -370,10 +370,18 @@ let pendingCandidates = [];
 let pendingLocalCandidates = [];
 let localDescriptionSent = false;
 let localIceComplete = false;
-let recorder = null;
 let recordingSourceLabel = "raw";
 let recordedChunks = [];
 let recordedBytes = 0;
+let recordingActive = false;
+let recordingFinalizing = false;
+let recordingSampleRate = 0;
+let recordingChannels = 0;
+let recordingSourceNode = null;
+let recordingProcessor = null;
+let recordingSilenceGain = null;
+let recordingFlushTimer = null;
+let wavCaptureWorkletLoaded = false;
 let sessionRedirectTimer = null;
 let audioContext = null;
 let mediaElementSource = null;
@@ -394,7 +402,61 @@ let audioProcessingStatus = "GTCRN will activate when listening starts.";
 const MAX_PENDING_CANDIDATES = 32;
 const MAX_RECONNECT_MS = 15000;
 const MAX_RECORDING_BYTES = 128 * 1024 * 1024;
+const WAV_HEADER_BYTES = 44;
 const WS_RECONNECT_CLOSE_CODE = 3000;
+
+const WAV_CAPTURE_WORKLET_SOURCE = `
+class WavCaptureProcessor extends AudioWorkletProcessor {
+  constructor(options) {
+    super();
+    this.channels = Math.max(1, Math.min(2, options.processorOptions.channels || 1));
+    this.batchFrames = 4096;
+    this.buffer = new ArrayBuffer(this.batchFrames * this.channels * 2);
+    this.view = new DataView(this.buffer);
+    this.offset = 0;
+    this.capturing = true;
+    this.port.onmessage = (event) => {
+      if (event.data && event.data.type === "stop") {
+        this.capturing = false;
+        this.flush();
+        this.port.postMessage({ type: "flushed" });
+      }
+    };
+  }
+
+  sendBatch() {
+    const buffer = this.buffer;
+    this.port.postMessage({ type: "pcm", buffer, byteLength: this.offset }, [buffer]);
+    this.buffer = new ArrayBuffer(this.batchFrames * this.channels * 2);
+    this.view = new DataView(this.buffer);
+    this.offset = 0;
+  }
+
+  flush() {
+    if (this.offset > 0) this.sendBatch();
+  }
+
+  process(inputs, outputs) {
+    for (const channel of outputs[0] || []) channel.fill(0);
+    if (!this.capturing) return true;
+    const input = inputs[0];
+    if (!input || !input.length) return true;
+    const frames = input[0].length;
+    for (let frame = 0; frame < frames; frame++) {
+      for (let channel = 0; channel < this.channels; channel++) {
+        const source = input[Math.min(channel, input.length - 1)];
+        const sample = Math.max(-1, Math.min(1, source ? source[frame] : 0));
+        const pcm = sample < 0 ? Math.round(sample * 0x8000) : Math.round(sample * 0x7fff);
+        this.view.setInt16(this.offset, pcm, true);
+        this.offset += 2;
+      }
+      if (this.offset >= this.buffer.byteLength) this.sendBatch();
+    }
+    return true;
+  }
+}
+registerProcessor("wav-capture", WavCaptureProcessor);
+`;
 
 function renderLogs() {
   const visibleEntries = activeLogFilter === "all"
@@ -882,7 +944,7 @@ function restoreDirectAudio(message) {
     audioEl.srcObject = remoteStream;
     void audioEl.play().catch(() => setState("Audio ready — press play"));
   }
-  if (recorder && recorder.state !== "inactive" && recordingSourceLabel === "filtered") {
+  if ((recordingActive || recordingFinalizing) && recordingSourceLabel === "filtered") {
     recordingSourceLabel = "direct-fallback";
   }
   setAudioProcessingStatus("Direct WebRTC audio restored; noise suppression is off");
@@ -1018,7 +1080,7 @@ function send(message) {
 function closePeer() {
   if (statsTimer) clearInterval(statsTimer);
   statsTimer = null;
-  if (recorder && recorder.state !== "inactive") stopRecording();
+  if (recordingActive) stopRecording();
   if (peer) {
     try { peer.ontrack = null; peer.onicecandidate = null; peer.close(); } catch {}
   }
@@ -1251,65 +1313,193 @@ async function handleSignal(message) {
   }
 }
 
-function startRecording() {
+function createWavHeader(dataBytes, sampleRate, channels) {
+  if (!Number.isSafeInteger(dataBytes) || dataBytes < 0 || dataBytes > 0xffffffff - 36 ||
+      !Number.isInteger(sampleRate) || sampleRate < 1 || ![1, 2].includes(channels) || dataBytes % (channels * 2) !== 0) {
+    throw new Error("The WAV recording is too large to save.");
+  }
+  const header = new ArrayBuffer(WAV_HEADER_BYTES);
+  const view = new DataView(header);
+  const writeTag = (offset, tag) => {
+    for (let index = 0; index < tag.length; index++) view.setUint8(offset + index, tag.charCodeAt(index));
+  };
+  writeTag(0, "RIFF");
+  view.setUint32(4, 36 + dataBytes, true);
+  writeTag(8, "WAVE");
+  writeTag(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, channels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * channels * 2, true);
+  view.setUint16(32, channels * 2, true);
+  view.setUint16(34, 16, true);
+  writeTag(36, "data");
+  view.setUint32(40, dataBytes, true);
+  return header;
+}
+
+function cleanupWavCapture() {
+  if (recordingSourceNode) {
+    try { recordingSourceNode.disconnect(); } catch {}
+    recordingSourceNode = null;
+  }
+  if (recordingProcessor) {
+    recordingProcessor.port.onmessage = null;
+    try { recordingProcessor.port.close(); } catch {}
+    try { recordingProcessor.disconnect(); } catch {}
+    recordingProcessor = null;
+  }
+  if (recordingSilenceGain) {
+    try { recordingSilenceGain.disconnect(); } catch {}
+    recordingSilenceGain = null;
+  }
+}
+
+function finishWavRecording() {
+  if (!recordingFinalizing) return;
+  recordingFinalizing = false;
+  if (recordingFlushTimer) clearTimeout(recordingFlushTimer);
+  recordingFlushTimer = null;
+  cleanupWavCapture();
+  if (recordTimer) clearInterval(recordTimer);
+  recordTimer = null;
+  recordSourceEl.disabled = false;
+  stopRecordButton.disabled = true;
+  recordButton.disabled = !(remoteStream && remoteStream.getAudioTracks().some((track) => track.readyState === "live"));
+
+  const durationSeconds = (Date.now() - recordStartedAt) / 1000;
+  if (!recordedBytes) {
+    recordedChunks = [];
+    recordStatusEl.textContent = "No audio saved";
+    recordingSampleRate = 0;
+    recordingChannels = 0;
+    return;
+  }
+
+  try {
+    const header = createWavHeader(recordedBytes, recordingSampleRate, recordingChannels);
+    const blob = new Blob([header, ...recordedChunks], { type: "audio/wav" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `ESP32-audio-${recordingSourceLabel}-${new Date().toISOString().replace(/[:.]/g, "-")}.wav`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    recordStatusEl.textContent = `Saved WAV · ${formatDuration(durationSeconds)}`;
+    addLog("WAV audio recording saved to this device");
+    setTimeout(() => {
+      if (!recordingActive && !recordingFinalizing) recordStatusEl.textContent = "Not recording";
+    }, 5000);
+  } catch (error) {
+    errorEl.textContent = `WAV recording could not be saved: ${error.message}`;
+    recordStatusEl.textContent = "WAV save failed";
+  } finally {
+    recordedChunks = [];
+    recordedBytes = 0;
+    recordingSampleRate = 0;
+    recordingChannels = 0;
+  }
+}
+
+function receiveWavChunk(event) {
+  const message = event.data;
+  if (!message) return;
+  if (message.type === "pcm") {
+    if (!recordingActive && !recordingFinalizing) return;
+    const chunkBytes = Number(message.byteLength);
+    if (!(message.buffer instanceof ArrayBuffer) || !Number.isInteger(chunkBytes) || chunkBytes < 0 ||
+        chunkBytes > message.buffer.byteLength || chunkBytes % (recordingChannels * 2) !== 0) {
+      errorEl.textContent = "WAV recorder returned an invalid audio buffer.";
+      if (recordingActive) stopRecording();
+      return;
+    }
+    if (recordedBytes + chunkBytes > MAX_RECORDING_BYTES - WAV_HEADER_BYTES) {
+      errorEl.textContent = "WAV recording stopped at the local storage limit; the captured audio is being saved.";
+      if (recordingActive) stopRecording();
+      return;
+    }
+    if (chunkBytes) {
+      recordedChunks.push(new Uint8Array(message.buffer, 0, chunkBytes));
+      recordedBytes += chunkBytes;
+    }
+    return;
+  }
+  if (message.type === "flushed" && recordingFinalizing) finishWavRecording();
+}
+
+async function startRecording() {
+  if (recordingActive || recordingFinalizing) return;
   const liveTracks = remoteStream ? remoteStream.getAudioTracks().filter((track) => track.readyState === "live") : [];
   if (!liveTracks.length) {
     errorEl.textContent = "No live incoming WebRTC audio track is available to record.";
     return;
   }
-  if (typeof MediaRecorder === "undefined") {
-    errorEl.textContent = "This browser does not support local audio recording.";
+  if (!audioContext || audioContext.state === "closed" || !audioContext.audioWorklet || typeof AudioWorkletNode === "undefined") {
+    errorEl.textContent = "This browser does not support local WAV recording.";
     return;
   }
-  const mimeType = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4"]
-    .find((candidate) => MediaRecorder.isTypeSupported(candidate));
   recordedChunks = [];
   recordedBytes = 0;
+  recordButton.disabled = true;
+  recordSourceEl.disabled = true;
+  recordStatusEl.textContent = "Preparing WAV recorder…";
   try {
     const useFilteredOutput = recordSourceEl.value === "filtered";
     recordingSourceLabel = useFilteredOutput ? (noiseSuppressionActive ? "filtered" : "listener-output") : "raw";
     if (useFilteredOutput && !processedDestination) {
       errorEl.textContent = "Filtered output is not ready. Start listening again, or select raw incoming audio.";
+      recordButton.disabled = false;
+      recordSourceEl.disabled = false;
+      recordStatusEl.textContent = "Not recording";
       return;
     }
     const recordingStream = useFilteredOutput ? processedDestination.stream : new MediaStream(liveTracks);
-    recorder = new MediaRecorder(recordingStream, mimeType ? { mimeType } : {});
-    recorder.ondataavailable = (event) => {
-      if (event.data && event.data.size) {
-        if (recordedBytes + event.data.size > MAX_RECORDING_BYTES) {
-          errorEl.textContent = "Recording stopped at the local storage limit.";
-          stopRecording();
-          return;
-        }
-        recordedBytes += event.data.size;
-        recordedChunks.push(event.data);
+    const recordingTrack = recordingStream.getAudioTracks().find((track) => track.readyState === "live");
+    if (!recordingTrack) throw new Error("The selected audio source has no live track.");
+    const trackSettings = typeof recordingTrack.getSettings === "function" ? recordingTrack.getSettings() : {};
+    const trackChannels = Number(trackSettings.channelCount);
+    recordingChannels = Number.isInteger(trackChannels) && trackChannels > 0 ? Math.min(trackChannels, 2) : 1;
+    recordingSampleRate = audioContext.sampleRate;
+    if (recordingSampleRate < 8000 || recordingSampleRate > 96000) {
+      throw new Error(`Unsupported WAV sample rate: ${recordingSampleRate} Hz.`);
+    }
+    if (audioContext.state === "suspended") await audioContext.resume();
+    if (!wavCaptureWorkletLoaded) {
+      const moduleUrl = URL.createObjectURL(new Blob([WAV_CAPTURE_WORKLET_SOURCE], { type: "application/javascript" }));
+      try {
+        await audioContext.audioWorklet.addModule(moduleUrl);
+        wavCaptureWorkletLoaded = true;
+      } finally {
+        URL.revokeObjectURL(moduleUrl);
       }
-    };
-    recorder.onstop = () => {
-      if (recordTimer) clearInterval(recordTimer);
-      recordTimer = null;
-      if (!recordedChunks.length) {
-        errorEl.textContent = "No recorded audio data was produced.";
-        recordStatusEl.textContent = "No audio saved";
-        return;
+    }
+
+    recordingSourceNode = audioContext.createMediaStreamSource(recordingStream);
+    recordingProcessor = new AudioWorkletNode(audioContext, "wav-capture", {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      channelCount: recordingChannels,
+      channelCountMode: "explicit",
+      channelInterpretation: "speakers",
+      outputChannelCount: [recordingChannels],
+      processorOptions: { channels: recordingChannels }
+    });
+    recordingSilenceGain = audioContext.createGain();
+    recordingSilenceGain.gain.value = 0;
+    recordingProcessor.port.onmessage = receiveWavChunk;
+    recordingProcessor.addEventListener("processorerror", () => {
+      errorEl.textContent = "WAV audio capture stopped unexpectedly; saving the captured portion.";
+      if (recordingActive) {
+        recordingActive = false;
+        recordingFinalizing = true;
+        finishWavRecording();
       }
-      const recordingType = recorder.mimeType || mimeType || "application/octet-stream";
-      const blob = new Blob(recordedChunks, { type: recordingType });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      const suffix = recordingType.includes("mp4") ? "m4a" : recordingType.includes("ogg") ? "ogg" : "webm";
-      link.download = `ESP32-audio-${recordingSourceLabel}-${new Date().toISOString().replace(/[:.]/g, "-")}.${suffix}`;
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-      recordedChunks = [];
-      recordStatusEl.textContent = `Saved locally · ${formatDuration((Date.now() - recordStartedAt) / 1000)}`;
-      addLog("Audio recording saved to this device");
-      setTimeout(() => {
-        if (recorder?.state === "inactive") recordStatusEl.textContent = "Not recording";
-      }, 5000);
-    };
-    recorder.start(1000);
+    }, { once: true });
+    recordingSourceNode.connect(recordingProcessor);
+    recordingProcessor.connect(recordingSilenceGain);
+    recordingSilenceGain.connect(audioContext.destination);
+    recordingActive = true;
     recordStartedAt = Date.now();
     recordStatusEl.textContent = "Recording · 00:00";
     if (recordTimer) clearInterval(recordTimer);
@@ -1317,25 +1507,36 @@ function startRecording() {
       const seconds = Math.floor((Date.now() - recordStartedAt) / 1000);
       recordStatusEl.textContent = `Recording · ${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
     }, 1000);
-    addLog(`Local recording started (${recordingSourceLabel} audio)`);
-    recordSourceEl.disabled = true;
-    recordButton.disabled = true;
+    addLog(`Local WAV recording started (${recordingSourceLabel} audio)`);
     stopRecordButton.disabled = false;
   } catch (error) {
+    recordingActive = false;
+    recordingFinalizing = false;
+    if (recordTimer) clearInterval(recordTimer);
+    recordTimer = null;
+    cleanupWavCapture();
+    recordedChunks = [];
+    recordedBytes = 0;
+    recordingSampleRate = 0;
+    recordingChannels = 0;
+    recordButton.disabled = !(remoteStream && remoteStream.getAudioTracks().some((track) => track.readyState === "live"));
+    recordSourceEl.disabled = false;
+    recordStatusEl.textContent = "Not recording";
     errorEl.textContent = `Recording unavailable: ${error.message}`;
   }
 }
 
 function stopRecording() {
-  if (recorder && recorder.state !== "inactive") {
-    recordStatusEl.textContent = "Finalizing recording…";
-    recorder.stop();
-  }
+  if (!recordingActive) return;
+  recordingActive = false;
+  recordingFinalizing = true;
+  recordStatusEl.textContent = "Finalizing WAV…";
   if (recordTimer) clearInterval(recordTimer);
   recordTimer = null;
-  recordSourceEl.disabled = false;
-  recordButton.disabled = !(remoteStream && remoteStream.getAudioTracks().some((track) => track.readyState === "live"));
   stopRecordButton.disabled = true;
+  recordingFlushTimer = setTimeout(finishWavRecording, 1500);
+  if (recordingProcessor) recordingProcessor.port.postMessage({ type: "stop" });
+  else finishWavRecording();
 }
 
 startButton.onclick = async () => {
@@ -1452,7 +1653,7 @@ stopButton.onclick = () => {
   window.setListenerActive(false);
   if (reconnectTimer) clearTimeout(reconnectTimer);
   reconnectTimer = null;
-  if (recorder && recorder.state !== "inactive") stopRecording();
+  if (recordingActive) stopRecording();
   if (socket) socket.close(1000, "Listener stopped");
   socket = null;
   sessionId = null;
