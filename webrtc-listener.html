@@ -44,6 +44,7 @@
       box-shadow: 0 24px 70px #000a, inset 0 1px #ffffff0a;
     }
     .app-header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:3px 2px 15px; }
+    .header-status { display:flex; align-items:center; justify-content:flex-end; gap:6px; flex:none; }
     .brand { display:flex; align-items:center; flex:1 1 auto; gap:10px; min-width:0; }
     .brand-icon { display:grid; place-items:center; width:42px; height:42px; flex:none; color:var(--cyan); border:1px solid #138bd1; border-radius:12px; background:#08243a; box-shadow:0 0 18px #0782d32e; }
     .brand-icon svg { width:25px; height:25px; }
@@ -58,6 +59,11 @@
     .device-pill.online .status-dot { background:var(--green); }
     .device-pill.offline { color:#ff8987; border-color:#703e42; background:#291417; }
     .device-pill.offline .status-dot { background:var(--red); }
+    .activity-timer { display:inline-flex; align-items:center; justify-content:center; min-height:28px; padding:5px 8px; color:#78ddff; border:1px solid #1c5b79; border-radius:999px; background:#082132; font-size:.6rem; font-weight:800; letter-spacing:.035em; white-space:nowrap; font-variant-numeric:tabular-nums; }
+    .activity-timer[hidden] { display:none !important; }
+    .record-status-row { display:flex; align-items:center; justify-content:center; gap:8px; width:100%; }
+    #recordStatus { flex:0 1 auto; }
+    .recording-timer { color:#ff9995; border-color:#733d43; background:#291419; }
     .tabbar { display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:4px; padding:5px; border:1px solid #17364b; border-radius:15px; background:#06121d; }
     .tab-button { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; min-height:55px; padding:6px 2px; color:#91a7b9; border:0; border-radius:10px; background:transparent; font-size:.63rem; font-weight:650; }
     .tab-button svg { width:19px; height:19px; stroke:currentColor; }
@@ -147,6 +153,8 @@
     .autoscroll-option input { accent-color:#168fff; }
     .filter-button { padding:6px 8px; color:#a8bfce; border:1px solid #234256; border-radius:999px; background:#091a27; font-size:.63rem; }
     .filter-button[aria-pressed="true"] { color:white; border-color:#087cf0; background:#087cf0; }
+    .health-check-button { color:#061522; border-color:#5ae5b1; background:linear-gradient(#7af0c0,#44d7a0); }
+    .health-check-button:disabled { opacity:.6; cursor:wait; }
     .small-button { padding:7px 9px; color:#cce5f3; border:1px solid #2a4b60; border-radius:8px; background:#102433; font-size:.67rem; font-weight:700; }
     .small-button.danger { color:#ff9a97; border-color:#794148; background:#25171c; }
     .log-list { display:grid; gap:5px; max-height:420px; overflow:auto; padding:2px; }
@@ -393,7 +401,10 @@
           <small id="deviceSelectStatus" role="status" aria-live="polite">Choose which ESP32 supplies the listener audio.</small>
         </div>
       </div>
-      <div id="deviceOnlinePill" class="device-pill"><i class="status-dot" aria-hidden="true"></i><span id="deviceStatusLabel">CHECKING</span></div>
+      <div class="header-status" aria-label="Device and audio status">
+        <div id="deviceOnlinePill" class="device-pill" role="status" aria-label="ESP32 device connection status"><i class="status-dot" aria-hidden="true"></i><span id="deviceStatusLabel">CHECKING</span></div>
+        <span id="playbackTimer" class="activity-timer" aria-label="Audio playback elapsed time" title="Audio playback time" hidden>PLAY 00:00</span>
+      </div>
     </header>
 
     <nav class="tabbar" role="tablist" aria-label="Listener app sections">
@@ -413,7 +424,7 @@
           <button class="action-button" id="start" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path class="listen-start-icon" d="m8 5 11 7-11 7z"/><rect class="listen-stop-icon" x="6" y="6" width="12" height="12" rx="1"/></svg><span id="listenButtonLabel">Start listening</span></button>
           <button class="action-button record" id="record" type="button" disabled aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle class="record-start-icon" cx="12" cy="12" r="5"/><rect class="record-stop-icon" x="6" y="6" width="12" height="12" rx="1"/></svg><span id="recordButtonLabel">Start recording</span></button>
         </div>
-        <p id="recordStatus" role="status" aria-live="polite">Connect to audio to record a WAV file.</p>
+        <div class="record-status-row"><p id="recordStatus" role="status" aria-live="polite">Connect to audio to record a WAV file.</p><span id="recordingTimer" class="activity-timer recording-timer" aria-label="WAV recording elapsed time" title="WAV recording time" hidden>REC 00:00</span></div>
         <audio id="audio" class="audio-control" controls autoplay playsinline aria-label="Audio playback controls"></audio>
       </section>
 
@@ -513,10 +524,11 @@
     <section class="tab-panel" id="panel-logs" role="tabpanel" aria-labelledby="tab-logs" hidden>
       <div class="section-heading"><h2>EVENT LOG</h2><span class="status-chip"><span id="logCount">0</span> events</span></div>
       <section class="setting-group">
-        <div class="log-toolbar"><div class="filter-list" role="group" aria-label="Filter event log"><button class="filter-button" data-log-filter="all" aria-pressed="true" type="button">All</button><button class="filter-button" data-log-filter="info" aria-pressed="false" type="button">Info</button><button class="filter-button" data-log-filter="warning" aria-pressed="false" type="button">Warning</button><button class="filter-button" data-log-filter="error" aria-pressed="false" type="button">Error</button><button class="filter-button" data-log-filter="backend" aria-pressed="false" type="button">Backend</button></div><label class="autoscroll-option"><input type="checkbox" id="autoScrollLogs" checked> Auto-scroll</label><div><button class="small-button danger" id="clearLogs" type="button">Clear</button> <button class="small-button" id="exportLogs" type="button">Export</button></div></div>
+        <div class="log-toolbar"><div class="filter-list" role="group" aria-label="Filter event log"><button class="filter-button" data-log-filter="all" aria-pressed="true" type="button">All</button><button class="filter-button" data-log-filter="info" aria-pressed="false" type="button">Info</button><button class="filter-button" data-log-filter="warning" aria-pressed="false" type="button">Warning</button><button class="filter-button" data-log-filter="error" aria-pressed="false" type="button">Error</button><button class="filter-button" data-log-filter="backend" aria-pressed="false" type="button">Backend</button><button class="filter-button" data-log-filter="health" aria-pressed="false" type="button">Health Check</button></div><label class="autoscroll-option"><input type="checkbox" id="autoScrollLogs" checked> Auto-scroll</label><div><button class="small-button health-check-button" id="runHealthCheck" type="button">Run health check</button> <button class="small-button danger" id="clearLogs" type="button">Clear</button> <button class="small-button" id="exportLogs" type="button">Export</button></div></div>
+        <p class="helper" id="healthCheckStatus" role="status" aria-live="polite">Health Check runs read-only browser, Render API, device, and WebRTC checks and records each result here.</p>
         <div class="log-list" id="logList" aria-live="polite"><div class="log-entry"><span class="log-time">—</span><span class="log-level info">INFO</span><span>Listener ready</span></div></div>
       </section>
-      <p class="helper">Listener and backend health-check events appear here. “Backend” filters Render health and authenticated API checks; these are app checks, not Render’s private server logs. Audio is not included in the event log.</p>
+      <p class="helper">Health Check records browser support, playback state, Render health and authenticated APIs, selected-device status and telemetry, and WebRTC connection/RTP counters. It is read-only; it cannot inspect Render’s private host logs, and it never logs audio payloads or credentials.</p>
     </section>
 
     <section class="tab-panel" id="panel-system" role="tabpanel" aria-labelledby="tab-system" hidden>
@@ -585,6 +597,10 @@ const logListEl = document.getElementById("logList");
 const logCountEl = document.getElementById("logCount");
 const deviceOnlinePill = document.getElementById("deviceOnlinePill");
 const deviceStatusLabel = document.getElementById("deviceStatusLabel");
+const playbackTimerEl = document.getElementById("playbackTimer");
+const recordingTimerEl = document.getElementById("recordingTimer");
+const runHealthCheckButton = document.getElementById("runHealthCheck");
+const healthCheckStatusEl = document.getElementById("healthCheckStatus");
 const deviceSelectEl = document.getElementById("deviceSelect");
 const deviceSelectStatusEl = document.getElementById("deviceSelectStatus");
 const audioLevelFill = document.getElementById("audioLevelFill");
@@ -614,6 +630,8 @@ let recordedBytes = 0;
 let recordingActive = false;
 let recordingFinalizing = false;
 let recordingStartAttempt = 0;
+let recordingStartedAtMs = 0;
+let recordingTimerInterval = null;
 let recordingSampleRate = 0;
 let recordingChannels = 0;
 let recordingSourceNode = null;
@@ -652,6 +670,10 @@ let gtcrnNode = null;
 let noiseSuppressionActive = false;
 let silentInputSinceMs = null;
 let audioProcessingStatus = "GTCRN will activate when listening starts.";
+let playbackElapsedMs = 0;
+let playbackStartedAtMs = 0;
+let playbackTimerInterval = null;
+let healthCheckRunning = false;
 const MAX_PENDING_CANDIDATES = 32;
 const MAX_RECONNECT_MS = 15000;
 const MAX_RECORDING_BYTES = 128 * 1024 * 1024;
@@ -716,6 +738,8 @@ function renderLogs() {
     ? logEntries
     : activeLogFilter === "backend"
       ? logEntries.filter((entry) => entry.category === "backend")
+      : activeLogFilter === "health"
+        ? logEntries.filter((entry) => entry.category === "health")
       : logEntries.filter((entry) => entry.level === activeLogFilter);
   logCountEl.textContent = String(logEntries.length);
   logListEl.replaceChildren();
@@ -745,10 +769,195 @@ function renderLogs() {
 
 function addLog(message, level = "info", category = "listener") {
   const safeLevel = ["info", "warning", "error"].includes(level) ? level : "info";
-  const safeCategory = category === "backend" ? "backend" : "listener";
+  const safeCategory = ["backend", "health"].includes(category) ? category : "listener";
   logEntries.push({ at: new Date(), level: safeLevel, category: safeCategory, message: String(message).slice(0, 400) });
   if (logEntries.length > MAX_LOG_ENTRIES) logEntries.splice(0, logEntries.length - MAX_LOG_ENTRIES);
   renderLogs();
+}
+
+function selectLogFilter(filter) {
+  activeLogFilter = filter;
+  document.querySelectorAll("[data-log-filter]").forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.logFilter === filter));
+  });
+  renderLogs();
+}
+
+function logHealthResult(results, label, passed, detail, warning = false) {
+  const level = passed ? "info" : warning ? "warning" : "error";
+  const marker = passed ? "PASS" : warning ? "WARN" : "FAIL";
+  results.push({ passed, warning: !passed && warning });
+  addLog(`${marker} · ${label}: ${detail}`, level, "health");
+}
+
+async function fetchHealthCheck(url, responseType = "json", timeoutMs = 6000) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      cache: "no-store",
+      credentials: "same-origin",
+      signal: controller.signal
+    });
+    if (!response.ok) return { ok: false, status: response.status, body: null };
+    const body = responseType === "text" ? await response.text() : await response.json();
+    return { ok: true, status: response.status, body };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      body: null,
+      detail: error?.name === "AbortError" ? `timed out after ${timeoutMs / 1000}s` : "network or response error"
+    };
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+async function runHealthCheck() {
+  if (healthCheckRunning) return;
+  healthCheckRunning = true;
+  runHealthCheckButton.disabled = true;
+  runHealthCheckButton.textContent = "Checking…";
+  healthCheckStatusEl.textContent = "Running read-only browser, backend, device, and WebRTC checks…";
+  selectLogFilter("health");
+  const results = [];
+  addLog("Health check started", "info", "health");
+
+  try {
+    const requiredIds = ["deviceOnlinePill", "playbackTimer", "deviceSelect", "start", "audio", "record", "recordingTimer", "panel-logs", "runHealthCheck", "healthCheckStatus"];
+    const missingIds = requiredIds.filter((id) => !document.getElementById(id));
+    logHealthResult(results, "Listener UI", missingIds.length === 0,
+      missingIds.length ? `missing controls: ${missingIds.join(", ")}` : "required controls are present");
+    logHealthResult(results, "Secure browser context", window.isSecureContext === true,
+      window.isSecureContext === true ? `${location.protocol}//${location.host}` : "HTTPS secure context is required");
+    logHealthResult(results, "WebRTC support", typeof window.RTCPeerConnection === "function",
+      typeof window.RTCPeerConnection === "function" ? "RTCPeerConnection available" : "WebRTC is unavailable in this browser");
+    const audioContextSupported = Boolean(window.AudioContext || window.webkitAudioContext);
+    logHealthResult(results, "Web Audio support", audioContextSupported,
+      audioContextSupported ? `AudioContext${audioContext ? ` running at ${audioContext.sampleRate} Hz` : " available"}` : "Web Audio is unavailable", !audioContextSupported);
+    const audioContextReady = !audioContext || audioContext.state === "running" || (!listenerActive && audioContext.state === "suspended");
+    logHealthResult(results, "AudioContext state", audioContextReady,
+      !audioContext ? "not started; listener is idle" : `${audioContext.state}${audioContext.state === "running" ? ` · ${audioContext.sampleRate} Hz` : ""}`,
+      !audioContextReady);
+    const wavSupported = audioContextSupported && Boolean(window.AudioWorkletNode) && Boolean(window.Blob);
+    logHealthResult(results, "WAV recording support", wavSupported,
+      wavSupported ? "AudioWorklet and WAV download APIs are available" : "AudioWorklet/WAV APIs unavailable", !wavSupported);
+
+    const selectedDevice = selectedDeviceStatus();
+    logHealthResult(results, "Selected listening device", Boolean(selectedDevice),
+      selectedDevice ? selectedDeviceId : "no configured device is selected", !selectedDevice);
+    const liveTrack = Boolean(remoteStream && remoteStream.getAudioTracks().some((track) => track.readyState === "live"));
+    logHealthResult(results, "Incoming audio track", liveTrack,
+      liveTrack ? "live WebRTC audio track received" : "no live audio track; start listening to test media", !liveTrack);
+    const playing = Boolean(liveTrack && !audioEl.paused && !audioEl.ended);
+    logHealthResult(results, "Browser playback", playing,
+      playing ? "audio is playing" : liveTrack ? "audio ready — press play" : "not currently playing", !playing);
+    const observedLevel = noiseSuppressionActive ? latestOutputDbfs : latestInputDbfs;
+    const hasObservedLevel = Number.isFinite(observedLevel);
+    logHealthResult(results, "Browser audio level", hasObservedLevel,
+      hasObservedLevel ? `${formatAudioLevelDbfs(observedLevel)} at the ${noiseSuppressionActive ? "processed output" : "incoming audio"} meter` : "no current Web Audio level sample", !hasObservedLevel);
+    logHealthResult(results, "Noise suppression", true,
+      noiseSuppressionActive ? "GTCRN enabled" : "off; direct WebRTC audio path selected");
+
+    const backendChecks = [
+      (async () => {
+        const result = await fetchHealthCheck("/health", "text");
+        const passed = result.ok && result.body.trim().toUpperCase() === "OK";
+        logHealthResult(results, "Render /health", passed,
+          passed ? `HTTP ${result.status} · OK` : result.status ? `HTTP ${result.status}` : (result.detail || "unexpected response"));
+      })(),
+      (async () => {
+        const result = await fetchHealthCheck(location.pathname + location.search, "text");
+        const passed = result.ok && /<section\b[^>]*id="panel-logs"/i.test(result.body)
+          && /<button\b[^>]*id="runHealthCheck"/i.test(result.body);
+        logHealthResult(results, "Listener page route", passed,
+          passed ? `HTTP ${result.status} · Health Check UI served` : result.status ? `HTTP ${result.status} · expected listener UI marker missing` : (result.detail || "unavailable"));
+      })(),
+      (async () => {
+        const result = await fetchHealthCheck("/api/devices");
+        const passed = result.ok && result.body?.ok === true && Array.isArray(result.body.devices);
+        const devices = passed ? result.body.devices : [];
+        const selectedFound = selectedDeviceId && devices.some((device) => device.device_id === selectedDeviceId);
+        logHealthResult(results, "Authenticated device API", passed,
+          passed ? `HTTP ${result.status} · ${devices.length} device(s) returned` : result.status ? `HTTP ${result.status}` : (result.detail || "invalid JSON response"));
+        if (selectedDeviceId) {
+          logHealthResult(results, "Device registration", Boolean(selectedFound),
+            selectedFound ? `${selectedDeviceId} is registered` : `${selectedDeviceId} was not returned by the device API`, !selectedFound);
+        }
+      })(),
+      (async () => {
+        const result = await fetchHealthCheck("/api/webrtc-status");
+        const passed = result.ok && result.body?.ok === true && result.body?.transport === "webrtc";
+        logHealthResult(results, "WebRTC backend status", passed,
+          passed ? `HTTP ${result.status} · signaling reports ${result.body.transport}` : result.status ? `HTTP ${result.status}` : (result.detail || "invalid JSON response"));
+      })(),
+      (async () => {
+        const result = await fetchHealthCheck("/api/session/settings");
+        const passed = result.ok && result.body?.ok === true && Number.isFinite(result.body?.timeout_minutes);
+        logHealthResult(results, "Authenticated session API", passed,
+          passed ? `HTTP ${result.status} · session active · ${result.body.timeout_minutes || "no idle timeout"} minute setting` : result.status ? `HTTP ${result.status}` : (result.detail || "invalid JSON response"));
+      })()
+    ];
+
+    if (selectedDeviceId) {
+      backendChecks.push((async () => {
+        const path = `/api/devices/${encodeURIComponent(selectedDeviceId)}/status`;
+        const result = await fetchHealthCheck(path);
+        const valid = result.ok && result.body?.ok === true && result.body?.device_id === selectedDeviceId;
+        logHealthResult(results, "Selected device status API", valid,
+          valid ? `HTTP ${result.status} · status returned for ${selectedDeviceId}` : result.status ? `HTTP ${result.status}` : (result.detail || "invalid JSON response"));
+        if (valid) {
+          const online = result.body.device_connected === true;
+          logHealthResult(results, "ESP32 signaling connection", online,
+            online ? "device is online and connected to Render" : "device is currently offline", !online);
+          const telemetryAge = result.body.telemetry?.telemetry_age_ms;
+          const freshTelemetry = Number.isFinite(telemetryAge) && telemetryAge >= 0 && telemetryAge <= 15000;
+          logHealthResult(results, "ESP32 telemetry", freshTelemetry,
+            freshTelemetry ? `fresh · ${Math.floor(telemetryAge / 1000)}s old` : "no fresh telemetry received in the last 15s", !freshTelemetry);
+        }
+      })());
+    } else {
+      logHealthResult(results, "Selected device status API", false, "skipped because no device is selected", true);
+    }
+
+    if (peer) {
+      const peerState = peer.connectionState;
+      logHealthResult(results, "WebRTC peer connection", peerState === "connected",
+        peerState || "unknown", peerState !== "failed" && peerState !== "closed");
+      try {
+        const report = await peer.getStats();
+        let inbound = null;
+        report.forEach((stat) => {
+          if (stat.type === "inbound-rtp" && (stat.kind === "audio" || stat.mediaType === "audio")) inbound = stat;
+        });
+        const packets = Number.isFinite(inbound?.packetsReceived) ? inbound.packetsReceived : 0;
+        logHealthResult(results, "Inbound audio RTP", packets > 0,
+          inbound ? `${packets} packet(s), ${Number(inbound.packetsLost || 0)} lost, ${Number.isFinite(inbound.jitter) ? Math.round(inbound.jitter * 1000) : "n/a"} ms jitter` : "no inbound audio RTP statistics", packets === 0);
+      } catch {
+        logHealthResult(results, "WebRTC media statistics", false, "browser could not read peer statistics", true);
+      }
+    } else {
+      logHealthResult(results, "WebRTC peer connection", false, "not connected; start listening to test the media path", true);
+      logHealthResult(results, "Inbound audio RTP", false, "not checked because there is no peer connection", true);
+    }
+
+    await Promise.all(backendChecks);
+    const failed = results.filter((item) => !item.passed && !item.warning).length;
+    const warnings = results.filter((item) => item.warning).length;
+    const passed = results.filter((item) => item.passed).length;
+    const summary = `${passed} passed · ${warnings} warning(s) · ${failed} failed`;
+    healthCheckStatusEl.textContent = `Health check complete: ${summary}. Results are in the Health Check log.`;
+    addLog(`Health check complete · ${summary}`, failed ? "error" : warnings ? "warning" : "info", "health");
+  } catch {
+    healthCheckStatusEl.textContent = "Health check stopped unexpectedly; see the Health Check log for completed checks.";
+    addLog("Health check stopped unexpectedly", "error", "health");
+  } finally {
+    healthCheckRunning = false;
+    runHealthCheckButton.disabled = false;
+    runHealthCheckButton.textContent = "Run health check";
+    renderLogs();
+  }
 }
 
 function setState(value) {
@@ -1182,13 +1391,11 @@ document.querySelectorAll("[data-tab]").forEach((button, index, buttons) => {
 
 document.querySelectorAll("[data-log-filter]").forEach((button) => {
   button.addEventListener("click", () => {
-    activeLogFilter = button.dataset.logFilter;
-    document.querySelectorAll("[data-log-filter]").forEach((item) => {
-      item.setAttribute("aria-pressed", String(item === button));
-    });
-    renderLogs();
+    selectLogFilter(button.dataset.logFilter);
   });
 });
+
+runHealthCheckButton.addEventListener("click", () => { void runHealthCheck(); });
 
 document.getElementById("clearLogs").addEventListener("click", () => {
   logEntries = [];
@@ -1333,6 +1540,80 @@ function formatAudioLevelDbfs(value) {
   return Number.isFinite(value) ? `${value.toFixed(1)} dBFS` : "digital silence";
 }
 
+function formatElapsedClock(milliseconds) {
+  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return hours > 0
+    ? `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
+    : `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function hasLiveAudioTrack() {
+  return Boolean(remoteStream && remoteStream.getAudioTracks().some((track) => track.readyState === "live"));
+}
+
+function refreshPlaybackTimerText() {
+  const elapsed = playbackElapsedMs + (playbackStartedAtMs ? performance.now() - playbackStartedAtMs : 0);
+  playbackTimerEl.textContent = `PLAY ${formatElapsedClock(elapsed)}`;
+}
+
+function startPlaybackTimer() {
+  if (!hasLiveAudioTrack() || audioEl.paused || audioEl.ended) return;
+  if (!playbackStartedAtMs) playbackStartedAtMs = performance.now();
+  playbackTimerEl.hidden = false;
+  refreshPlaybackTimerText();
+  if (!playbackTimerInterval) {
+    playbackTimerInterval = window.setInterval(() => {
+      if (!hasLiveAudioTrack() || audioEl.paused || audioEl.ended) {
+        pausePlaybackTimer();
+        return;
+      }
+      refreshPlaybackTimerText();
+    }, 250);
+  }
+  setState("Audio is playing");
+}
+
+function pausePlaybackTimer() {
+  if (playbackStartedAtMs) {
+    playbackElapsedMs += performance.now() - playbackStartedAtMs;
+    playbackStartedAtMs = 0;
+  }
+  if (playbackTimerInterval) window.clearInterval(playbackTimerInterval);
+  playbackTimerInterval = null;
+  playbackTimerEl.hidden = true;
+  refreshPlaybackTimerText();
+}
+
+function resetPlaybackTimer() {
+  pausePlaybackTimer();
+  playbackElapsedMs = 0;
+  refreshPlaybackTimerText();
+}
+
+function refreshRecordingTimerText() {
+  const elapsed = recordingStartedAtMs ? performance.now() - recordingStartedAtMs : 0;
+  recordingTimerEl.textContent = `REC ${formatElapsedClock(elapsed)}`;
+}
+
+function startRecordingTimer() {
+  if (recordingTimerInterval) window.clearInterval(recordingTimerInterval);
+  recordingStartedAtMs = performance.now();
+  recordingTimerEl.hidden = false;
+  refreshRecordingTimerText();
+  recordingTimerInterval = window.setInterval(refreshRecordingTimerText, 250);
+}
+
+function stopRecordingTimer() {
+  if (recordingTimerInterval) window.clearInterval(recordingTimerInterval);
+  recordingTimerInterval = null;
+  recordingStartedAtMs = 0;
+  recordingTimerEl.hidden = true;
+  recordingTimerEl.textContent = "REC 00:00";
+}
+
 function syncPlaybackGain() {
   if (!audioContext || !playbackGain) return;
   const playing = remoteStream && !audioEl.paused;
@@ -1346,8 +1627,22 @@ audioEl.addEventListener("play", () => {
   } else {
     syncPlaybackGain();
   }
+  if (hasLiveAudioTrack()) setState("Audio ready — buffering");
 });
-audioEl.addEventListener("pause", syncPlaybackGain);
+audioEl.addEventListener("playing", startPlaybackTimer);
+audioEl.addEventListener("waiting", () => {
+  pausePlaybackTimer();
+  if (listenerActive && hasLiveAudioTrack()) setState("Audio buffering…");
+});
+audioEl.addEventListener("pause", () => {
+  pausePlaybackTimer();
+  syncPlaybackGain();
+  if (listenerActive && hasLiveAudioTrack()) setState("Audio ready — press play");
+});
+audioEl.addEventListener("ended", () => {
+  pausePlaybackTimer();
+  if (listenerActive && hasLiveAudioTrack()) setState("Audio ready — press play");
+});
 audioEl.addEventListener("volumechange", syncPlaybackGain);
 
 function refreshAudioProcessingStatus() {
@@ -1652,6 +1947,7 @@ function closePeer() {
     mediaStreamSource = null;
   }
   remoteStream = null;
+  resetPlaybackTimer();
   syncRecordButton();
   if (!recordingFinalizing) recordStatusEl.textContent = "Connect to audio to record a WAV file.";
   audioEl.pause();
@@ -1809,13 +2105,23 @@ async function createPeer() {
     }
   };
   peer.ontrack = async (event) => {
+    resetPlaybackTimer();
     remoteStream = event.streams && event.streams[0]
       ? event.streams[0]
       : new MediaStream([event.track]);
     for (const track of remoteStream.getAudioTracks()) {
+      track.addEventListener("mute", () => {
+        pausePlaybackTimer();
+        if (listenerActive) setState("Audio buffering…");
+      });
+      track.addEventListener("unmute", () => {
+        if (!audioEl.paused && !audioEl.ended) startPlaybackTimer();
+      });
       track.addEventListener("ended", () => {
+        pausePlaybackTimer();
         if (recordingActive) stopRecording();
         syncRecordButton();
+        if (listenerActive) setState("Audio track ended — reconnecting");
       }, { once: true });
     }
     syncRecordButton();
@@ -2066,11 +2372,13 @@ async function startRecording() {
     recordingActive = true;
     recordButton.classList.add("recording");
     recordStatusEl.textContent = `Recording WAV · ${recordingSampleRate} Hz`;
+    startRecordingTimer();
     syncRecordButton();
     addLog("Local WAV recording started");
   } catch (error) {
     recordingActive = false;
     recordingFinalizing = false;
+    stopRecordingTimer();
     cleanupWavCapture();
     recordedChunks = [];
     recordedBytes = 0;
@@ -2087,6 +2395,7 @@ function stopRecording() {
   if (!recordingActive) return;
   recordingActive = false;
   recordingFinalizing = true;
+  stopRecordingTimer();
   recordButton.classList.remove("recording");
   recordButton.setAttribute("aria-pressed", "false");
   recordButtonLabelEl.textContent = "Start recording";
