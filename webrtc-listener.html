@@ -1778,6 +1778,16 @@ async function refreshDiagnostics() {
   }
 }
 
+function formatDuration(seconds) {
+  if (seconds === null || seconds === undefined || seconds === ""
+      || !Number.isFinite(Number(seconds)) || Number(seconds) < 0) return "—";
+  const total = Math.floor(Number(seconds));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const remainder = total % 60;
+  return `${hours}h ${minutes}m ${remainder}s`;
+}
+
 async function getJson(url) {
   const response = await fetch(url, { cache: "no-store", credentials: "same-origin" });
   if (response.status === 401) {
