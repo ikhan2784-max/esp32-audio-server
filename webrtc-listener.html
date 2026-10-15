@@ -594,7 +594,7 @@
             <option value="medium">Medium</option><option value="high">High</option>
           </select>
           <span id="audioSettingsStatus" role="status" aria-live="polite">Connect to the selected ESP32 to change microphone mode and DSP controls.</span>
-          <p class="helper">GTCRN uses its fixed-strength model; Low, Medium, and High add progressively stronger smooth post-model expansion on quieter audio. ESP32 gate levels affect quiet intervals only. VAD changes speech-detection sensitivity and guides AGC; it does not mute audio. Limiter levels set progressively lower ESP32 peak ceilings; Off also bypasses the final Opus safety ceiling.</p>
+          <p class="helper">GTCRN uses its fixed-strength model; Low, Medium, and High set progressively stronger quiet-interval attenuation. A longer speech hold and smoother gain movement help preserve syllables. ESP32 gate levels affect quiet intervals only. VAD changes speech-detection sensitivity and guides AGC; it does not mute audio. Limiter levels set progressively lower ESP32 peak ceilings; Off also bypasses the final Opus safety ceiling.</p>
         </section>
         <section class="setting-group"><h2>SESSION TIMEOUT</h2>
           <label class="gain-heading" for="sessionTimeout"><span>Sign out after inactivity</span></label>
@@ -2210,15 +2210,15 @@ addLog("Listener page ready");
 renderLogs();
 
 function refreshMicGainAvailability() {
-  const connected = !!sessionId && !!peer && peer.connectionState === "connected" &&
-    !!socket && socket.readyState === WebSocket.OPEN;
-  micGainEl.disabled = !connected || autoGainEl.checked;
+  const sessionAvailable = !!sessionId && !!socket && socket.readyState === WebSocket.OPEN;
+  const connected = sessionAvailable && !!peer && peer.connectionState === "connected";
+  micGainEl.disabled = !sessionAvailable || autoGainEl.checked;
   if (autoGainEl.checked) {
     micGainStatusEl.textContent = connected
       ? "AGC is on; the fixed session gain is 100% (1.0×). Turn AGC off for manual gain."
       : "AGC is on by default; manual microphone gain is disabled.";
-  } else if (!connected && sessionId) micGainStatusEl.textContent = "Available when the WebRTC audio connection is up.";
-  else if (!connected) micGainStatusEl.textContent = "Start listening and connect to adjust microphone gain.";
+  } else if (!connected && sessionAvailable) micGainStatusEl.textContent = "Manual gain is enabled; it will apply when the WebRTC audio connection is up.";
+  else if (!sessionAvailable) micGainStatusEl.textContent = "Start listening to enable manual microphone gain.";
 }
 
 function effectiveMicGainPercent() {
@@ -2527,9 +2527,9 @@ async function prepareAudioOutput() {
     const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
     if (!AudioContextConstructor) throw new Error("Web Audio is not supported in this browser");
 
-    // GTCRN runs synchronously in an AudioWorklet. Give the browser a larger
-    // render buffer so short scheduling delays are less likely to become gaps.
-    const context = new AudioContextConstructor({ latencyHint: "balanced", sampleRate: 48000 });
+    // GTCRN inference runs synchronously in an AudioWorklet. Request a modest
+    // playback buffer so occasional scheduling delays do not create audible gaps.
+    const context = new AudioContextConstructor({ latencyHint: 0.12, sampleRate: 48000 });
     if (context.sampleRate !== 48000 && context.sampleRate !== 16000) {
       await context.close();
       throw new Error(`GTCRN does not support ${context.sampleRate} Hz playback`);
@@ -2602,8 +2602,12 @@ async function enableNoiseSuppression() {
   if (!gtcrnNode) {
     gtcrnNode = new gtcrnApi.GtcrnWorkletNode(audioContext, {
       wasmBinary: gtcrnWasmBinary,
-      maxChannels: 2
+      // The ESP32 WebRTC stream is mono. Avoid allocating a second model state
+      // or running an unnecessary second inference if a browser upmixes the track.
+      maxChannels: 1
     });
+    gtcrnNode.channelCount = 1;
+    gtcrnNode.channelCountMode = "explicit";
     const node = gtcrnNode;
     node.addEventListener("processorerror", () => {
       if (gtcrnNode !== node) return;
@@ -3427,6 +3431,11 @@ micGainEl.addEventListener("input", () => {
   micGainValueEl.value = `${micGainEl.value}%`;
 });
 micGainEl.addEventListener("change", sendMicGain);
+autoGainEl.addEventListener("change", () => {
+  micGainValueEl.value = `${effectiveMicGainPercent()}%`;
+  refreshMicGainAvailability();
+  sendAudioSettings();
+});
 micModeEls.forEach((input) => input.addEventListener("change", sendAudioSettings));
 document.getElementById("quality16k").addEventListener("change", (event) => {
   if (event.currentTarget.checked) sendAudioProfile(16000);

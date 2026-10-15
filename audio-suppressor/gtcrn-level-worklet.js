@@ -1,10 +1,15 @@
 "use strict";
 
 const GTCRN_LEVELS = {
-  low: { thresholdDbfs: -60, attenuation: 0.50 },
-  medium: { thresholdDbfs: -54, attenuation: 0.25 },
-  high: { thresholdDbfs: -48, attenuation: 0.125 },
+  low: { thresholdDbfs: -63, attenuation: 0.82 },
+  medium: { thresholdDbfs: -58, attenuation: 0.68 },
+  high: { thresholdDbfs: -53, attenuation: 0.55 },
 };
+
+const SPEECH_HOLD_DBFS = -56;
+const SPEECH_HOLD_MS = 350;
+const SUPPRESSION_SMOOTHING_SECONDS = 0.18;
+const SPEECH_RECOVERY_SECONDS = 0.012;
 
 class GtcrnLevelProcessor extends AudioWorkletProcessor {
   constructor() {
@@ -49,7 +54,9 @@ class GtcrnLevelProcessor extends AudioWorkletProcessor {
     const sampleRateSafe = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 48000;
     const frameLength = Math.min(...outputChannels.map((channel) => channel.length));
     let targetGain;
-    if (dbfs >= upper) this.speechHoldSamples = Math.round(sampleRateSafe * 0.12);
+    if (dbfs >= SPEECH_HOLD_DBFS) {
+      this.speechHoldSamples = Math.round(sampleRateSafe * SPEECH_HOLD_MS / 1000);
+    }
     if (this.speechHoldSamples > 0) targetGain = 1;
     else if (dbfs <= lower) targetGain = profile.attenuation;
     else {
@@ -58,7 +65,11 @@ class GtcrnLevelProcessor extends AudioWorkletProcessor {
     }
 
     for (let i = 0; i < frameLength; i++) {
-      const tauSeconds = targetGain < this.gain ? 0.035 : 0.008;
+      // Apply suppression gradually and restore speech quickly. The envelope
+      // avoids chopping quiet consonants and the tail between adjacent syllables.
+      const tauSeconds = targetGain < this.gain
+        ? SUPPRESSION_SMOOTHING_SECONDS
+        : SPEECH_RECOVERY_SECONDS;
       const smoothing = 1 - Math.exp(-1 / (sampleRateSafe * tauSeconds));
       this.gain += (targetGain - this.gain) * smoothing;
       for (let channelIndex = 0; channelIndex < outputChannels.length; channelIndex++) {
