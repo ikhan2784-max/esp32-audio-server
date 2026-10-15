@@ -40,6 +40,7 @@ const TELEMETRY_NUMBER_RANGES = Object.freeze({
     i2s_sample_rate_hz: [0, 96000],
     i2s_estimated_sample_rate_hz: [0, 96000],
     i2s_slot_bits: [0, 64],
+    i2s_valid_bits: [0, 32],
     pcm_bits: [0, 32],
     audio_samples_captured: [0, Number.MAX_SAFE_INTEGER],
     raw_buffer_overflows: [0, Number.MAX_SAFE_INTEGER],

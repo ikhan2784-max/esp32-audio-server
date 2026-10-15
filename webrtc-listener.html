@@ -491,8 +491,9 @@
       </section>
 
       <div class="spec-grid" aria-label="Current audio format">
-        <div class="spec-card"><strong>16 kHz</strong><span>RATE</span></div><div class="spec-card"><strong>16-bit</strong><span>DEPTH</span></div><div class="spec-card"><strong>Mono</strong><span>CHANNEL</span></div><div class="spec-card"><strong>Mic 1</strong><span>INPUT</span></div>
+        <div class="spec-card"><strong id="formatRate">Waiting</strong><span>RATE</span></div><div class="spec-card"><strong id="formatPcm">Waiting</strong><span>PCM</span></div><div class="spec-card"><strong id="formatChannel">Mono</strong><span>CHANNEL</span></div><div class="spec-card"><strong id="formatInput">Waiting</strong><span>INPUT</span></div>
       </div>
+      <p class="helper" id="formatSourceDetails" aria-live="polite">Waiting for current firmware audio-format telemetry.</p>
 
       <section class="panel-card">
         <div class="card-title"><span class="eyebrow">AUDIO LEVEL</span><output id="listenerDb">Waiting for audio</output></div>
@@ -517,7 +518,7 @@
     </section>
 
     <section class="tab-panel" id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
-      <div class="section-heading"><h2> AUDIO SETTINGS</h2><span class="status-chip">Firmware profile</span></div>
+      <div class="section-heading"><h2> AUDIO SETTINGS</h2><span class="status-chip" id="audioProfileBadge">Checking firmware profile</span></div>
       <div class="settings-stack">
         <section class="setting-group"><h2>MICROPHONE MODE</h2><div class="choice-list">
           <label class="choice-row"><input type="radio" name="micMode" value="mic1" checked disabled><span>Mic 1</span><small>Left slot</small></label>
@@ -526,9 +527,10 @@
           <label class="choice-row disabled"><input type="radio" name="micMode" value="both_stereo" disabled><span>Both (Stereo)</span><small>Unavailable</small></label>
         </div><p class="helper">Mic 1 and Mic 2 share BCLK GPIO4, WS GPIO5, and DATA GPIO6. Set the microphones’ L/R select pins to opposite levels so one drives LEFT and the other RIGHT. Both stereo is unavailable because this firmware’s processed-audio and Opus transport are mono.</p></section>
         <section class="setting-group"><h2>AUDIO QUALITY</h2><div class="choice-list">
-          <label class="choice-row"><input type="radio" name="audioQuality" checked disabled><span>16 kHz / 16-bit</span><small>Voice profile</small></label>
+          <label class="choice-row"><input id="quality16k" type="radio" name="audioQuality" disabled><span>16 kHz / 16-bit PCM</span><small>Voice profile</small></label>
+          <label class="choice-row"><input id="quality48k" type="radio" name="audioQuality" disabled><span>48 kHz / 16-bit PCM</span><small>24-bit mic source</small></label>
           <label class="choice-row disabled"><input type="radio" name="audioQuality" disabled><span>44.1 kHz / 24-bit</span><small>Unavailable</small></label>
-        </div><p class="helper">The live pipeline currently processes mono PCM16 and sends Opus at the firmware profile rate. Opus does not accept 44.1 kHz input; a working high-rate option needs resampling and a 24-bit capture path, so this choice stays unavailable until the complete pipeline supports it.</p></section>
+        </div><p class="helper">Read-only live profile from the ESP32. The INMP441 source has 24 valid bits; this pipeline converts it to mono PCM16 for DSP and Opus. 44.1 kHz is unavailable because the complete capture and Opus path does not support it.</p></section>
         <section class="setting-group"><h2>DEVICE GAIN</h2><div class="gain-control">
           <label class="gain-heading" id="gainHeading" for="micGain"><span>Microphone gain</span><output id="micGainValue" for="micGain">100%</output></label>
           <input id="micGain" type="range" min="25" max="200" step="5" value="100" disabled>
@@ -1680,6 +1682,13 @@ function updateTelemetryViews(device) {
   const isFresh = telemetry && Number.isFinite(telemetryAgeMs) &&
     telemetryAgeMs >= 0 && telemetryAgeMs <= 15000;
   if (!isFresh) {
+    setMetric("formatRate", "Waiting");
+    setMetric("formatPcm", "Waiting");
+    setMetric("formatInput", "Waiting");
+    setMetric("formatSourceDetails", "Waiting for current firmware audio-format telemetry.");
+    setMetric("audioProfileBadge", "No fresh profile");
+    document.getElementById("quality16k").checked = false;
+    document.getElementById("quality48k").checked = false;
     setMetric("systemHotspotStatus", "No fresh telemetry");
     const hotspotToggle = document.getElementById("hotspotToggle");
     if (hotspotToggle) hotspotToggle.checked = false;
@@ -1689,6 +1698,31 @@ function updateTelemetryViews(device) {
   }
 
   observeOpusFrameRate(telemetry);
+
+  const sampleRateHz = telemetry.i2s_sample_rate_hz;
+  const pcmBits = telemetry.pcm_bits;
+  const slotBits = telemetry.i2s_slot_bits;
+  const sourceBits = Number.isFinite(telemetry.i2s_valid_bits)
+    ? telemetry.i2s_valid_bits : 24;
+  const sampleRateLabel = Number.isFinite(sampleRateHz) && sampleRateHz > 0
+    ? `${(sampleRateHz / 1000).toFixed(sampleRateHz % 1000 === 0 ? 0 : 1)} kHz`
+    : "Unknown";
+  const pcmLabel = Number.isFinite(pcmBits) && pcmBits > 0
+    ? `${pcmBits}-bit PCM` : "Unknown";
+  const inputMode = telemetry.i2s_input_mode;
+  const inputLabel = inputMode === "mic1" ? "Mic 1" :
+    inputMode === "mic2" ? "Mic 2" :
+      inputMode === "both_mono" ? "Mic 1+2" : "Unknown";
+  setMetric("formatRate", sampleRateLabel);
+  setMetric("formatPcm", pcmLabel);
+  setMetric("formatChannel", "Mono");
+  setMetric("formatInput", inputLabel);
+  setMetric("formatSourceDetails", Number.isFinite(slotBits) && slotBits > 0
+    ? `INMP441 source: ${sourceBits}-bit audio in ${slotBits}-bit I²S slots; DSP/Opus input: ${pcmLabel}.`
+    : `INMP441 source: ${sourceBits}-bit audio; DSP/Opus input: ${pcmLabel}.`);
+  setMetric("audioProfileBadge", `${sampleRateLabel} · ${pcmLabel}`);
+  document.getElementById("quality16k").checked = sampleRateHz === 16000 && pcmBits === 16;
+  document.getElementById("quality48k").checked = sampleRateHz === 48000 && pcmBits === 16;
 
   const wifiConnected = telemetry.wifi_connected === true;
   setMetric("systemHotspotStatus", telemetry.hotspot_running === true
