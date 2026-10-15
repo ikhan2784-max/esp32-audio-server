@@ -182,12 +182,10 @@
     .health-more-checks > summary { cursor:pointer; color:#9db5c4; font-size:.68rem; font-weight:700; }
     .health-empty-note { margin:9px 0 0; color:#9db5c4; font-size:.7rem; line-height:1.4; }
     .health-check-actions { display:flex; flex-wrap:wrap; gap:7px; margin-top:8px; }
-    .manual-health-list { display:grid; gap:5px; }
-    .manual-health-item { display:flex; align-items:flex-start; gap:7px; padding:6px 7px; color:#c6d9e5; border:1px solid #183447; border-radius:8px; background:#081924; font-size:.62rem; line-height:1.35; }
-    .manual-health-item input { margin:1px 0 0; accent-color:#168fff; }
-    .health-collapsible { margin-top:10px; }
-    .health-collapsible > summary { cursor:pointer; color:#b9d7e7; font-size:.67rem; font-weight:750; }
-    .health-collapsible .helper { margin-bottom:7px; }
+    .diagnostic-switch { display:flex; gap:6px; margin:0 0 9px; }
+    .diagnostic-switch .small-button[aria-pressed="true"] { color:#fff; border-color:#087cf0; background:#087cf0; }
+    .diagnostics-view[hidden] { display:none; }
+    .information-section { margin-top:9px; }
     .status-chip { display:inline-flex; align-items:center; gap:5px; padding:4px 7px; color:#80e6b9; border:1px solid #176447; border-radius:999px; background:#06251c; font-size:.61rem; font-weight:750; }
     .status-chip.offline { color:#ff928d; border-color:#714047; background:#291419; }
     .log-toolbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; margin-bottom:9px; }
@@ -201,12 +199,19 @@
     .small-button { padding:7px 9px; color:#cce5f3; border:1px solid #2a4b60; border-radius:8px; background:#102433; font-size:.67rem; font-weight:700; }
     .small-button.danger { color:#ff9a97; border-color:#794148; background:#25171c; }
     .log-list { display:grid; gap:5px; max-height:420px; overflow:auto; padding:2px; }
-    .log-entry { display:grid; grid-template-columns:63px 55px 1fr; gap:6px; padding:7px 5px; border-bottom:1px solid #152c3d; color:#b9ccda; font: .65rem/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap:anywhere; }
+    .log-entry { display:grid; grid-template-columns:63px 55px 66px minmax(0,1fr); gap:6px; padding:7px 5px; border-bottom:1px solid #152c3d; color:#b9ccda; font: .65rem/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap:anywhere; }
     .log-time { color:#7793a8; }
     .log-level { font-weight:800; }
     .log-level.info { color:#50caff; }
     .log-level.warning { color:#f7c654; }
     .log-level.error { color:#ff706c; }
+    .log-source { font-weight:800; }
+    .log-source.listener { color:#59dfa6; }
+    .log-source.audio { color:#56bfff; }
+    .log-source.settings { color:#c69bff; }
+    .log-source.esp32 { color:#ffb35c; }
+    .log-source.render { color:#61aaff; }
+    .log-source.health { color:#53d9d2; }
     .system-actions { display:grid; gap:7px; }
     .system-action { display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; padding:10px; color:#e1eef5; border:1px solid #1a394d; border-radius:10px; background:#091b28; text-align:left; font-size:.73rem; }
     .system-action span { color:#8ca6b7; font-size:.65rem; }
@@ -431,12 +436,11 @@
       .health-card-body { padding:0 10px 11px; }
       .health-check-label { font-size:.75rem; }
       .health-check-detail { font-size:.7rem; }
-      .manual-health-item { font-size:.72rem; }
       .log-toolbar { display:grid; grid-template-columns:1fr; align-items:start; gap:8px; }
       .filter-list { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); width:100%; gap:5px; }
       .filter-button { min-height:36px; padding:6px 4px; font-size:.65rem; }
       .log-toolbar > div:last-child { display:flex; gap:7px; }
-      .log-entry { grid-template-columns:46px 50px minmax(0,1fr); gap:5px; font-size:.62rem; }
+      .log-entry { grid-template-columns:46px 44px 54px minmax(0,1fr); gap:4px; font-size:.59rem; }
       .system-action { min-height:44px; }
       .footer { margin-top:16px; }
     }
@@ -528,9 +532,9 @@
         </div><p class="helper">Mic 1 and Mic 2 share BCLK GPIO4, WS GPIO5, and DATA GPIO6. Set the microphones’ L/R select pins to opposite levels so one drives LEFT and the other RIGHT. Both stereo is unavailable because this firmware’s processed-audio and Opus transport are mono.</p></section>
         <section class="setting-group"><h2>AUDIO QUALITY</h2><div class="choice-list">
           <label class="choice-row"><input id="quality16k" type="radio" name="audioQuality" disabled><span>16 kHz / 16-bit PCM</span><small>Voice profile</small></label>
-          <label class="choice-row"><input id="quality48k" type="radio" name="audioQuality" disabled><span>48 kHz / 16-bit PCM</span><small>24-bit mic source</small></label>
+          <label class="choice-row"><input id="quality48k" type="radio" name="audioQuality" disabled><span>48 kHz / 16-bit PCM</span><small>High-rate profile</small></label>
           <label class="choice-row disabled"><input type="radio" name="audioQuality" disabled><span>44.1 kHz / 24-bit</span><small>Unavailable</small></label>
-        </div><p class="helper">Read-only live profile from the ESP32. The INMP441 source has 24 valid bits; this pipeline converts it to mono PCM16 for DSP and Opus. 44.1 kHz is unavailable because the complete capture and Opus path does not support it.</p></section>
+        </div><span id="audioProfileStatus" class="helper" role="status" aria-live="polite">Connect to the ESP32 to change its saved audio profile.</span><p class="helper">Both supported profiles use signed mono 16-bit PCM in DSP and Opus. The INMP441 provides 24 valid source bits in 32-bit I²S slots. A profile change is saved on the ESP32 and restarts it; the displayed selection changes after new telemetry confirms it.</p></section>
         <section class="setting-group"><h2>DEVICE GAIN</h2><div class="gain-control">
           <label class="gain-heading" id="gainHeading" for="micGain"><span>Microphone gain</span><output id="micGainValue" for="micGain">100%</output></label>
           <input id="micGain" type="range" min="25" max="200" step="5" value="100" disabled>
@@ -560,30 +564,41 @@
 
     <section class="tab-panel" id="panel-diagnostics" role="tabpanel" aria-labelledby="tab-diagnostics" hidden>
       <div class="section-heading"><h2>DIAGNOSTICS</h2><button class="small-button" id="refreshDiagnostics" type="button">Refresh</button></div>
-      <section class="setting-group" id="deviceHealthDashboard">
-        <div class="section-heading health-heading"><h2>DEVICE HEALTH</h2><button class="small-button health-check-button" id="runHealthCheck" type="button">Run Full Health Check</button></div>
-        <p class="helper" id="healthCheckStatus" role="status" aria-live="polite">Read-only checks for the ESP32, Render connection, WebRTC and browser audio.</p>
-        <div class="health-summary" id="healthSummary" role="group" aria-label="Health check summary">Run a health check to see current status.</div>
-        <div class="health-card-grid" id="healthCards" aria-live="off"></div>
-        <details class="health-collapsible">
-          <summary>Manual test checklist · <span id="manualHealthCheckCount">0/10</span></summary>
-          <p class="helper">Optional manual checks. These do not change measured health results.</p>
-          <div class="manual-health-list" id="manualHealthCheckList">
-            <label class="manual-health-item"><input type="checkbox" data-manual-health="i2s">I²S microphone capture test</label>
-            <label class="manual-health-item"><input type="checkbox" data-manual-health="audio">Audio level and clipping test</label>
-            <label class="manual-health-item"><input type="checkbox" data-manual-health="dsp">DSP pipeline test</label>
-            <label class="manual-health-item"><input type="checkbox" data-manual-health="wifi">Wi-Fi signal and gateway test</label>
-            <label class="manual-health-item"><input type="checkbox" data-manual-health="render">Render connectivity and authentication test</label>
-            <label class="manual-health-item"><input type="checkbox" data-manual-health="webrtc">WebRTC signaling and media test</label>
-            <label class="manual-health-item"><input type="checkbox" data-manual-health="memory">Memory and task health test</label>
-            <label class="manual-health-item"><input type="checkbox" data-manual-health="nvs">NVS/configuration integrity test</label>
-            <label class="manual-health-item"><input type="checkbox" data-manual-health="logs">Log system test</label>
-            <label class="manual-health-item"><input type="checkbox" data-manual-health="power">Battery/power sensor test (if installed)</label>
-          </div>
-          <div class="health-check-actions"><button class="small-button" id="resetManualHealthChecks" type="button">Reset checklist</button><button class="small-button" id="copyHealthResults" type="button">Copy results</button></div>
-        </details>
-      </section>
-      <p class="helper">Open a category to see measured results. Unavailable checks are grouped at the bottom of each category.</p>
+      <div class="diagnostic-switch" role="tablist" aria-label="Diagnostics views">
+        <button class="small-button" type="button" role="tab" data-diagnostics-view="health" aria-selected="true">Device Health</button>
+        <button class="small-button" type="button" role="tab" data-diagnostics-view="information" aria-selected="false">Information</button>
+      </div>
+      <div class="diagnostics-view" id="diagnostics-health-view" role="tabpanel">
+        <section class="setting-group" id="deviceHealthDashboard">
+          <div class="section-heading health-heading"><h2>DEVICE HEALTH</h2><button class="small-button health-check-button" id="runHealthCheck" type="button">Run Full Health Check</button></div>
+          <p class="helper" id="healthCheckStatus" role="status" aria-live="polite">Read-only checks for current ESP32, Render, WebRTC and browser data.</p>
+          <div class="health-summary" id="healthSummary" role="group" aria-label="Health check summary">Waiting for device telemetry.</div>
+          <div class="health-card-grid" id="healthCards" aria-live="off"></div>
+        </section>
+        <p class="helper">Only checks with supported, measurable data are shown. Missing readings remain Not Tested.</p>
+      </div>
+      <div class="diagnostics-view" id="diagnostics-information-view" role="tabpanel" hidden>
+        <p class="helper" id="informationUpdated">Waiting for current ESP32 telemetry.</p>
+        <section class="setting-group information-section"><h2>AUDIO FORMAT & FLOW</h2><div class="diagnostic-grid">
+          <div class="metric"><span>Active profile</span><strong id="infoAudioProfile">—</strong></div><div class="metric"><span>PCM representation</span><strong id="infoPcmFormat">—</strong></div>
+          <div class="metric"><span>INMP441 / I²S</span><strong id="infoI2sFormat">—</strong></div><div class="metric"><span>Input and channel</span><strong id="infoInputMode">—</strong></div>
+          <div class="metric"><span>Capture state / samples</span><strong id="infoCapture">—</strong></div><div class="metric"><span>Capture errors / overflows</span><strong id="infoCaptureErrors">—</strong></div>
+          <div class="metric"><span>DSP state / errors</span><strong id="infoDsp">—</strong></div><div class="metric"><span>Opus frames / bytes</span><strong id="infoOpus">—</strong></div>
+          <div class="metric"><span>Audio sent / dropped</span><strong id="infoAudioTransport">—</strong></div><div class="metric"><span>TX max / slow sends</span><strong id="infoTx">—</strong></div>
+        </div></section>
+        <section class="setting-group information-section"><h2>SYSTEM & MEMORY</h2><div class="diagnostic-grid">
+          <div class="metric"><span>Firmware / build</span><strong id="infoFirmware">—</strong></div><div class="metric"><span>Uptime / last seen</span><strong id="infoUptime">—</strong></div>
+          <div class="metric"><span>Boot reason / boots / brownouts</span><strong id="infoBoot">—</strong></div><div class="metric"><span>CPU / temperature</span><strong id="infoCpu">—</strong></div>
+          <div class="metric"><span>Internal heap free / minimum</span><strong id="infoInternalMemory">—</strong></div><div class="metric"><span>PSRAM free / total</span><strong id="infoPsram">—</strong></div>
+          <div class="metric"><span>Largest block / app free flash</span><strong id="infoBlocksFlash">—</strong></div><div class="metric"><span>Task stack watermarks</span><strong id="infoStacks">—</strong></div>
+          <div class="metric wide"><span>Last saved firmware error</span><strong id="infoLastError">—</strong></div>
+        </div></section>
+        <section class="setting-group information-section"><h2>NETWORK & RENDER</h2><div class="diagnostic-grid">
+          <div class="metric"><span>Wi-Fi / signal</span><strong id="infoWifi">—</strong></div><div class="metric"><span>IP / gateway</span><strong id="infoIp">—</strong></div>
+          <div class="metric"><span>Wi-Fi retries / drops</span><strong id="infoWifiCounts">—</strong></div><div class="metric"><span>Hotspot / clients</span><strong id="infoHotspot">—</strong></div>
+          <div class="metric"><span>Render signaling</span><strong id="infoRender">—</strong></div><div class="metric"><span>WebRTC peer</span><strong id="infoPeer">—</strong></div>
+        </div></section>
+      </div>
     </section>
 
     <section class="tab-panel" id="panel-logs" role="tabpanel" aria-labelledby="tab-logs" hidden>
@@ -592,7 +607,7 @@
         <div class="log-toolbar"><div class="filter-list" role="group" aria-label="Filter event log"><button class="filter-button" data-log-filter="all" aria-pressed="true" type="button">All</button><button class="filter-button" data-log-filter="info" aria-pressed="false" type="button">Info</button><button class="filter-button" data-log-filter="warning" aria-pressed="false" type="button">Warning</button><button class="filter-button" data-log-filter="error" aria-pressed="false" type="button">Error</button><button class="filter-button" data-log-filter="backend" aria-pressed="false" type="button">Backend</button><button class="filter-button" data-log-filter="health" aria-pressed="false" type="button">Health Check</button></div><label class="autoscroll-option"><input type="checkbox" id="autoScrollLogs" checked> Auto-scroll</label><div><button class="small-button danger" id="clearLogs" type="button">Clear</button> <button class="small-button" id="exportLogs" type="button">Export</button></div></div>
         <div class="log-list" id="logList" aria-live="polite"><div class="log-entry"><span class="log-time">—</span><span class="log-level info">INFO</span><span>Listener ready</span></div></div>
       </section>
-      <p class="helper">Health Check entries include each measured result and evidence. The check is read-only; it cannot inspect Render’s private host logs, and it never logs audio payloads, Wi-Fi passwords, device tokens, or listener credentials.</p>
+      <p class="helper">Each entry identifies its source: Listener, Audio, Settings, ESP32, Render or Health. Health Check entries show measured evidence. This page does not expose private Render host logs or audio payloads.</p>
     </section>
 
     <section class="tab-panel" id="panel-system" role="tabpanel" aria-labelledby="tab-system" hidden>
@@ -682,6 +697,11 @@ let lastRenderReachable = null;
 let lastBackendHealth = null;
 let lastDeviceApiReachable = null;
 let lastSignalingState = null;
+let lastLoggedDeviceOnline = null;
+let lastLoggedFirmwareHealth = null;
+let lastLoggedAudioProfile = null;
+let pendingAudioProfileHz = null;
+let pendingAudioProfileTimer = null;
 let availableDevices = [];
 let selectedDeviceId = "";
 let appStatusTimer = null;
@@ -828,18 +848,24 @@ function renderLogs() {
     const level = document.createElement("span");
     level.className = `log-level ${entry.level}`;
     level.textContent = entry.level.toUpperCase();
+    const source = document.createElement("span");
+    source.className = `log-source ${entry.source.toLowerCase()}`;
+    source.textContent = entry.source;
     const message = document.createElement("span");
     message.textContent = entry.message;
-    row.append(time, level, message);
+    row.append(time, level, source, message);
     logListEl.append(row);
   }
   if (autoScrollLogsEl.checked) logListEl.scrollTop = logListEl.scrollHeight;
 }
 
-function addLog(message, level = "info", category = "listener") {
+function addLog(message, level = "info", category = "listener", source = "") {
   const safeLevel = ["info", "warning", "error"].includes(level) ? level : "info";
   const safeCategory = ["backend", "health"].includes(category) ? category : "listener";
-  logEntries.push({ at: new Date(), level: safeLevel, category: safeCategory, message: String(message).slice(0, 400) });
+  const defaultSource = safeCategory === "backend" ? "Render" : safeCategory === "health" ? "Health" : "Listener";
+  const safeSource = ["Listener", "Audio", "Settings", "ESP32", "Render", "Health"].includes(source)
+    ? source : defaultSource;
+  logEntries.push({ at: new Date(), level: safeLevel, category: safeCategory, source: safeSource, message: String(message).slice(0, 400) });
   if (logEntries.length > MAX_LOG_ENTRIES) logEntries.splice(0, logEntries.length - MAX_LOG_ENTRIES);
   renderLogs();
 }
@@ -973,9 +999,9 @@ function buildHealthCategories() {
       healthBool(i2sDriverStatusKnown ? i2sDriverReady : undefined, "I²S driver status",
         "I²S clock information is available, the capture task is running, and samples have been captured.",
         "I²S initialization, capture task, or sample progress is missing.", "Critical"),
-      makeHealthItem("Sample rate and bit depth", !rateBitsKnown ? "Not Tested" :
-        sampleRate === 16000 && slotBits === 32 && pcmBits === 16 ? "Healthy" : "Warning",
-        rateBitsKnown ? `${sampleRate} Hz configured · ${Number.isFinite(d.i2s_estimated_sample_rate_hz) ? `${d.i2s_estimated_sample_rate_hz} Hz driver clock estimate` : "driver clock estimate unavailable"} · ${slotBits}-bit I²S slot · ${pcmBits}-bit PCM; the validated default is 16 kHz mono PCM16.` : "Firmware has not reported the configured I²S and PCM formats."),
+      makeHealthItem("Sample rate and PCM bit depth", !rateBitsKnown ? "Not Tested" :
+        [16000, 48000].includes(sampleRate) && slotBits === 32 && pcmBits === 16 ? "Healthy" : "Warning",
+        rateBitsKnown ? `${sampleRate} Hz configured · ${Number.isFinite(d.i2s_estimated_sample_rate_hz) ? `${d.i2s_estimated_sample_rate_hz} Hz driver clock estimate` : "driver clock estimate unavailable"} · INMP441 ${d.i2s_valid_bits ?? 24}-bit source in ${slotBits}-bit I²S slots · DSP/Opus ${pcmBits}-bit PCM${d.pcm_signed === true ? " signed" : ""}${d.pcm_channels === 1 ? " mono" : ""}.` : "Firmware has not reported the configured I²S and PCM formats."),
       makeHealthItem("Left/right channel status", "Not Tested",
         micMode ? `Selected input mode: ${micMode}; independent left/right signal levels are not exposed, so channel integrity is not verified.` : "Input mode and independent left/right channel measurements are unavailable.", false),
       makeHealthItem("Actual input audio level (RMS/peak)", !Number.isFinite(rmsDb) || !Number.isFinite(inputPeak) ? "Not Tested" :
@@ -1105,7 +1131,7 @@ function buildHealthCategories() {
       makeHealthItem("Battery voltage and current", "Unsupported", "No battery voltage/current sensor is reported.", false),
       makeHealthItem("Charging state", "Unsupported", "No charging-state sensor is reported.", false),
       makeHealthItem("Low-voltage detection", "Unsupported", "No low-voltage monitor is reported.", false),
-      makeHealthItem("Brownout reset count", "Not Tested", "The current reset reason is available; a historical brownout counter is not exposed.", false),
+      healthCounter(d.brownout_count, "Brownout reset count", "Persistent brownout reset counter reported by firmware."),
       makeHealthItem("Battery runtime estimate", "Unsupported", "No battery capacity or current-consumption gauge is reported.", false),
       makeHealthItem("Power source USB/battery", "Unsupported", "The current hardware does not report its power source.", false),
       makeHealthItem("Temperature sensor", Number.isFinite(d.temperature_c) ? "Healthy" : "Unsupported",
@@ -1138,7 +1164,9 @@ function buildHealthCategories() {
     renderGroup.items[2] = makeHealthItem("Authentication success/failure", healthEvidence.authenticatedApi ? "Healthy" : "Warning",
       healthEvidence.authenticatedApi ? "Authenticated device API returned successfully." : "Authenticated device API did not succeed.");
   }
-  return categories;
+  return categories
+    .map((category) => ({ ...category, items: category.items.filter((item) => item.status !== "Unsupported") }))
+    .filter((category) => category.items.length > 0);
 }
 
 function renderHealthDashboard(categories = buildHealthCategories()) {
@@ -1150,7 +1178,7 @@ function renderHealthDashboard(categories = buildHealthCategories()) {
   const openAdditionalChecks = new Set(Array.from(cards.querySelectorAll(".health-card[open] .health-more-checks[open]"),
     (details) => details.closest(".health-card")?.dataset.healthCategory));
   cards.replaceChildren();
-  const counts = { Healthy: 0, Warning: 0, Critical: 0, "Not Tested": 0, Unsupported: 0 };
+  const counts = { Healthy: 0, Warning: 0, Critical: 0, "Not Tested": 0 };
   const createHealthList = (items) => {
     const list = document.createElement("ul");
     list.className = "health-check-list";
@@ -1203,8 +1231,7 @@ function renderHealthDashboard(categories = buildHealthCategories()) {
     body.className = "health-card-body";
     const measuredItems = category.items.filter((item) =>
       item.status === "Healthy" || item.status === "Warning" || item.status === "Critical");
-    const additionalItems = category.items.filter((item) =>
-      item.status === "Not Tested" || item.status === "Unsupported");
+    const additionalItems = category.items.filter((item) => item.status === "Not Tested");
     if (measuredItems.length) {
       body.append(createHealthList(measuredItems));
     } else {
@@ -1217,10 +1244,8 @@ function renderHealthDashboard(categories = buildHealthCategories()) {
       const more = document.createElement("details");
       more.className = "health-more-checks";
       const moreSummary = document.createElement("summary");
-      const unsupportedCount = additionalItems.filter((item) => item.status === "Unsupported").length;
-      const untestedCount = additionalItems.length - unsupportedCount;
       more.open = openAdditionalChecks.has(category.name);
-      moreSummary.textContent = `Additional checks · ${untestedCount} not tested · ${unsupportedCount} unsupported`;
+      moreSummary.textContent = `Not tested · ${additionalItems.length}`;
       more.append(moreSummary, createHealthList(additionalItems));
       body.append(more);
     }
@@ -1238,7 +1263,6 @@ function renderHealthDashboard(categories = buildHealthCategories()) {
     ["Warning", counts.Warning, "warning"],
     ["Healthy", counts.Healthy, "healthy"],
     ["Not tested", counts["Not Tested"], "not-tested"],
-    ["Unsupported", counts.Unsupported, "unsupported"],
   ]) {
     if (!status) continue;
     const chip = document.createElement("span");
@@ -1246,7 +1270,7 @@ function renderHealthDashboard(categories = buildHealthCategories()) {
     chip.textContent = `${label} ${status}`;
     summary.append(chip);
   }
-  summary.setAttribute("aria-label", `${categories.length} systems, ${total} checks. ${counts.Critical} critical, ${counts.Warning} warnings, ${counts.Healthy} healthy, ${counts["Not Tested"]} not tested, ${counts.Unsupported} unsupported.`);
+  summary.setAttribute("aria-label", `${categories.length} systems, ${total} checks. ${counts.Critical} critical, ${counts.Warning} warnings, ${counts.Healthy} healthy, ${counts["Not Tested"]} not tested.`);
   return categories;
 }
 
@@ -1297,49 +1321,6 @@ async function getBrowserHealthStats() {
   return snapshot;
 }
 
-function updateManualHealthChecklist() {
-  const checks = Array.from(document.querySelectorAll("[data-manual-health]"));
-  let completed = 0;
-  for (const input of checks) {
-    if (input.checked) completed++;
-  }
-  const count = document.getElementById("manualHealthCheckCount");
-  if (count) count.textContent = `${completed}/${checks.length}`;
-  try {
-    localStorage.setItem("esp32-manual-health-checks", JSON.stringify(
-      Object.fromEntries(checks.map((input) => [input.dataset.manualHealth, input.checked]))));
-  } catch {}
-}
-
-function initializeManualHealthChecklist() {
-  const checks = Array.from(document.querySelectorAll("[data-manual-health]"));
-  try {
-    const saved = JSON.parse(localStorage.getItem("esp32-manual-health-checks") || "{}");
-    for (const input of checks) input.checked = saved[input.dataset.manualHealth] === true;
-  } catch {}
-  for (const input of checks) input.addEventListener("change", updateManualHealthChecklist);
-  document.getElementById("resetManualHealthChecks")?.addEventListener("click", () => {
-    for (const input of checks) input.checked = false;
-    updateManualHealthChecklist();
-  });
-  document.getElementById("copyHealthResults")?.addEventListener("click", async () => {
-    const categories = buildHealthCategories();
-    const lines = ["ESP32 Device Health Dashboard", new Date().toLocaleString()];
-    for (const category of categories) {
-      lines.push("", `${category.name}: ${healthGroupStatus(category.items)}`);
-      for (const item of category.items) lines.push(`- ${item.status}: ${item.label} — ${item.detail}`);
-    }
-    lines.push("", `Manual checklist: ${document.getElementById("manualHealthCheckCount")?.textContent || "0/10"}`);
-    try {
-      await navigator.clipboard.writeText(lines.join("\n"));
-      addLog("Health dashboard results copied", "info", "health");
-    } catch {
-      addLog("Could not copy health dashboard results; clipboard access is unavailable", "warning", "health");
-    }
-  });
-  updateManualHealthChecklist();
-}
-
 async function runHealthCheck() {
   if (healthCheckRunning) return;
   healthCheckRunning = true;
@@ -1352,7 +1333,7 @@ async function runHealthCheck() {
   latestHealthSnapshot = null;
   latestHealthSnapshotAt = 0;
   latestBrowserHealthStats = null;
-  addLog("Health check started", "info", "health");
+    addLog("Full device, Render, WebRTC and browser health check started", "info", "health", "Health");
 
   try {
     const requiredIds = ["deviceOnlinePill", "playbackTimer", "deviceSelect", "start", "audio", "record", "recordingTimer", "panel-logs", "runHealthCheck", "healthCheckStatus"];
@@ -1509,9 +1490,9 @@ async function runHealthCheck() {
     const categories = renderHealthDashboard();
     logHealthDashboard(categories);
     const allItems = categories.flatMap((category) => category.items);
-    const totals = { Healthy: 0, Warning: 0, Critical: 0, "Not Tested": 0, Unsupported: 0 };
+    const totals = { Healthy: 0, Warning: 0, Critical: 0, "Not Tested": 0 };
     for (const item of allItems) totals[item.status] = (totals[item.status] || 0) + 1;
-    const summary = `${allItems.length} checks · ${totals.Healthy} healthy · ${totals.Warning} warning · ${totals.Critical} critical · ${totals["Not Tested"]} not tested · ${totals.Unsupported} unsupported`;
+    const summary = `${allItems.length} checks · ${totals.Healthy} healthy · ${totals.Warning} warning · ${totals.Critical} critical · ${totals["Not Tested"]} not tested`;
     healthCheckStatusEl.textContent = `Health check complete · ${totals.Critical ? "critical issues found" : totals.Warning ? "review warnings" : "no measured failures"}. Detailed results are in the Health Check log.`;
     addLog(`Full Health Check complete · ${summary}`, totals.Critical ? "error" : totals.Warning ? "warning" : "info", "health");
   } catch {
@@ -1534,7 +1515,8 @@ function setState(value) {
     const level = /fail|error|disconnected|sign-in required/.test(lower)
       ? "error"
       : /reconnect|waiting|checking/.test(lower) ? "warning" : "info";
-    addLog(`Listener: ${next}`, level);
+    const source = /audio|track|play|listen|buffer|record/i.test(next) ? "Audio" : "Listener";
+    addLog(next, level, "listener", source);
   }
 }
 
@@ -1676,6 +1658,147 @@ function observeOpusFrameRate(data) {
   }
 }
 
+function refreshAudioProfileAvailability() {
+  const canChange = Boolean(sessionId && socket && socket.readyState === WebSocket.OPEN) &&
+    pendingAudioProfileHz === null;
+  document.getElementById("quality16k").disabled = !canChange;
+  document.getElementById("quality48k").disabled = !canChange;
+  if (pendingAudioProfileHz === null && !canChange) {
+    document.getElementById("audioProfileStatus").textContent =
+      "Start listening to the selected ESP32 to change its saved audio profile.";
+  }
+}
+
+function sendAudioProfile(sampleRateHz) {
+  if (![16000, 48000].includes(sampleRateHz) || !sessionId || !socket ||
+      socket.readyState !== WebSocket.OPEN || pendingAudioProfileHz !== null) {
+    refreshAudioProfileAvailability();
+    updateTelemetryViews(selectedDeviceStatus());
+    return;
+  }
+  pendingAudioProfileHz = sampleRateHz;
+  document.getElementById("quality16k").checked = sampleRateHz === 16000;
+  document.getElementById("quality48k").checked = sampleRateHz === 48000;
+  refreshAudioProfileAvailability();
+  const sent = send({
+    type: "webrtc_audio_control",
+    session_id: sessionId,
+    command: "audio_profile",
+    sample_rate_hz: sampleRateHz,
+  });
+  if (!sent) {
+    pendingAudioProfileHz = null;
+    document.getElementById("audioProfileStatus").textContent =
+      "Could not send the profile change; the active firmware profile is unchanged.";
+    addLog("Audio profile request could not be sent", "error", "listener", "Settings");
+    updateTelemetryViews(selectedDeviceStatus());
+    return;
+  }
+  document.getElementById("audioProfileStatus").textContent =
+    `Requesting ${sampleRateHz / 1000} kHz / 16-bit PCM. The ESP32 will save this profile and restart.`;
+  addLog(`Requested ${sampleRateHz / 1000} kHz / 16-bit PCM profile`, "info", "listener", "Settings");
+  if (pendingAudioProfileTimer) clearTimeout(pendingAudioProfileTimer);
+  pendingAudioProfileTimer = setTimeout(() => {
+    if (pendingAudioProfileHz !== sampleRateHz) return;
+    pendingAudioProfileHz = null;
+    document.getElementById("audioProfileStatus").textContent =
+      "No confirmation arrived. The device’s current profile remains shown in Diagnostics.";
+    addLog(`No ESP32 acknowledgement for ${sampleRateHz / 1000} kHz profile`, "warning", "listener", "Settings");
+    refreshAudioProfileAvailability();
+    updateTelemetryViews(selectedDeviceStatus());
+  }, 60000);
+}
+
+function handleAudioProfileAck(message) {
+  if (message.session_id !== sessionId || message.command !== "audio_profile" ||
+      ![16000, 48000].includes(Number(message.sample_rate_hz)) || typeof message.ok !== "boolean") return;
+  const sampleRateHz = Number(message.sample_rate_hz);
+  if (!message.ok) {
+    pendingAudioProfileHz = null;
+    if (pendingAudioProfileTimer) clearTimeout(pendingAudioProfileTimer);
+    pendingAudioProfileTimer = null;
+    document.getElementById("audioProfileStatus").textContent =
+      "The ESP32 rejected the profile change. Its existing profile remains active.";
+    addLog(`ESP32 rejected the ${sampleRateHz / 1000} kHz profile`, "error", "listener", "ESP32");
+    refreshAudioProfileAvailability();
+    updateTelemetryViews(selectedDeviceStatus());
+    return;
+  }
+  if (message.restarting) {
+    document.getElementById("audioProfileStatus").textContent =
+      `ESP32 saved ${sampleRateHz / 1000} kHz / 16-bit PCM and is restarting. Waiting for telemetry confirmation…`;
+    addLog(`ESP32 accepted ${sampleRateHz / 1000} kHz profile and is restarting`, "info", "listener", "ESP32");
+  } else {
+    pendingAudioProfileHz = null;
+    if (pendingAudioProfileTimer) clearTimeout(pendingAudioProfileTimer);
+    pendingAudioProfileTimer = null;
+    document.getElementById("audioProfileStatus").textContent =
+      `ESP32 confirmed ${sampleRateHz / 1000} kHz / 16-bit PCM.`;
+    addLog(`ESP32 confirmed ${sampleRateHz / 1000} kHz profile`, "info", "listener", "ESP32");
+  }
+  refreshAudioProfileAvailability();
+}
+
+function setDiagnosticsView(view) {
+  const selectedView = view === "information" ? "information" : "health";
+  document.querySelectorAll("[data-diagnostics-view]").forEach((button) => {
+    const selected = button.dataset.diagnosticsView === selectedView;
+    button.setAttribute("aria-selected", String(selected));
+  });
+  document.getElementById("diagnostics-health-view").hidden = selectedView !== "health";
+  document.getElementById("diagnostics-information-view").hidden = selectedView !== "information";
+}
+
+function updateInformationDashboard(device, telemetry, fresh) {
+  const fields = ["infoAudioProfile", "infoPcmFormat", "infoI2sFormat", "infoInputMode",
+    "infoCapture", "infoCaptureErrors", "infoDsp", "infoOpus", "infoAudioTransport", "infoTx",
+    "infoFirmware", "infoUptime", "infoBoot", "infoCpu", "infoInternalMemory", "infoPsram",
+    "infoBlocksFlash", "infoStacks", "infoLastError", "infoWifi", "infoIp", "infoWifiCounts",
+    "infoHotspot", "infoRender", "infoPeer"];
+  if (!fresh) {
+    for (const id of fields) setMetric(id, "Waiting for fresh device telemetry");
+    setMetric("informationUpdated", "Device information appears when authenticated firmware telemetry is current.");
+    return;
+  }
+  const d = telemetry;
+  const rate = Number.isFinite(d.i2s_sample_rate_hz) ? d.i2s_sample_rate_hz : 0;
+  const pcmBits = Number.isFinite(d.pcm_bits) ? d.pcm_bits : 0;
+  const slotBits = Number.isFinite(d.i2s_slot_bits) ? d.i2s_slot_bits : 0;
+  const validBits = Number.isFinite(d.i2s_valid_bits) ? d.i2s_valid_bits : 0;
+  const inputMode = d.i2s_input_mode || "unknown input";
+  const telemetryAt = device?.telemetry_updated_at ? new Date(device.telemetry_updated_at) : null;
+  const lastSeen = telemetryAt && Number.isFinite(telemetryAt.getTime())
+    ? telemetryAt.toLocaleTimeString() : "unknown";
+  setMetric("infoAudioProfile", d.audio_profile || (rate ? `${rate / 1000} kHz PCM${pcmBits}` : "Unknown"));
+  setMetric("infoPcmFormat", d.pcm_format || `${d.pcm_signed === true ? "Signed " : ""}${pcmBits || "?"}-bit · ${d.pcm_channels === 1 ? "Mono" : "channel count unknown"}`);
+  setMetric("infoI2sFormat", `${validBits || "?"}-bit valid data · ${slotBits || "?"}-bit slots · ${rate || "?"} Hz`);
+  setMetric("infoInputMode", `${inputMode} · mono output`);
+  setMetric("infoCapture", `${d.audio_capture_running ? "Running" : "Stopped"} · ${Number(d.audio_samples_captured || 0).toLocaleString()} samples`);
+  setMetric("infoCaptureErrors", `${d.audio_capture_errors ?? "—"} errors · ${d.audio_buffer_overflows ?? "—"} capture overflows`);
+  setMetric("infoDsp", `${d.dsp_running ? "Running" : "Stopped"} · ${d.dsp_errors ?? "—"} errors · ${d.dsp_input_underflows ?? "—"} input underflows / ${d.dsp_output_overflows ?? "—"} output overflows`);
+  setMetric("infoOpus", `${Number(d.opus_encoded_frames || 0).toLocaleString()} frames · ${formatBytes(d.opus_encoded_bytes)}`);
+  setMetric("infoAudioTransport", `${Number(d.audio_frames_sent || 0).toLocaleString()} sent · ${d.audio_frames_dropped ?? "—"} dropped · ${d.opus_dropped_frames ?? "—"} Opus drops`);
+  setMetric("infoTx", `${d.audio_tx_max_us ?? "—"} μs max · ${d.audio_tx_slow_count ?? "—"} slow sends`);
+  setMetric("infoFirmware", `${d.firmware_version || d.firmware || "Unknown"}${d.build_id ? ` · ${String(d.build_id).slice(0, 12)}` : ""}`);
+  setMetric("infoUptime", `${formatDuration(Number(d.uptime_ms || 0) / 1000)} · telemetry ${lastSeen}`);
+  const lastBoot = Number.isFinite(Number(d.uptime_ms)) && telemetryAt
+    ? new Date(telemetryAt.getTime() - Number(d.uptime_ms)).toLocaleString() : "not available";
+  setMetric("infoBoot", `${d.reset_reason_name || d.reset_reason || "unknown"} · ${d.boot_count ?? "—"} boots · ${d.brownout_count ?? "—"} brownouts · ${lastBoot}`);
+  setMetric("infoCpu", `${d.cpu_frequency_mhz ?? "—"} MHz · ${Number.isFinite(d.temperature_c) ? `${d.temperature_c.toFixed(1)} °C` : "temperature unavailable"}`);
+  setMetric("infoInternalMemory", `${formatBytes(d.free_internal_heap ?? d.free_heap)} free · ${formatBytes(d.min_free_internal_heap ?? d.min_free_heap)} minimum`);
+  setMetric("infoPsram", `${formatBytes(d.free_psram)} free · ${formatBytes(d.total_psram)} total`);
+  setMetric("infoBlocksFlash", `${formatBytes(d.largest_internal_block)} largest block · ${formatBytes(d.app_partition_free_bytes)} app partition free / ${formatBytes(d.flash_total_bytes)} flash total`);
+  setMetric("infoStacks", `Opus ${formatBytes(d.opus_task_stack_high_water_bytes)} · WebRTC ${formatBytes(d.webrtc_task_stack_high_water_bytes)}`);
+  setMetric("infoLastError", d.last_error ? `${d.last_error_module || "Firmware"}: ${d.last_error}` : "No saved firmware error");
+  setMetric("infoWifi", `${d.wifi_connected ? "Connected" : "Disconnected"} · ${d.wifi_ssid || "SSID unavailable"} · ${d.wifi_rssi ?? "—"} dBm`);
+  setMetric("infoIp", `${d.ip || "IP unavailable"} · gateway ${d.wifi_gateway_ip || "unavailable"}`);
+  setMetric("infoWifiCounts", `${d.wifi_retry_count ?? "—"} retries · ${d.wifi_disconnect_count ?? "—"} drops`);
+  setMetric("infoHotspot", `${d.hotspot_running ? "Running" : "Off"} · ${d.hotspot_clients ?? "—"} client(s)`);
+  setMetric("infoRender", d.signaling_connected ? "Connected · authenticated WSS" : "Not connected");
+  setMetric("infoPeer", d.peer_connected ? "Connected" : "Not connected");
+  setMetric("informationUpdated", `Live ESP32 telemetry · last received ${lastSeen} · ${Number.isFinite(telemetry.telemetry_age_ms) ? `${Math.floor(telemetry.telemetry_age_ms / 1000)} seconds old` : "age unknown"}.`);
+}
+
 function updateTelemetryViews(device) {
   const telemetry = device?.telemetry || null;
   const telemetryAgeMs = telemetry?.telemetry_age_ms;
@@ -1687,13 +1810,18 @@ function updateTelemetryViews(device) {
     setMetric("formatInput", "Waiting");
     setMetric("formatSourceDetails", "Waiting for current firmware audio-format telemetry.");
     setMetric("audioProfileBadge", "No fresh profile");
-    document.getElementById("quality16k").checked = false;
-    document.getElementById("quality48k").checked = false;
+    document.getElementById("quality16k").checked = pendingAudioProfileHz === 16000;
+    document.getElementById("quality48k").checked = pendingAudioProfileHz === 48000;
+    if (pendingAudioProfileHz !== null) {
+      setMetric("audioProfileStatus", `Waiting for the ESP32 to return with ${pendingAudioProfileHz / 1000} kHz / 16-bit PCM telemetry…`);
+    }
     setMetric("systemHotspotStatus", "No fresh telemetry");
     const hotspotToggle = document.getElementById("hotspotToggle");
     if (hotspotToggle) hotspotToggle.checked = false;
     setMetric("systemFirmware", "—");
     setQuickStatus("quickWifi", "N/A", true);
+    updateInformationDashboard(device, telemetry, false);
+    refreshAudioProfileAvailability();
     return;
   }
 
@@ -1721,8 +1849,28 @@ function updateTelemetryViews(device) {
     ? `INMP441 source: ${sourceBits}-bit audio in ${slotBits}-bit I²S slots; DSP/Opus input: ${pcmLabel}.`
     : `INMP441 source: ${sourceBits}-bit audio; DSP/Opus input: ${pcmLabel}.`);
   setMetric("audioProfileBadge", `${sampleRateLabel} · ${pcmLabel}`);
-  document.getElementById("quality16k").checked = sampleRateHz === 16000 && pcmBits === 16;
-  document.getElementById("quality48k").checked = sampleRateHz === 48000 && pcmBits === 16;
+  const profileConfirmed = pcmBits === 16 && (sampleRateHz === 16000 || sampleRateHz === 48000);
+  if (pendingAudioProfileHz !== null && sampleRateHz === pendingAudioProfileHz && profileConfirmed) {
+    pendingAudioProfileHz = null;
+    if (pendingAudioProfileTimer) clearTimeout(pendingAudioProfileTimer);
+    pendingAudioProfileTimer = null;
+    setMetric("audioProfileStatus", `ESP32 confirmed ${sampleRateHz / 1000} kHz / 16-bit PCM from live telemetry.`);
+    addLog(`Live telemetry confirms ${sampleRateHz / 1000} kHz / 16-bit PCM`, "info", "listener", "ESP32");
+  }
+  const displayedRate = pendingAudioProfileHz ?? sampleRateHz;
+  document.getElementById("quality16k").checked = displayedRate === 16000;
+  document.getElementById("quality48k").checked = displayedRate === 48000;
+  if (pendingAudioProfileHz === null) {
+    if (profileConfirmed) setMetric("audioProfileStatus", `Active ESP32 profile confirmed: ${sampleRateHz / 1000} kHz / 16-bit PCM.`);
+    else setMetric("audioProfileStatus", `Firmware reported ${sampleRateLabel} / ${pcmLabel}; this is not one of the supported 16-bit profiles.`);
+  }
+  const profileKey = `${sampleRateHz}/${pcmBits}/${slotBits}/${sourceBits}`;
+  if (lastLoggedAudioProfile !== profileKey && profileConfirmed) {
+    lastLoggedAudioProfile = profileKey;
+    addLog(`Active profile ${sampleRateHz / 1000} kHz / ${pcmBits}-bit PCM · INMP441 ${sourceBits}-bit source / ${slotBits}-bit slots`, "info", "listener", "ESP32");
+  }
+  updateInformationDashboard(device, telemetry, true);
+  refreshAudioProfileAvailability();
 
   const wifiConnected = telemetry.wifi_connected === true;
   setMetric("systemHotspotStatus", telemetry.hotspot_running === true
@@ -1766,11 +1914,24 @@ async function refreshAppStatus() {
     populateDeviceSelect(response.devices);
     const selected = selectedDeviceStatus();
     const online = Boolean(selected && selected.device_connected);
+    if (selected && lastLoggedDeviceOnline !== online) {
+      addLog(`${selectedDeviceId} device ${online ? "online" : "offline"} on Render`, online ? "info" : "warning", "backend", "ESP32");
+      lastLoggedDeviceOnline = online;
+    }
     deviceOnlinePill.classList.toggle("online", online);
     deviceOnlinePill.classList.toggle("offline", Boolean(selected) && !online);
     deviceStatusLabel.textContent = selected ? (online ? "ONLINE" : "OFFLINE") : "NO DEVICE";
     setQuickStatus("quickDevice", selected ? (online ? "ONLINE" : "OFFLINE") : "NOT CONFIGURED", !online);
     updateTelemetryViews(selected);
+    const liveTelemetry = selected?.telemetry;
+    if (liveTelemetry && Number.isFinite(liveTelemetry.telemetry_age_ms) && liveTelemetry.telemetry_age_ms <= 15000) {
+      const healthKey = `${liveTelemetry.health_ok === true}/${liveTelemetry.health_fault_latched === true}`;
+      if (lastLoggedFirmwareHealth !== healthKey) {
+        const healthy = liveTelemetry.health_ok === true && liveTelemetry.health_fault_latched !== true;
+        addLog(`Firmware health ${healthy ? "checks passed" : "warning"} · capture, DSP and transport snapshot received`, healthy ? "info" : "warning", "backend", "ESP32");
+        lastLoggedFirmwareHealth = healthKey;
+      }
+    }
     renderHealthDashboard();
     deviceSelectStatusEl.textContent = selected
       ? `${selectedDeviceId} is ${online ? "connected to Render signaling" : "offline"}.`
@@ -1792,7 +1953,7 @@ async function refreshAppStatus() {
     const nextState = selected.device_connected ? "device connected" : "device disconnected";
     if (lastStatusDeviceId === selectedDeviceId && lastSignalingState !== null &&
         nextState !== lastSignalingState) {
-      addLog(`${selectedDeviceId} WebRTC signaling: ${nextState}`, selected.device_connected ? "info" : "warning");
+      addLog(`${selectedDeviceId} signaling ${nextState}`, selected.device_connected ? "info" : "warning", "listener", "ESP32");
     }
     lastSignalingState = nextState;
     lastStatusDeviceId = selectedDeviceId;
@@ -1952,6 +2113,10 @@ document.querySelectorAll("[data-log-filter]").forEach((button) => {
   });
 });
 
+document.querySelectorAll("[data-diagnostics-view]").forEach((button) => {
+  button.addEventListener("click", () => setDiagnosticsView(button.dataset.diagnosticsView));
+});
+
 runHealthCheckButton.addEventListener("click", () => { void runHealthCheck(); });
 
 document.getElementById("clearLogs").addEventListener("click", () => {
@@ -1961,7 +2126,7 @@ document.getElementById("clearLogs").addEventListener("click", () => {
 
 document.getElementById("exportLogs").addEventListener("click", () => {
   const content = logEntries.map((entry) =>
-    `${entry.at.toISOString()} [${entry.category.toUpperCase()}/${entry.level.toUpperCase()}] ${entry.message}`
+    `${entry.at.toISOString()} [${entry.level.toUpperCase()} ${entry.source}] ${entry.message}`
   ).join("\n");
   const url = URL.createObjectURL(new Blob([content || "No listener events recorded.\n"], { type: "text/plain" }));
   const link = document.createElement("a");
@@ -2038,6 +2203,7 @@ function refreshAudioSettingsAvailability() {
   if (!available) {
     audioSettingsStatusEl.textContent = "Connect to the selected ESP32 to change microphone mode, noise gate, VAD, or limiter.";
   }
+  refreshAudioProfileAvailability();
 }
 
 function sendAudioSettings() {
@@ -2627,7 +2793,8 @@ function connectSocket() {
       return;
     }
     if (message.type === "webrtc_audio_control_ack") {
-      handleMicGainAck(message);
+      if (message.command === "audio_profile") handleAudioProfileAck(message);
+      else handleMicGainAck(message);
       return;
     }
     if (message.type === "webrtc_audio_settings_ack") {
@@ -2844,7 +3011,7 @@ function finishWavRecording() {
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     recordStatusEl.textContent = "WAV saved to this device";
-    addLog("WAV audio recording saved to this device");
+    addLog("WAV audio recording saved to this device", "info", "listener", "Audio");
   } catch (error) {
     errorEl.textContent = `WAV recording could not be saved: ${error.message}`;
     recordStatusEl.textContent = "WAV save failed";
@@ -2948,7 +3115,7 @@ async function startRecording() {
     recordStatusEl.textContent = `Recording WAV · ${recordingSampleRate} Hz`;
     startRecordingTimer();
     syncRecordButton();
-    addLog("Local WAV recording started");
+    addLog("Local WAV recording started", "info", "listener", "Audio");
   } catch (error) {
     recordingActive = false;
     recordingFinalizing = false;
@@ -3081,6 +3248,12 @@ micGainEl.addEventListener("input", () => {
 });
 micGainEl.addEventListener("change", sendMicGain);
 micModeEls.forEach((input) => input.addEventListener("change", sendAudioSettings));
+document.getElementById("quality16k").addEventListener("change", (event) => {
+  if (event.currentTarget.checked) sendAudioProfile(16000);
+});
+document.getElementById("quality48k").addEventListener("change", (event) => {
+  if (event.currentTarget.checked) sendAudioProfile(48000);
+});
 firmwareNoiseSuppressionEl.addEventListener("change", sendAudioSettings);
 firmwareVadEl.addEventListener("change", sendAudioSettings);
 firmwareLimiterEl.addEventListener("change", sendAudioSettings);
@@ -3123,10 +3296,10 @@ document.getElementById("rebootDevice").addEventListener("click", (event) => {
   });
   if (sent) {
     showSystemAction(`Restart command sent to ${selectedDeviceId}.`);
-    addLog(`Restart command sent to selected device ${selectedDeviceId}`, "warning");
+    addLog(`Restart command sent to selected device ${selectedDeviceId}`, "warning", "listener", "ESP32");
   } else {
     showSystemAction(`Could not send restart to ${selectedDeviceId}.`, true);
-    addLog(`Restart command failed for ${selectedDeviceId}`, "error");
+    addLog(`Restart command failed for ${selectedDeviceId}`, "error", "listener", "ESP32");
     syncDeviceActionAvailability();
   }
 });
@@ -3141,11 +3314,10 @@ document.getElementById("logout").addEventListener("click", async () => {
 
 new MutationObserver(() => {
   const message = errorEl.textContent.trim();
-  if (message) addLog(message, "error");
+  if (message) addLog(message, "error", "listener", /audio|track|play|listen|buffer/i.test(message) ? "Audio" : "Listener");
 }).observe(errorEl, { childList: true, characterData: true, subtree: true });
 
 void refreshAppStatus();
-initializeManualHealthChecklist();
 renderHealthDashboard();
 void loadSessionTimeout();
 appStatusTimer = setInterval(() => { void refreshAppStatus(); }, 10000);

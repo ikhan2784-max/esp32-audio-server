@@ -18,6 +18,9 @@ const TELEMETRY_NUMBER_RANGES = Object.freeze({
     wifi_retry_count: [0, Number.MAX_SAFE_INTEGER],
     wifi_disconnect_count: [0, Number.MAX_SAFE_INTEGER],
     hotspot_clients: [0, 256],
+    boot_count: [0, Number.MAX_SAFE_INTEGER],
+    brownout_count: [0, Number.MAX_SAFE_INTEGER],
+    last_error_boot_count: [0, Number.MAX_SAFE_INTEGER],
     cpu_frequency_mhz: [1, 400],
     temperature_c: [-20, 120],
     uptime_ms: [0, Number.MAX_SAFE_INTEGER],
@@ -69,6 +72,13 @@ const TELEMETRY_NUMBER_RANGES = Object.freeze({
     opus_task_stack_high_water_bytes: [0, Number.MAX_SAFE_INTEGER],
     webrtc_task_stack_high_water_bytes: [0, Number.MAX_SAFE_INTEGER],
     largest_internal_block: [0, Number.MAX_SAFE_INTEGER],
+    flash_total_bytes: [0, Number.MAX_SAFE_INTEGER],
+    app_partition_bytes: [0, Number.MAX_SAFE_INTEGER],
+    app_image_bytes: [0, Number.MAX_SAFE_INTEGER],
+    app_partition_free_bytes: [0, Number.MAX_SAFE_INTEGER],
+    audio_tx_max_us: [0, Number.MAX_SAFE_INTEGER],
+    audio_tx_slow_count: [0, Number.MAX_SAFE_INTEGER],
+    pcm_channels: [0, 8],
 });
 const TELEMETRY_BOOLEAN_FIELDS = new Set([
     "wifi_connected", "hotspot_running", "health_ok", "health_fault_latched",
@@ -76,12 +86,13 @@ const TELEMETRY_BOOLEAN_FIELDS = new Set([
     "i2s_initialized", "audio_capture_initialized", "audio_capture_running",
     "dsp_initialized", "dsp_running", "webrtc_running", "signaling_connected",
     "opus_running", "dsp_ns_enabled", "dsp_vad_enabled", "dsp_limiter_enabled",
-    "dsp_hpf_active",
+    "dsp_hpf_active", "pcm_signed",
 ]);
 const TELEMETRY_STRING_LIMITS = Object.freeze({
     wifi_ssid: 32, ip: 15, wifi_gateway_ip: 15, firmware: 32,
     firmware_version: 32, idf_version: 32, build_date: 16, build_time: 16,
-    build_id: 64, i2s_input_mode: 16,
+    build_id: 64, i2s_input_mode: 16, audio_profile: 32, pcm_format: 32,
+    reset_reason_name: 32, last_error_module: 32, last_error: 192,
 });
 
 function createWebRtcSignaling({
@@ -322,19 +333,29 @@ function createWebRtcSignaling({
             fail(ws, "control_rate_limited");
             return true;
         }
-        if (message.command !== "mic_gain" || !Number.isInteger(message.gain_percent) ||
-            message.gain_percent < MIC_GAIN_MIN_PERCENT ||
-            message.gain_percent > MIC_GAIN_MAX_PERCENT) {
+        let forwarded;
+        if (message.command === "mic_gain" && Number.isInteger(message.gain_percent) &&
+            message.gain_percent >= MIC_GAIN_MIN_PERCENT &&
+            message.gain_percent <= MIC_GAIN_MAX_PERCENT) {
+            forwarded = {
+                type: "webrtc_audio_control",
+                session_id: state.sessionId,
+                command: "mic_gain",
+                gain_percent: message.gain_percent,
+            };
+        } else if (message.command === "audio_profile" &&
+            Number.isInteger(message.sample_rate_hz) &&
+            (message.sample_rate_hz === 16000 || message.sample_rate_hz === 48000)) {
+            forwarded = {
+                type: "webrtc_audio_control",
+                session_id: state.sessionId,
+                command: "audio_profile",
+                sample_rate_hz: message.sample_rate_hz,
+            };
+        } else {
             fail(ws, "invalid_audio_control");
             return true;
         }
-
-        const forwarded = {
-            type: "webrtc_audio_control",
-            session_id: state.sessionId,
-            command: "mic_gain",
-            gain_percent: message.gain_percent,
-        };
         if (!send(state.device, forwarded)) {
             endSession(state, "peer_unavailable");
             if (state.device && state.device.readyState === WebSocket.OPEN) {
@@ -357,20 +378,34 @@ function createWebRtcSignaling({
             fail(ws, "control_rate_limited");
             return true;
         }
-        if (message.command !== "mic_gain" || typeof message.ok !== "boolean" ||
-            !Number.isInteger(message.gain_percent) ||
-            message.gain_percent < MIC_GAIN_MIN_PERCENT ||
-            message.gain_percent > MIC_GAIN_MAX_PERCENT) {
+        let forwarded;
+        if (message.command === "mic_gain" && typeof message.ok === "boolean" &&
+            Number.isInteger(message.gain_percent) &&
+            message.gain_percent >= MIC_GAIN_MIN_PERCENT &&
+            message.gain_percent <= MIC_GAIN_MAX_PERCENT) {
+            forwarded = {
+                type: "webrtc_audio_control_ack",
+                session_id: state.sessionId,
+                command: "mic_gain",
+                gain_percent: message.gain_percent,
+                ok: message.ok,
+            };
+        } else if (message.command === "audio_profile" && typeof message.ok === "boolean" &&
+            typeof message.restarting === "boolean" && Number.isInteger(message.sample_rate_hz) &&
+            (message.sample_rate_hz === 16000 || message.sample_rate_hz === 48000)) {
+            forwarded = {
+                type: "webrtc_audio_control_ack",
+                session_id: state.sessionId,
+                command: "audio_profile",
+                sample_rate_hz: message.sample_rate_hz,
+                ok: message.ok,
+                restarting: message.restarting,
+            };
+        } else {
             fail(ws, "invalid_audio_control_ack");
             return true;
         }
-        if (!send(state.listener, {
-            type: "webrtc_audio_control_ack",
-            session_id: state.sessionId,
-            command: "mic_gain",
-            gain_percent: message.gain_percent,
-            ok: message.ok,
-        })) {
+        if (!send(state.listener, forwarded)) {
             endSession(state, "peer_unavailable");
         }
         return true;

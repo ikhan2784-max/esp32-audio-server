@@ -54,6 +54,14 @@ test("routes a bounded authenticated device health snapshot to its request callb
         data: {
             wifi_connected: true,
             i2s_sample_rate_hz: 16000,
+            i2s_slot_bits: 32,
+            i2s_valid_bits: 24,
+            pcm_bits: 16,
+            pcm_channels: 1,
+            pcm_signed: true,
+            audio_profile: "16kHz PCM16",
+            reset_reason_name: "POWERON",
+            app_partition_free_bytes: 123456,
             firmware_version: "2.5.0",
             build_id: "a".repeat(64),
             dsp_input_peak: 1234,
@@ -63,6 +71,14 @@ test("routes a bounded authenticated device health snapshot to its request callb
     assert.deepEqual(responses, [[deviceId, requestId, {
         wifi_connected: true,
         i2s_sample_rate_hz: 16000,
+        i2s_slot_bits: 32,
+        i2s_valid_bits: 24,
+        pcm_bits: 16,
+        pcm_channels: 1,
+        pcm_signed: true,
+        audio_profile: "16kHz PCM16",
+        reset_reason_name: "POWERON",
+        app_partition_free_bytes: 123456,
         firmware_version: "2.5.0",
         build_id: "a".repeat(64),
         dsp_input_peak: 1234,
@@ -213,6 +229,56 @@ test("relays bounded session-only microphone gain controls and device acknowledg
         });
         assert.equal(device.last("webrtc_audio_control").gain_percent, gainPercent);
     }
+});
+
+test("relays only the supported audio profiles and forwards the reboot acknowledgement", () => {
+    const harness = makeHarness();
+    const { signaling, device, listener } = harness;
+    const sessionId = joinBoth(harness);
+
+    signaling.handleMessage(listener, {
+        type: "webrtc_audio_control", session_id: sessionId,
+        command: "audio_profile", sample_rate_hz: 16000,
+    });
+    assert.deepEqual(device.last("webrtc_audio_control"), {
+        type: "webrtc_audio_control", session_id: sessionId,
+        command: "audio_profile", sample_rate_hz: 16000,
+    });
+
+    signaling.handleMessage(device, {
+        type: "webrtc_audio_control_ack", session_id: sessionId,
+        command: "audio_profile", sample_rate_hz: 16000, ok: true, restarting: true,
+    });
+    assert.deepEqual(listener.last("webrtc_audio_control_ack"), {
+        type: "webrtc_audio_control_ack", session_id: sessionId,
+        command: "audio_profile", sample_rate_hz: 16000, ok: true, restarting: true,
+    });
+
+    for (const sampleRateHz of [16000, 48000]) {
+        signaling.handleMessage(listener, {
+            type: "webrtc_audio_control", session_id: sessionId,
+            command: "audio_profile", sample_rate_hz: sampleRateHz,
+        });
+        assert.equal(device.last("webrtc_audio_control").sample_rate_hz, sampleRateHz);
+    }
+});
+
+test("rejects unsupported audio profile rates from listeners and devices", () => {
+    const invalidRequest = makeHarness();
+    const invalidRequestSession = joinBoth(invalidRequest);
+    invalidRequest.signaling.handleMessage(invalidRequest.listener, {
+        type: "webrtc_audio_control", session_id: invalidRequestSession,
+        command: "audio_profile", sample_rate_hz: 44100,
+    });
+    assert.equal(invalidRequest.listener.last("webrtc_error").reason, "invalid_audio_control");
+
+    const invalidAck = makeHarness();
+    const invalidAckSession = joinBoth(invalidAck);
+    invalidAck.signaling.handleMessage(invalidAck.device, {
+        type: "webrtc_audio_control_ack", session_id: invalidAckSession,
+        command: "audio_profile", sample_rate_hz: 44100, ok: true, restarting: false,
+    });
+    assert.equal(invalidAck.device.last("webrtc_error").reason, "invalid_audio_control_ack");
 });
 
 test("rejects stale, out-of-range, and wrong-direction microphone gain controls", () => {
