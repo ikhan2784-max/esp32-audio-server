@@ -110,7 +110,7 @@
     .volume-row svg { width:17px; height:17px; flex:none; stroke:currentColor; }
     input[type="range"] { width:100%; accent-color:#178eff; }
     .volume-row input { margin:0; }
-    .volume-row output { width:38px; color:#d8ecfa; text-align:right; font-size:.7rem; }
+    .volume-row output { width:76px; color:#d8ecfa; text-align:right; font-size:.7rem; white-space:nowrap; }
     .volume-scale { display:flex; justify-content:space-between; margin:3px 47px 0 26px; color:#819bae; font-size:.57rem; font-variant-numeric:tabular-nums; }
     .quick-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; }
     .quick-tile { min-width:0; padding:8px 4px; text-align:center; border:1px solid #173649; border-radius:10px; background:#091b28; }
@@ -499,9 +499,10 @@
         <div class="level-label"><span id="levelSource">Incoming WebRTC audio</span><span id="levelWord">Idle</span></div>
         <div class="level-track" role="meter" aria-label="Audio output level" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="level-fill" id="audioLevelFill"></div></div>
         <div class="volume-control">
-          <label class="volume-row" for="playVolume"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M4 10v4h4l5 4V6l-5 4H4Z"/><path d="M17 9a5 5 0 0 1 0 6m2-9a9 9 0 0 1 0 12"/></svg><input id="playVolume" type="range" min="0" max="300" step="1" value="100" list="playVolumeMarks" aria-label="Listener playback volume"><output id="playVolumeValue">100%</output></label>
+          <label class="volume-row" for="playVolume"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M4 10v4h4l5 4V6l-5 4H4Z"/><path d="M17 9a5 5 0 0 1 0 6m2-9a9 9 0 0 1 0 12"/></svg><input id="playVolume" type="range" min="0" max="300" step="1" value="0" list="playVolumeMarks" aria-label="Listener playback boost; zero preserves the clean baseline"><output id="playVolumeValue">0% · 1.0×</output></label>
           <datalist id="playVolumeMarks"><option value="0"></option><option value="50"></option><option value="100"></option><option value="150"></option><option value="200"></option><option value="250"></option><option value="300"></option></datalist>
           <div class="volume-scale" aria-hidden="true"><span>0%</span><span>50%</span><span>100%</span><span>150%</span><span>200%</span><span>250%</span><span>300%</span></div>
+          <p class="helper">0% keeps the clean baseline you hear now. Higher values boost playback up to 3×; this does not change the ESP32 microphone gain.</p>
         </div>
       </section>
 
@@ -535,7 +536,7 @@
           <p class="helper">Session-only gain after the ESP32 DSP, before Opus. 100% is 1.0×. Higher settings may clip.</p>
         </div></section>
         <section class="setting-group"><h2>AUDIO PROCESSING</h2>
-          <div class="setting-row"><span>Browser AI noise suppression (GTCRN)</span><label class="toggle" aria-label="Enable GTCRN noise suppression"><input id="noiseSuppression" type="checkbox" checked><span></span></label></div>
+          <div class="setting-row"><span>Browser AI noise suppression (GTCRN)</span><label class="toggle" aria-label="Enable GTCRN noise suppression"><input id="noiseSuppression" type="checkbox"><span></span></label></div>
           <span id="processingStatus" role="status" aria-live="polite">GTCRN will activate when listening starts.</span>
           <div class="setting-row"><span>ESP32 quiet-interval noise gate</span><label class="toggle" aria-label="Enable ESP32 noise gate"><input id="firmwareNoiseSuppression" type="checkbox" checked disabled><span></span></label></div>
           <div class="setting-row"><span>ESP32 voice detection (VAD)</span><label class="toggle" aria-label="Enable ESP32 voice detection"><input id="firmwareVad" type="checkbox" checked disabled><span></span></label></div>
@@ -684,7 +685,7 @@ let selectedDeviceId = "";
 let appStatusTimer = null;
 let diagnosticsBusy = false;
 let backendHealthBusy = false;
-let playbackVolumePercent = 100;
+let playbackVolumePercent = 0;
 let appliedAudioSettings = { mic_mode: "mic1", noise_suppression_enabled: true, vad_enabled: true, limiter_enabled: true };
 let recordedChunks = [];
 let recordedBytes = 0;
@@ -717,7 +718,6 @@ let localDescriptionSent = false;
 let localIceComplete = false;
 let sessionRedirectTimer = null;
 let audioContext = null;
-let mediaElementSource = null;
 let mediaStreamSource = null;
 let inputAnalyser = null;
 let outputAnalyser = null;
@@ -2140,8 +2140,14 @@ function stopRecordingTimer() {
 function syncPlaybackGain() {
   if (!audioContext || !playbackGain) return;
   const playing = remoteStream && !audioEl.paused;
-  const selectedGain = Math.max(0, Math.min(300, playbackVolumePercent)) / 100;
-  playbackGain.gain.value = playing && !audioEl.muted ? selectedGain * audioEl.volume : 0;
+  const selectedBoost = Math.max(0, Math.min(300, playbackVolumePercent));
+  const selectedGain = 1 + (2 * selectedBoost / 300);
+  playbackGain.gain.setTargetAtTime(
+    playing ? selectedGain : 0,
+    audioContext.currentTime,
+    0.015
+  );
+  playVolumeValueEl.textContent = `${selectedBoost}% · ${selectedGain.toFixed(1)}×`;
 }
 
 audioEl.addEventListener("play", () => {
@@ -2205,13 +2211,9 @@ async function prepareAudioOutput() {
       inputMeter.connect(outputMeter);
       outputMeter.connect(gain);
       gain.connect(context.destination);
-      // Keep the visible audio element as the source of its play/volume/mute controls,
-      // but do not use its MediaElementAudioSourceNode for RTP audio processing.
-      // WebRTC tracks are connected directly with createMediaStreamSource below.
-      const elementSource = context.createMediaElementSource(audioEl);
       audioEl.volume = 1;
+      audioEl.muted = true;
       audioContext = context;
-      mediaElementSource = elementSource;
       inputAnalyser = inputMeter;
       outputAnalyser = outputMeter;
       playbackGain = gain;
@@ -2230,6 +2232,8 @@ function connectRemoteAudioStream(stream) {
     throw new Error("Web Audio input is not ready");
   }
   audioEl.srcObject = stream;
+  audioEl.volume = 1;
+  audioEl.muted = true;
   if (mediaStreamSource) {
     try { mediaStreamSource.disconnect(); } catch {}
   }
@@ -2270,7 +2274,7 @@ async function enableNoiseSuppression() {
   inputAnalyser.disconnect();
   inputAnalyser.connect(gtcrnNode);
   gtcrnNode.connect(outputAnalyser);
-  audioEl.muted = false;
+  audioEl.muted = true;
   syncPlaybackGain();
   // Do not wait for playback until the remote track exists: signaling starts
   // only after this initializer returns, and play() can remain pending with no source.
@@ -2295,8 +2299,13 @@ function disableNoiseSuppression() {
   noiseSuppressionActive = false;
   silentInputSinceMs = null;
   if (remoteStream) {
-    if (audioContext) connectRemoteAudioStream(remoteStream);
-    else audioEl.srcObject = remoteStream;
+    if (audioContext && playbackGain) {
+      connectRemoteAudioStream(remoteStream);
+    } else {
+      audioEl.srcObject = remoteStream;
+      audioEl.volume = 1;
+      audioEl.muted = false;
+    }
     void audioEl.play().catch(() => setState("Audio ready — press play"));
   }
   refreshAudioProcessingStatus();
@@ -2306,7 +2315,13 @@ function restoreDirectAudio(message) {
   noiseSuppressionEl.checked = false;
   disableNoiseSuppression();
   if (remoteStream) {
-    audioEl.srcObject = remoteStream;
+    if (audioContext && playbackGain) {
+      connectRemoteAudioStream(remoteStream);
+    } else {
+      audioEl.srcObject = remoteStream;
+      audioEl.volume = 1;
+      audioEl.muted = false;
+    }
     void audioEl.play().catch(() => setState("Audio ready — press play"));
   }
   setAudioProcessingStatus("Direct WebRTC audio restored; noise suppression is off");
@@ -2654,14 +2669,13 @@ async function createPeer() {
     refreshAudioProcessingStatus();
     void updateMediaStatus(peer);
     try {
-      if (noiseSuppressionActive) {
-        connectRemoteAudioStream(remoteStream);
-      } else if (audioContext) {
+      if (audioContext && inputAnalyser && playbackGain) {
         connectRemoteAudioStream(remoteStream);
       } else {
         audioEl.srcObject = remoteStream;
+        audioEl.volume = 1;
+        audioEl.muted = false;
       }
-      audioEl.muted = false;
       await audioEl.play();
     } catch (error) {
       restoreDirectAudio(`Processed playback could not start (${error.message}); direct WebRTC audio restored.`);
@@ -3039,9 +3053,14 @@ firmwareLimiterEl.addEventListener("change", sendAudioSettings);
 
 playVolumeEl.addEventListener("input", () => {
   playbackVolumePercent = Math.max(0, Math.min(300, Number(playVolumeEl.value)));
-  if (!audioContext || !playbackGain) audioEl.volume = Math.min(1, playbackVolumePercent / 100);
-  playVolumeValueEl.textContent = `${playbackVolumePercent}%`;
-  syncPlaybackGain();
+  if (audioContext?.state === "suspended") {
+    void audioContext.resume().then(syncPlaybackGain).catch(() => {});
+  } else if (audioContext && playbackGain) {
+    syncPlaybackGain();
+  } else {
+    audioEl.volume = 1;
+    playVolumeValueEl.textContent = `${playbackVolumePercent}% · baseline`;
+  }
 });
 
 document.getElementById("refreshDiagnostics").addEventListener("click", () => {
