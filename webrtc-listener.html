@@ -136,6 +136,8 @@
     .gain-control { padding:0; margin:0; border:0; background:transparent; }
     .gain-heading { display:flex; justify-content:space-between; gap:10px; color:#e0edf4; font-size:.75rem; font-weight:700; }
     #micGain { width:100%; margin:12px 0 5px; }
+    #playVolume { width:100%; margin:12px 0 5px; }
+    .gain-control .volume-scale { margin-left:0; margin-right:85px; }
     #micGainValue { color:#61bfff; font-variant-numeric:tabular-nums; }
     #micGainStatus, #processingStatus, #audioSettingsStatus { display:block; min-height:1.2em; color:#8da6b7; font-size:.66rem; }
     .helper { margin:8px 0 0; color:#8199aa; font-size:.66rem; line-height:1.45; }
@@ -504,10 +506,10 @@
         <div class="level-label"><span id="levelSource">Incoming WebRTC audio</span><span id="levelWord">Idle</span></div>
         <div class="level-track" role="meter" aria-label="Audio output level" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="level-fill" id="audioLevelFill"></div></div>
         <div class="volume-control">
-          <label class="volume-row" for="playVolume"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M4 10v4h4l5 4V6l-5 4H4Z"/><path d="M17 9a5 5 0 0 1 0 6m2-9a9 9 0 0 1 0 12"/></svg><input id="playVolume" type="range" min="0" max="300" step="1" value="0" list="playVolumeMarks" aria-label="Listener playback boost; zero preserves the clean baseline"><output id="playVolumeValue">0% · 1.0×</output></label>
-          <datalist id="playVolumeMarks"><option value="0"></option><option value="50"></option><option value="100"></option><option value="150"></option><option value="200"></option><option value="250"></option><option value="300"></option></datalist>
+          <label class="volume-row" for="listenerVolume"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M4 10v4h4l5 4V6l-5 4H4Z"/><path d="M17 9a5 5 0 0 1 0 6m2-9a9 9 0 0 1 0 12"/></svg><input id="listenerVolume" type="range" min="0" max="300" step="1" value="100" list="listenerVolumeMarks" aria-label="Listener playback volume; 100 percent is normal level"><output id="listenerVolumeValue">100% · 1.0×</output></label>
+          <datalist id="listenerVolumeMarks"><option value="0"></option><option value="50"></option><option value="100"></option><option value="150"></option><option value="200"></option><option value="250"></option><option value="300"></option></datalist>
           <div class="volume-scale" aria-hidden="true"><span>0%</span><span>50%</span><span>100%</span><span>150%</span><span>200%</span><span>250%</span><span>300%</span></div>
-          <p class="helper">0% keeps the clean baseline you hear now. Higher values boost playback up to 3×; this does not change the ESP32 microphone gain.</p>
+          <p class="helper">0% mutes playback, 100% is normal level, and higher values boost it up to 3×. Combined browser gain is capped at 3×.</p>
         </div>
       </section>
 
@@ -536,10 +538,16 @@
           <label class="choice-row disabled"><input type="radio" name="audioQuality" disabled><span>44.1 kHz / 24-bit</span><small>Unavailable</small></label>
         </div><span id="audioProfileStatus" class="helper" role="status" aria-live="polite">Connect to the ESP32 to change its saved audio profile.</span><p class="helper">Both supported profiles use signed mono 16-bit PCM in DSP and Opus. The INMP441 provides 24 valid source bits in 32-bit I²S slots. A profile change is saved on the ESP32 and restarts it; the displayed selection changes after new telemetry confirms it.</p></section>
         <section class="setting-group"><h2>DEVICE GAIN</h2><div class="gain-control">
-          <label class="gain-heading" id="gainHeading" for="micGain"><span>Microphone gain</span><output id="micGainValue" for="micGain">100%</output></label>
-          <input id="micGain" type="range" min="25" max="200" step="5" value="100" disabled>
+          <label class="gain-heading" id="gainHeading" for="micGain"><span>Microphone gain</span><output id="micGainValue" for="micGain">25%</output></label>
+          <input id="micGain" type="range" min="25" max="200" step="5" value="25" disabled>
           <span id="micGainStatus" role="status" aria-live="polite">Start listening and connect to adjust microphone gain.</span>
           <p class="helper">Session-only gain after the ESP32 DSP, before Opus. 100% is 1.0×. Higher settings may clip.</p>
+        </div><div class="gain-control volume-control">
+          <label class="gain-heading" for="playVolume"><span>Listener playback boost</span><output id="playVolumeValue">0% · 1.0×</output></label>
+          <input id="playVolume" type="range" min="0" max="300" step="1" value="0" list="playVolumeMarks" aria-label="Listener playback boost; zero keeps the clean baseline">
+          <datalist id="playVolumeMarks"><option value="0"></option><option value="50"></option><option value="100"></option><option value="150"></option><option value="200"></option><option value="250"></option><option value="300"></option></datalist>
+          <div class="volume-scale" aria-hidden="true"><span>0%</span><span>50%</span><span>100%</span><span>150%</span><span>200%</span><span>250%</span><span>300%</span></div>
+          <p class="helper">0% adds no boost and preserves the clean 1× baseline. This control is independent of the Listener page volume; combined browser gain is capped at 3×.</p>
         </div></section>
         <section class="setting-group"><h2>AUDIO PROCESSING</h2>
           <div class="setting-row"><span>Browser AI noise suppression (GTCRN)</span><label class="toggle" aria-label="Enable GTCRN noise suppression"><input id="noiseSuppression" type="checkbox"><span></span></label></div>
@@ -686,6 +694,8 @@ const audioLevelFill = document.getElementById("audioLevelFill");
 const audioLevelMeter = document.querySelector(".level-track[role='meter']");
 const playVolumeEl = document.getElementById("playVolume");
 const playVolumeValueEl = document.getElementById("playVolumeValue");
+const listenerVolumeEl = document.getElementById("listenerVolume");
+const listenerVolumeValueEl = document.getElementById("listenerVolumeValue");
 const levelSourceEl = document.getElementById("levelSource");
 
 const MAX_LOG_ENTRIES = 200;
@@ -708,6 +718,7 @@ let appStatusTimer = null;
 let diagnosticsBusy = false;
 let backendHealthBusy = false;
 let playbackVolumePercent = 0;
+let listenerVolumePercent = 100;
 let appliedAudioSettings = { mic_mode: "mic1", noise_suppression_enabled: true, vad_enabled: true, limiter_enabled: true };
 let recordedChunks = [];
 let recordedBytes = 0;
@@ -728,6 +739,7 @@ let socket = null;
 let peer = null;
 let remoteStream = null;
 let sessionId = null;
+let micGainAppliedSessionId = null;
 let listenerActive = false;
 let manualStop = false;
 let listenerStartAttempt = 0;
@@ -2152,7 +2164,7 @@ function sendMicGain() {
   micGainValueEl.value = `${gainPercent}%`;
   if (!sessionId || !peer || peer.connectionState !== "connected") {
     refreshMicGainAvailability();
-    return;
+    return false;
   }
   if (!send({
     type: "webrtc_audio_control",
@@ -2161,9 +2173,10 @@ function sendMicGain() {
     gain_percent: gainPercent
   })) {
     micGainStatusEl.textContent = "Could not send gain change. Check the listener connection.";
-    return;
+    return false;
   }
   micGainStatusEl.textContent = `Sending ${gainPercent}% to the ESP32…`;
+  return true;
 }
 
 function handleMicGainAck(message) {
@@ -2174,6 +2187,7 @@ function handleMicGainAck(message) {
     return;
   }
   if (gainPercent !== Number(micGainEl.value)) return;
+  micGainAppliedSessionId = sessionId;
   micGainStatusEl.textContent = `ESP32 gain set to ${gainPercent}%.`;
 }
 
@@ -2338,16 +2352,26 @@ function stopRecordingTimer() {
 }
 
 function syncPlaybackGain() {
-  if (!audioContext || !playbackGain) return;
-  const playing = remoteStream && !audioEl.paused;
   const selectedBoost = Math.max(0, Math.min(300, playbackVolumePercent));
-  const selectedGain = 1 + (2 * selectedBoost / 300);
+  const boostGain = 1 + (2 * selectedBoost / 300);
+  const selectedVolume = Math.max(0, Math.min(300, listenerVolumePercent));
+  const volumeGain = selectedVolume / 100;
+  const selectedGain = Math.min(3, boostGain * volumeGain);
+  playVolumeValueEl.textContent = `${selectedBoost}% · ${boostGain.toFixed(1)}×`;
+  listenerVolumeValueEl.textContent = `${selectedVolume}% · ${volumeGain.toFixed(1)}×`;
+  if (!audioContext || !playbackGain) {
+    audioEl.muted = false;
+    audioEl.volume = Math.min(1, selectedGain);
+    return;
+  }
+  audioEl.volume = 1;
+  audioEl.muted = true;
+  const playing = remoteStream && !audioEl.paused;
   playbackGain.gain.setTargetAtTime(
     playing ? selectedGain : 0,
     audioContext.currentTime,
     0.015
   );
-  playVolumeValueEl.textContent = `${selectedBoost}% · ${selectedGain.toFixed(1)}×`;
 }
 
 audioEl.addEventListener("play", () => {
@@ -2767,9 +2791,10 @@ function connectSocket() {
       applyAudioSettings(appliedAudioSettings);
       refreshAudioSettingsAvailability();
       audioSettingsStatusEl.textContent = `Connected to ${selectedDeviceId}; microphone mode, noise gate, and DSP toggles are ready.`;
-      micGainEl.value = "100";
-      micGainValueEl.value = "100%";
-      micGainStatusEl.textContent = "Session default is 100%; waiting for WebRTC audio connection.";
+      micGainEl.value = micGainEl.min;
+      micGainValueEl.value = `${micGainEl.value}%`;
+      micGainAppliedSessionId = null;
+      micGainStatusEl.textContent = `Session default is ${micGainEl.value}%; waiting for WebRTC audio connection.`;
       reconnectAttempt = 0;
       errorEl.textContent = "";
       try { await createPeer(); }
@@ -2885,6 +2910,9 @@ async function createPeer() {
   peer.onconnectionstatechange = () => {
     if (!peer) return;
     refreshMicGainAvailability();
+    if (peer.connectionState === "connected" && sessionId && micGainAppliedSessionId !== sessionId) {
+      if (sendMicGain()) micGainAppliedSessionId = sessionId;
+    }
     setState(`Peer ${peer.connectionState}`);
     if (peer.connectionState === "failed") {
       errorEl.textContent = "Direct ICE connection failed. This network may require TURN.";
@@ -3260,13 +3288,17 @@ firmwareLimiterEl.addEventListener("change", sendAudioSettings);
 
 playVolumeEl.addEventListener("input", () => {
   playbackVolumePercent = Math.max(0, Math.min(300, Number(playVolumeEl.value)));
+  syncPlaybackGain();
   if (audioContext?.state === "suspended") {
     void audioContext.resume().then(syncPlaybackGain).catch(() => {});
-  } else if (audioContext && playbackGain) {
-    syncPlaybackGain();
-  } else {
-    audioEl.volume = 1;
-    playVolumeValueEl.textContent = `${playbackVolumePercent}% · baseline`;
+  }
+});
+
+listenerVolumeEl.addEventListener("input", () => {
+  listenerVolumePercent = Math.max(0, Math.min(300, Number(listenerVolumeEl.value)));
+  syncPlaybackGain();
+  if (audioContext?.state === "suspended") {
+    void audioContext.resume().then(syncPlaybackGain).catch(() => {});
   }
 });
 

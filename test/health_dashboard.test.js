@@ -39,3 +39,21 @@ test("task health does not call missing task measurements stopped", () => {
     assert.equal(healthBooleanGroupStatus([true, undefined, true]), "Not Tested");
     assert.match(html, /Capture \$\{taskStateText\(d\.audio_capture_running\)\} · DSP \$\{taskStateText\(d\.dsp_running\)\} · WebRTC \$\{taskStateText\(d\.webrtc_running\)\}/);
 });
+
+test("gain controls are separated between Settings and Listener with safe defaults", () => {
+    const listenerPanel = html.indexOf('id="panel-listener"');
+    const settingsPanel = html.indexOf('id="panel-settings"');
+    const listenerVolume = html.indexOf('id="listenerVolume"');
+    const settingsBoost = html.indexOf('id="playVolume"');
+
+    assert.ok(listenerPanel >= 0 && settingsPanel > listenerPanel);
+    assert.ok(listenerVolume > listenerPanel && listenerVolume < settingsPanel,
+        "master volume must stay on the Listener page");
+    assert.ok(settingsBoost > settingsPanel,
+        "the existing playback boost must move into Settings");
+    assert.match(html, /id="micGain" type="range" min="25" max="200" step="5" value="25"/);
+    assert.match(html, /id="playVolume" type="range" min="0" max="300" step="1" value="0"/);
+    assert.match(html, /id="listenerVolume" type="range" min="0" max="300" step="1" value="100"/);
+    assert.match(html, /const selectedGain = Math\.min\(3, boostGain \* volumeGain\)/);
+    assert.match(html, /micGainEl\.value = micGainEl\.min/);
+});
