@@ -48,7 +48,7 @@
     .brand { display:flex; align-items:center; flex:1 1 auto; gap:10px; min-width:0; }
     .brand-icon { display:grid; place-items:center; width:42px; height:42px; flex:none; color:var(--cyan); border:1px solid #138bd1; border-radius:12px; background:#08243a; box-shadow:0 0 18px #0782d32e; }
     .brand-icon svg { width:25px; height:25px; }
-    .brand-copy { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:center; flex:1 1 auto; gap:4px 9px; min-width:0; }
+    .brand-copy { display:grid; grid-template-columns:minmax(0,1fr); align-items:center; flex:1 1 auto; gap:4px 9px; min-width:0; }
     .brand-copy label { color:var(--cyan); font-size:.62rem; font-weight:800; letter-spacing:.06em; white-space:nowrap; }
     .brand-copy select { width:100%; min-width:0; min-height:36px; padding:6px 9px; color:#eaf7ff; border:1px solid #31536a; border-radius:9px; background:#071723; font-size:.72rem; }
     .brand-copy select:focus-visible { outline:2px solid var(--cyan); outline-offset:2px; }
@@ -184,9 +184,24 @@
     .health-more-checks > summary { cursor:pointer; color:#9db5c4; font-size:.68rem; font-weight:700; }
     .health-empty-note { margin:9px 0 0; color:#9db5c4; font-size:.7rem; line-height:1.4; }
     .health-check-actions { display:flex; flex-wrap:wrap; gap:7px; margin-top:8px; }
-    .diagnostic-switch { display:flex; gap:6px; margin:0 0 9px; }
-    .diagnostic-switch .small-button[aria-pressed="true"] { color:#fff; border-color:#087cf0; background:#087cf0; }
-    .diagnostics-view[hidden] { display:none; }
+    .diag-tabs { display:grid; grid-template-columns:1fr 1fr; gap:5px; margin:0 0 10px; padding:4px; border:1px solid #17364b; border-radius:11px; background:#06121d; }
+    .diag-tab { min-height:36px; padding:7px 8px; color:#a8bfce; border:1px solid transparent; border-radius:8px; background:transparent; font-size:.68rem; font-weight:750; }
+    .diag-tab[aria-selected="true"] { color:#fff; border-color:#087cf0; background:#087cf0; box-shadow:0 4px 12px #087cf033; }
+    .diag-panel[hidden] { display:none; }
+    .health-toolbar { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:0 1px 10px; }
+    .health-toolbar h3 { margin:0; color:#dff4ff; font-size:.78rem; letter-spacing:.07em; }
+    .health-toolbar p { margin:4px 0 0; color:#8199aa; font-size:.65rem; line-height:1.4; }
+    .health-grid { display:grid; grid-template-columns:1fr; gap:7px; margin-top:8px; }
+    .health-card { padding:10px 11px; border:1px solid #1a374b; border-radius:12px; background:linear-gradient(145deg,#0b1d2b,#081723); }
+    .health-card-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    .health-card-head h4 { margin:0; color:#dceefa; font-size:.73rem; font-weight:750; }
+    .health-card p { margin:6px 0 0; color:#91a8b8; font-size:.65rem; line-height:1.4; overflow-wrap:anywhere; }
+    .health-state { flex:none; padding:4px 7px; color:#a8bdcc; border:1px solid #385166; border-radius:999px; background:#102331; font-size:.59rem; font-weight:800; white-space:nowrap; }
+    .health-state[data-state="healthy"] { color:#65e7ae; border-color:#176447; background:#08251d; }
+    .health-state[data-state="warning"] { color:#f7c85d; border-color:#705c26; background:#2a2411; }
+    .health-state[data-state="critical"] { color:#ff938d; border-color:#784247; background:#2a1619; }
+    .health-state[data-state="not-tested"] { color:#a8bdcc; border-color:#385166; background:#102331; }
+    .diag-panel > .setting-group { margin-top:9px; }
     .information-section { margin-top:9px; }
     .status-chip { display:inline-flex; align-items:center; gap:5px; padding:4px 7px; color:#80e6b9; border:1px solid #176447; border-radius:999px; background:#06251c; font-size:.61rem; font-weight:750; }
     .status-chip.offline { color:#ff928d; border-color:#714047; background:#291419; }
@@ -462,17 +477,15 @@
   <main class="app-shell">
     <header class="app-header">
       <div class="brand">
-        <div class="brand-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="3" width="16" height="18" rx="4"/><path d="M9 9a3 3 0 0 1 6 0v3a3 3 0 0 1-6 0V9Zm-3 3a6 6 0 0 0 12 0m-6 6v3m-3 0h6"/></svg></div>
         <div class="brand-copy">
-          <label for="deviceSelect">LISTENING DEVICE</label>
           <select id="deviceSelect" aria-describedby="deviceSelectStatus"><option value="">Loading devices…</option></select>
-          <small id="deviceSelectStatus" role="status" aria-live="polite">Choose which ESP32 supplies the listener audio.</small>
         </div>
       </div>
       <div class="header-status" aria-label="Device and audio status">
         <div id="deviceOnlinePill" class="device-pill" role="status" aria-label="ESP32 device connection status"><i class="status-dot" aria-hidden="true"></i><span id="deviceStatusLabel">CHECKING</span></div>
         <span id="playbackTimer" class="activity-timer" aria-label="Audio playback elapsed time" title="Audio playback time" hidden>PLAY 00:00</span>
       </div>
+      <small id="deviceSelectStatus" class="hidden-audio-label" role="status" aria-live="polite">Choose which ESP32 supplies the listener audio.</small>
     </header>
 
     <nav class="tabbar" role="tablist" aria-label="Listener app sections">
@@ -537,10 +550,13 @@
           <label class="choice-row"><input id="quality48k" type="radio" name="audioQuality" disabled><span>48 kHz / 16-bit PCM</span><small>High-rate profile</small></label>
           <label class="choice-row disabled"><input type="radio" name="audioQuality" disabled><span>44.1 kHz / 24-bit</span><small>Unavailable</small></label>
         </div><span id="audioProfileStatus" class="helper" role="status" aria-live="polite">Connect to the ESP32 to change its saved audio profile.</span><p class="helper">Both supported profiles use signed mono 16-bit PCM in DSP and Opus. The INMP441 provides 24 valid source bits in 32-bit I²S slots. A profile change is saved on the ESP32 and restarts it; the displayed selection changes after new telemetry confirms it.</p></section>
-        <section class="setting-group"><h2>DEVICE GAIN</h2><div class="gain-control">
+        <section class="setting-group"><h2>DEVICE GAIN</h2>
+          <div class="setting-row"><span>Automatic gain control (AGC)</span><label class="toggle" aria-label="Enable microphone automatic gain control"><input id="autoGain" type="checkbox" checked disabled><span></span></label></div>
+          <p class="helper">AGC is enabled by default. Turn it off to adjust the microphone gain slider manually.</p>
+          <div class="gain-control">
           <label class="gain-heading" id="gainHeading" for="micGain"><span>Microphone gain</span><output id="micGainValue" for="micGain">25%</output></label>
           <input id="micGain" type="range" min="25" max="200" step="5" value="25" disabled>
-          <span id="micGainStatus" role="status" aria-live="polite">Start listening and connect to adjust microphone gain.</span>
+          <span id="micGainStatus" role="status" aria-live="polite">Automatic gain is on; disable it for manual microphone gain.</span>
           <p class="helper">Session-only gain after the ESP32 DSP, before Opus. 100% is 1.0×. Higher settings may clip.</p>
         </div><div class="gain-control volume-control">
           <label class="gain-heading" for="playVolume"><span>Listener playback boost</span><output id="playVolumeValue">0% · 1.0×</output></label>
@@ -550,13 +566,35 @@
           <p class="helper">0% adds no boost and preserves the clean 1× baseline. This control is independent of the Listener page volume; combined browser gain is capped at 3×.</p>
         </div></section>
         <section class="setting-group"><h2>AUDIO PROCESSING</h2>
-          <div class="setting-row"><span>Browser AI noise suppression (GTCRN)</span><label class="toggle" aria-label="Enable GTCRN noise suppression"><input id="noiseSuppression" type="checkbox"><span></span></label></div>
-          <span id="processingStatus" role="status" aria-live="polite">GTCRN will activate when listening starts.</span>
-          <div class="setting-row"><span>ESP32 quiet-interval noise gate</span><label class="toggle" aria-label="Enable ESP32 noise gate"><input id="firmwareNoiseSuppression" type="checkbox" checked disabled><span></span></label></div>
-          <div class="setting-row"><span>ESP32 voice detection (VAD)</span><label class="toggle" aria-label="Enable ESP32 voice detection"><input id="firmwareVad" type="checkbox" checked disabled><span></span></label></div>
-          <div class="setting-row"><span>ESP32 limiter</span><label class="toggle" aria-label="Enable ESP32 limiter"><input id="firmwareLimiter" type="checkbox" checked disabled><span></span></label></div>
+          <label class="gain-heading" for="gtcrnLevel"><span>Browser AI noise suppression (GTCRN)</span></label>
+          <select class="settings-select" id="gtcrnLevel">
+            <option value="off">Off</option><option value="low">Low</option>
+            <option value="medium" selected>Medium</option><option value="high">High</option>
+          </select>
+          <span id="processingStatus" role="status" aria-live="polite">GTCRN Medium will activate when listening starts.</span>
+          <label class="gain-heading" for="hpfPreset"><span>High-pass filter preset</span></label>
+          <select class="settings-select" id="hpfPreset" disabled>
+            <option value="voice_clarity" selected>Voice clarity</option>
+            <option value="quiet_room">Quiet room</option>
+            <option value="noisy_room">Noisy room</option>
+          </select>
+          <label class="gain-heading" for="firmwareNoiseSuppression"><span>ESP32 quiet-interval noise gate</span></label>
+          <select class="settings-select" id="firmwareNoiseSuppression" disabled>
+            <option value="off" selected>Off</option><option value="low">Low</option>
+            <option value="medium">Medium</option><option value="high">High</option>
+          </select>
+          <label class="gain-heading" for="firmwareVad"><span>ESP32 voice detection (VAD)</span></label>
+          <select class="settings-select" id="firmwareVad" disabled>
+            <option value="off">Off</option><option value="low">Low</option>
+            <option value="medium" selected>Medium</option><option value="high">High</option>
+          </select>
+          <label class="gain-heading" for="firmwareLimiter"><span>ESP32 limiter</span></label>
+          <select class="settings-select" id="firmwareLimiter" disabled>
+            <option value="off">Off</option><option value="low" selected>Low</option>
+            <option value="medium">Medium</option><option value="high">High</option>
+          </select>
           <span id="audioSettingsStatus" role="status" aria-live="polite">Connect to the selected ESP32 to change microphone mode and DSP controls.</span>
-          <p class="helper">The ESP32 noise gate reduces quiet intervals; it is not AI or spectral noise removal and may soften quiet syllables. Browser GTCRN is the separate AI suppression. VAD reports speech activity without muting. The limiter caps peaks in DSP and before Opus when enabled.</p>
+          <p class="helper">GTCRN uses its fixed-strength model; Low, Medium, and High add progressively stronger smooth post-model expansion on quieter audio. ESP32 gate levels affect quiet intervals only. VAD changes speech-detection sensitivity and guides AGC; it does not mute audio. Limiter levels set progressively lower ESP32 peak ceilings; Off also bypasses the final Opus safety ceiling.</p>
         </section>
         <section class="setting-group"><h2>SESSION TIMEOUT</h2>
           <label class="gain-heading" for="sessionTimeout"><span>Sign out after inactivity</span></label>
@@ -666,12 +704,14 @@ const audioEl = document.getElementById("audio");
 const micGainEl = document.getElementById("micGain");
 const micGainValueEl = document.getElementById("micGainValue");
 const micGainStatusEl = document.getElementById("micGainStatus");
-const noiseSuppressionEl = document.getElementById("noiseSuppression");
+const autoGainEl = document.getElementById("autoGain");
+const gtcrnLevelEl = document.getElementById("gtcrnLevel");
 const processingStatusEl = document.getElementById("processingStatus");
 const micModeEls = Array.from(document.querySelectorAll('input[name="micMode"]'));
 const firmwareNoiseSuppressionEl = document.getElementById("firmwareNoiseSuppression");
 const firmwareVadEl = document.getElementById("firmwareVad");
 const firmwareLimiterEl = document.getElementById("firmwareLimiter");
+const hpfPresetEl = document.getElementById("hpfPreset");
 const audioSettingsStatusEl = document.getElementById("audioSettingsStatus");
 const sessionTimeoutEl = document.getElementById("sessionTimeout");
 const autoScrollLogsEl = document.getElementById("autoScrollLogs");
@@ -719,7 +759,11 @@ let diagnosticsBusy = false;
 let backendHealthBusy = false;
 let playbackVolumePercent = 0;
 let listenerVolumePercent = 100;
-let appliedAudioSettings = { mic_mode: "mic1", noise_suppression_enabled: true, vad_enabled: true, limiter_enabled: true };
+let appliedAudioSettings = {
+  mic_mode: "mic1", auto_gain_enabled: true,
+  hpf_preset: "voice_clarity", noise_suppression_level: "off",
+  vad_level: "medium", limiter_level: "low"
+};
 let recordedChunks = [];
 let recordedBytes = 0;
 let recordingActive = false;
@@ -740,6 +784,8 @@ let peer = null;
 let remoteStream = null;
 let sessionId = null;
 let micGainAppliedSessionId = null;
+let micGainAppliedPercent = null;
+let audioSettingsRequestedSessionId = null;
 let listenerActive = false;
 let manualStop = false;
 let listenerStartAttempt = 0;
@@ -762,9 +808,21 @@ let gtcrnApi = null;
 let gtcrnWasmBinary = null;
 let gtcrnWorkletLoaded = false;
 let gtcrnNode = null;
+let gtcrnLevelWorkletLoaded = false;
+let gtcrnLevelNode = null;
 let noiseSuppressionActive = false;
 let silentInputSinceMs = null;
-let audioProcessingStatus = "GTCRN will activate when listening starts.";
+let audioProcessingStatus = "GTCRN Medium will activate when listening starts.";
+try {
+  const savedGtcrnLevel = localStorage.getItem("esp32-gtcrn-level");
+  if (["off", "low", "medium", "high"].includes(savedGtcrnLevel)) {
+    gtcrnLevelEl.value = savedGtcrnLevel;
+  }
+} catch {}
+audioProcessingStatus = gtcrnLevelEl.value === "off"
+  ? "Browser AI noise suppression off · waiting for audio"
+  : `GTCRN ${gtcrnLevelEl.value} will activate when listening starts.`;
+processingStatusEl.textContent = audioProcessingStatus;
 let playbackElapsedMs = 0;
 let playbackStartedAtMs = 0;
 let playbackTimerInterval = null;
@@ -1381,7 +1439,7 @@ async function runHealthCheck() {
     logHealthResult(results, "Browser audio level", hasObservedLevel,
       hasObservedLevel ? `${formatAudioLevelDbfs(observedLevel)} at the ${noiseSuppressionActive ? "processed output" : "incoming audio"} meter` : "no current Web Audio level sample", !hasObservedLevel);
     logHealthResult(results, "Noise suppression", true,
-      noiseSuppressionActive ? "GTCRN enabled" : "off; direct WebRTC audio path selected");
+      noiseSuppressionActive ? `GTCRN ${gtcrnLevelEl.value} active` : "off; direct WebRTC audio path selected");
     latestBrowserHealthStats = await getBrowserHealthStats();
 
     const backendChecks = [
@@ -2154,13 +2212,20 @@ renderLogs();
 function refreshMicGainAvailability() {
   const connected = !!sessionId && !!peer && peer.connectionState === "connected" &&
     !!socket && socket.readyState === WebSocket.OPEN;
-  micGainEl.disabled = !connected;
-  if (!connected && sessionId) micGainStatusEl.textContent = "Available when the WebRTC audio connection is up.";
+  micGainEl.disabled = !connected || autoGainEl.checked;
+  if (autoGainEl.checked) {
+    micGainStatusEl.textContent = connected
+      ? "AGC is on; the fixed session gain is 100% (1.0×). Turn AGC off for manual gain."
+      : "AGC is on by default; manual microphone gain is disabled.";
+  } else if (!connected && sessionId) micGainStatusEl.textContent = "Available when the WebRTC audio connection is up.";
   else if (!connected) micGainStatusEl.textContent = "Start listening and connect to adjust microphone gain.";
 }
 
-function sendMicGain() {
-  const gainPercent = Number(micGainEl.value);
+function effectiveMicGainPercent() {
+  return autoGainEl.checked ? 100 : Number(micGainEl.value);
+}
+
+function sendMicGainPercent(gainPercent) {
   micGainValueEl.value = `${gainPercent}%`;
   if (!sessionId || !peer || peer.connectionState !== "connected") {
     refreshMicGainAvailability();
@@ -2175,8 +2240,20 @@ function sendMicGain() {
     micGainStatusEl.textContent = "Could not send gain change. Check the listener connection.";
     return false;
   }
-  micGainStatusEl.textContent = `Sending ${gainPercent}% to the ESP32…`;
+  micGainStatusEl.textContent = autoGainEl.checked
+    ? "AGC is on; setting fixed post-DSP gain to 100% (1.0×)…"
+    : `Sending manual microphone gain ${gainPercent}% to the ESP32…`;
   return true;
+}
+
+function sendMicGain() {
+  const gainPercent = effectiveMicGainPercent();
+  micGainValueEl.value = `${gainPercent}%`;
+  if (autoGainEl.checked) {
+    refreshMicGainAvailability();
+    return false;
+  }
+  return sendMicGainPercent(gainPercent);
 }
 
 function handleMicGainAck(message) {
@@ -2186,26 +2263,39 @@ function handleMicGainAck(message) {
     micGainStatusEl.textContent = "The ESP32 rejected the gain change.";
     return;
   }
-  if (gainPercent !== Number(micGainEl.value)) return;
+  const desiredGain = effectiveMicGainPercent();
+  if (gainPercent !== desiredGain) {
+    sendMicGainPercent(desiredGain);
+    return;
+  }
   micGainAppliedSessionId = sessionId;
-  micGainStatusEl.textContent = `ESP32 gain set to ${gainPercent}%.`;
+  micGainAppliedPercent = gainPercent;
+  micGainStatusEl.textContent = autoGainEl.checked
+    ? "AGC is on · post-DSP gain fixed at 100% (1.0×)."
+    : `Manual ESP32 microphone gain set to ${gainPercent}%.`;
 }
 
 function currentAudioSettings() {
   return {
     mic_mode: micModeEls.find((input) => input.checked)?.value || "mic1",
-    noise_suppression_enabled: firmwareNoiseSuppressionEl.checked,
-    vad_enabled: firmwareVadEl.checked,
-    limiter_enabled: firmwareLimiterEl.checked
+    auto_gain_enabled: autoGainEl.checked,
+    hpf_preset: hpfPresetEl.value,
+    noise_suppression_level: firmwareNoiseSuppressionEl.value,
+    vad_level: firmwareVadEl.value,
+    limiter_level: firmwareLimiterEl.value
   };
 }
 
 function applyAudioSettings(settings) {
   const mode = micModeEls.find((input) => input.value === settings.mic_mode);
   if (mode) mode.checked = true;
-  firmwareNoiseSuppressionEl.checked = Boolean(settings.noise_suppression_enabled);
-  firmwareVadEl.checked = Boolean(settings.vad_enabled);
-  firmwareLimiterEl.checked = Boolean(settings.limiter_enabled);
+  firmwareNoiseSuppressionEl.value = settings.noise_suppression_level;
+  firmwareVadEl.value = settings.vad_level;
+  firmwareLimiterEl.value = settings.limiter_level;
+  autoGainEl.checked = Boolean(settings.auto_gain_enabled);
+  hpfPresetEl.value = settings.hpf_preset;
+  micGainValueEl.value = `${effectiveMicGainPercent()}%`;
+  refreshMicGainAvailability();
 }
 
 function refreshAudioSettingsAvailability() {
@@ -2214,8 +2304,12 @@ function refreshAudioSettingsAvailability() {
   firmwareNoiseSuppressionEl.disabled = !available;
   firmwareVadEl.disabled = !available;
   firmwareLimiterEl.disabled = !available;
+  autoGainEl.disabled = !available;
+  hpfPresetEl.disabled = !available;
+  gtcrnLevelEl.disabled = false;
+  refreshMicGainAvailability();
   if (!available) {
-    audioSettingsStatusEl.textContent = "Connect to the selected ESP32 to change microphone mode, noise gate, VAD, or limiter.";
+    audioSettingsStatusEl.textContent = "Connect to the selected ESP32 to change microphone mode, AGC, filter preset, or DSP controls.";
   }
   refreshAudioProfileAvailability();
 }
@@ -2242,19 +2336,28 @@ function handleAudioSettingsAck(message) {
   }
   const accepted = {
     mic_mode: message.mic_mode,
-    noise_suppression_enabled: message.noise_suppression_enabled,
-    vad_enabled: message.vad_enabled,
-    limiter_enabled: message.limiter_enabled
+    auto_gain_enabled: message.auto_gain_enabled,
+    hpf_preset: message.hpf_preset,
+    noise_suppression_level: message.noise_suppression_level,
+    vad_level: message.vad_level,
+    limiter_level: message.limiter_level
   };
   if (!micModeEls.some((input) => input.value === accepted.mic_mode) ||
-      typeof accepted.noise_suppression_enabled !== "boolean" ||
-      typeof accepted.vad_enabled !== "boolean" ||
-      typeof accepted.limiter_enabled !== "boolean") return;
+      typeof accepted.auto_gain_enabled !== "boolean" ||
+      !["voice_clarity", "quiet_room", "noisy_room"].includes(accepted.hpf_preset) ||
+      !["off", "low", "medium", "high"].includes(accepted.noise_suppression_level) ||
+      !["off", "low", "medium", "high"].includes(accepted.vad_level) ||
+      !["off", "low", "medium", "high"].includes(accepted.limiter_level)) return;
   appliedAudioSettings = accepted;
   applyAudioSettings(accepted);
   const modeLabel = accepted.mic_mode === "mic1" ? "Mic 1" :
     accepted.mic_mode === "mic2" ? "Mic 2" : "Both (Mono)";
-  audioSettingsStatusEl.textContent = `${modeLabel} applied · noise gate ${accepted.noise_suppression_enabled ? "on" : "off"} · VAD ${accepted.vad_enabled ? "on" : "off"} · limiter ${accepted.limiter_enabled ? "on" : "off"}.`;
+  const hpfLabel = accepted.hpf_preset.replaceAll("_", " ");
+  audioSettingsStatusEl.textContent = `${modeLabel} · AGC ${accepted.auto_gain_enabled ? "on" : "off"} · ${hpfLabel} · gate ${accepted.noise_suppression_level} · VAD ${accepted.vad_level} · limiter ${accepted.limiter_level}.`;
+  const desiredGain = effectiveMicGainPercent();
+  if (micGainAppliedSessionId !== sessionId || micGainAppliedPercent !== desiredGain) {
+    sendMicGainPercent(desiredGain);
+  }
 }
 
 function setAudioProcessingStatus(value) {
@@ -2401,15 +2504,22 @@ audioEl.addEventListener("volumechange", syncPlaybackGain);
 function refreshAudioProcessingStatus() {
   const hasLiveTrack = remoteStream && remoteStream.getAudioTracks().some((track) => track.readyState === "live");
   const sampleRate = audioContext ? `${audioContext.sampleRate / 1000} kHz` : "";
+  const selectedLevel = gtcrnLevelEl.value;
+  if (selectedLevel === "off") {
+    setAudioProcessingStatus(hasLiveTrack
+      ? "Browser AI noise suppression off · direct WebRTC audio"
+      : "Browser AI noise suppression off · waiting for audio");
+    return;
+  }
   if (!hasLiveTrack) {
     setAudioProcessingStatus(noiseSuppressionActive
-      ? `GTCRN ready · ${sampleRate}; waiting for audio`
-      : "Noise suppression off · waiting for audio");
+      ? `GTCRN ${selectedLevel} ready · ${sampleRate}; waiting for audio`
+      : `GTCRN ${selectedLevel} will activate when listening starts.`);
     return;
   }
   setAudioProcessingStatus(noiseSuppressionActive
-    ? `GTCRN enabled · ${sampleRate}; checking signal levels`
-    : "Noise suppression off · direct WebRTC audio");
+    ? `GTCRN ${selectedLevel} active · ${sampleRate}; checking signal levels`
+    : `GTCRN ${selectedLevel} will activate when audio arrives.`);
 }
 
 async function prepareAudioOutput() {
@@ -2471,6 +2581,10 @@ function connectRemoteAudioStream(stream) {
 
 async function enableNoiseSuppression() {
   await prepareAudioOutput();
+  if (gtcrnLevelEl.value === "off") {
+    disableNoiseSuppression();
+    return;
+  }
   if (!gtcrnApi) gtcrnApi = await import("/audio-suppressor/index.js");
   if (!gtcrnWasmBinary) {
     gtcrnWasmBinary = await gtcrnApi.loadGtcrn({ url: "/audio-suppressor/gtcrn.wasm" });
@@ -2478,6 +2592,10 @@ async function enableNoiseSuppression() {
   if (!gtcrnWorkletLoaded) {
     await audioContext.audioWorklet.addModule("/audio-suppressor/gtcrn/workletProcessor.js");
     gtcrnWorkletLoaded = true;
+  }
+  if (!gtcrnLevelWorkletLoaded) {
+    await audioContext.audioWorklet.addModule("/audio-suppressor/custom/gtcrn-level-worklet.js");
+    gtcrnLevelWorkletLoaded = true;
   }
   if (!gtcrnNode) {
     gtcrnNode = new gtcrnApi.GtcrnWorkletNode(audioContext, {
@@ -2490,6 +2608,21 @@ async function enableNoiseSuppression() {
       restoreDirectAudio("GTCRN processing failed. Direct WebRTC audio has been restored; noise suppression is off.");
     });
   }
+  if (!gtcrnLevelNode) {
+    gtcrnLevelNode = new AudioWorkletNode(audioContext, "gtcrn-level-control", {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      outputChannelCount: [1],
+      channelCount: 1,
+      channelCountMode: "clamped-max"
+    });
+    const node = gtcrnLevelNode;
+    node.addEventListener("processorerror", () => {
+      if (gtcrnLevelNode !== node) return;
+      restoreDirectAudio("Post-model audio control failed. Direct WebRTC audio has been restored.");
+    });
+  }
+  gtcrnLevelNode.port.postMessage({ level: gtcrnLevelEl.value });
 
   if (!inputAnalyser || !outputAnalyser || !playbackGain) {
     throw new Error("GTCRN audio graph is not ready");
@@ -2497,7 +2630,8 @@ async function enableNoiseSuppression() {
   if (remoteStream) connectRemoteAudioStream(remoteStream);
   inputAnalyser.disconnect();
   inputAnalyser.connect(gtcrnNode);
-  gtcrnNode.connect(outputAnalyser);
+  gtcrnNode.connect(gtcrnLevelNode);
+  gtcrnLevelNode.connect(outputAnalyser);
   audioEl.muted = true;
   syncPlaybackGain();
   // Do not wait for playback until the remote track exists: signaling starts
@@ -2513,12 +2647,15 @@ async function enableNoiseSuppression() {
 function disableNoiseSuppression() {
   if (inputAnalyser) inputAnalyser.disconnect();
   if (inputAnalyser && outputAnalyser) inputAnalyser.connect(outputAnalyser);
-  if (inputAnalyser && outputAnalyser) {
-    if (gtcrnNode) {
-      try { gtcrnNode.disconnect(); } catch {}
-      try { gtcrnNode.destroy(); } catch {}
-      gtcrnNode = null;
-    }
+  if (gtcrnNode) {
+    try { gtcrnNode.disconnect(); } catch {}
+    try { gtcrnNode.destroy(); } catch {}
+    gtcrnNode = null;
+  }
+  if (gtcrnLevelNode) {
+    try { gtcrnLevelNode.disconnect(); } catch {}
+    try { gtcrnLevelNode.port.close(); } catch {}
+    gtcrnLevelNode = null;
   }
   noiseSuppressionActive = false;
   silentInputSinceMs = null;
@@ -2536,7 +2673,8 @@ function disableNoiseSuppression() {
 }
 
 function restoreDirectAudio(message) {
-  noiseSuppressionEl.checked = false;
+  gtcrnLevelEl.value = "off";
+  try { localStorage.setItem("esp32-gtcrn-level", "off"); } catch {}
   disableNoiseSuppression();
   if (remoteStream) {
     if (audioContext && playbackGain) {
@@ -2548,7 +2686,7 @@ function restoreDirectAudio(message) {
     }
     void audioEl.play().catch(() => setState("Audio ready — press play"));
   }
-  setAudioProcessingStatus("Direct WebRTC audio restored; noise suppression is off");
+  setAudioProcessingStatus("Direct WebRTC audio restored; Browser AI noise suppression is off");
   errorEl.textContent = message;
 }
 
@@ -2662,7 +2800,7 @@ async function updateMediaStatus(targetPeer) {
     ? `${codecLabel}; RTP ${packets} packets / ${bytes} bytes${packetLoss}${packetDiscard}${jitterMs === null ? "" : `, jitter ${jitterMs} ms`}; ${decodedSamples}${concealment}${silentConcealment}${concealmentEvents}${level === null ? "" : `, level ${level}`}`
     : "no inbound audio RTP packets";
   const processing = noiseSuppressionActive
-    ? (packets > 0 ? "GTCRN enabled" : "GTCRN ready; no audio packets received")
+    ? (packets > 0 ? `GTCRN ${gtcrnLevelEl.value} active` : `GTCRN ${gtcrnLevelEl.value} ready; no audio packets received`)
     : "noise suppression off";
   mediaStatusEl.textContent = `Audio: track ${trackState}; ${receiveState}; ${playbackState}; ${processing}${graphLevels}${silentFilterWarning}${silentInputWarning}${jitterBuffer}${decoderStatus}.`;
 }
@@ -2787,14 +2925,20 @@ function connectSocket() {
     if (message.type === "webrtc_session_ready") {
       sessionId = message.session_id;
       syncDeviceActionAvailability();
-      appliedAudioSettings = { mic_mode: "mic1", noise_suppression_enabled: true, vad_enabled: true, limiter_enabled: true };
+      appliedAudioSettings = {
+        mic_mode: "mic1", auto_gain_enabled: true,
+        hpf_preset: "voice_clarity", noise_suppression_level: "off",
+        vad_level: "medium", limiter_level: "low"
+      };
       applyAudioSettings(appliedAudioSettings);
       refreshAudioSettingsAvailability();
-      audioSettingsStatusEl.textContent = `Connected to ${selectedDeviceId}; microphone mode, noise gate, and DSP toggles are ready.`;
+      audioSettingsStatusEl.textContent = `Connected to ${selectedDeviceId}; audio controls will be applied when WebRTC connects.`;
       micGainEl.value = micGainEl.min;
-      micGainValueEl.value = `${micGainEl.value}%`;
+      micGainValueEl.value = `${effectiveMicGainPercent()}%`;
       micGainAppliedSessionId = null;
-      micGainStatusEl.textContent = `Session default is ${micGainEl.value}%; waiting for WebRTC audio connection.`;
+      micGainAppliedPercent = null;
+      audioSettingsRequestedSessionId = null;
+      refreshMicGainAvailability();
       reconnectAttempt = 0;
       errorEl.textContent = "";
       try { await createPeer(); }
@@ -2811,6 +2955,7 @@ function connectSocket() {
     if (message.type === "webrtc_session_end") {
       closePeer();
       sessionId = null;
+      audioSettingsRequestedSessionId = null;
       syncDeviceActionAvailability();
       refreshMicGainAvailability();
       refreshAudioSettingsAvailability();
@@ -2910,8 +3055,10 @@ async function createPeer() {
   peer.onconnectionstatechange = () => {
     if (!peer) return;
     refreshMicGainAvailability();
-    if (peer.connectionState === "connected" && sessionId && micGainAppliedSessionId !== sessionId) {
-      if (sendMicGain()) micGainAppliedSessionId = sessionId;
+    if (peer.connectionState === "connected" && sessionId &&
+        audioSettingsRequestedSessionId !== sessionId) {
+      audioSettingsRequestedSessionId = sessionId;
+      sendAudioSettings();
     }
     setState(`Peer ${peer.connectionState}`);
     if (peer.connectionState === "failed") {
@@ -3190,14 +3337,15 @@ async function startListening() {
   try {
     await prepareAudioOutput();
     if (startAttempt !== listenerStartAttempt || !listenerActive) return;
-    if (noiseSuppressionEl.checked) await enableNoiseSuppression();
+    if (gtcrnLevelEl.value !== "off") await enableNoiseSuppression();
     else disableNoiseSuppression();
   } catch (error) {
     if (startAttempt !== listenerStartAttempt || !listenerActive) {
       disableNoiseSuppression();
       return;
     }
-    noiseSuppressionEl.checked = false;
+    gtcrnLevelEl.value = "off";
+    try { localStorage.setItem("esp32-gtcrn-level", "off"); } catch {}
     disableNoiseSuppression();
     errorEl.textContent = `AI noise suppression unavailable; continuing with direct audio. ${error.message}`;
   }
@@ -3254,18 +3402,20 @@ recordButton.onclick = () => {
   else void startRecording();
 };
 
-noiseSuppressionEl.addEventListener("change", async () => {
+gtcrnLevelEl.addEventListener("change", async () => {
+  try { localStorage.setItem("esp32-gtcrn-level", gtcrnLevelEl.value); } catch {}
   if (!audioContext) {
-    setAudioProcessingStatus(noiseSuppressionEl.checked
-      ? "GTCRN will activate when listening starts."
-      : "Noise suppression off · waiting for audio");
+    setAudioProcessingStatus(gtcrnLevelEl.value === "off"
+      ? "Browser AI noise suppression off · waiting for audio"
+      : `GTCRN ${gtcrnLevelEl.value} will activate when listening starts.`);
     return;
   }
   try {
-    if (noiseSuppressionEl.checked) await enableNoiseSuppression();
+    if (gtcrnLevelEl.value !== "off") await enableNoiseSuppression();
     else disableNoiseSuppression();
   } catch (error) {
-    noiseSuppressionEl.checked = false;
+    gtcrnLevelEl.value = "off";
+    try { localStorage.setItem("esp32-gtcrn-level", "off"); } catch {}
     disableNoiseSuppression();
     errorEl.textContent = `AI noise suppression unavailable; continuing with direct audio. ${error.message}`;
   }

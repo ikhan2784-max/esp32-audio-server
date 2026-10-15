@@ -11,6 +11,9 @@ const MAX_CONTROL_MESSAGES_PER_WINDOW = 60;
 const MIC_GAIN_MIN_PERCENT = 25;
 const MIC_GAIN_MAX_PERCENT = 200;
 const AUDIO_MIC_MODES = new Set(["mic1", "mic2", "both_mono"]);
+const AUDIO_NS_LEVELS = new Set(["off", "low", "medium", "high"]);
+const AUDIO_PROCESSING_LEVELS = new Set(["off", "low", "medium", "high"]);
+const AUDIO_HPF_PRESETS = new Set(["voice_clarity", "quiet_room", "noisy_room"]);
 const MAX_SIGNAL_BUFFERED_BYTES = 64 * 1024;
 const TELEMETRY_MAX_AGE_MS = 15000;
 const TELEMETRY_NUMBER_RANGES = Object.freeze({
@@ -86,12 +89,13 @@ const TELEMETRY_BOOLEAN_FIELDS = new Set([
     "i2s_initialized", "audio_capture_initialized", "audio_capture_running",
     "dsp_initialized", "dsp_running", "webrtc_running", "signaling_connected",
     "opus_running", "dsp_ns_enabled", "dsp_vad_enabled", "dsp_limiter_enabled",
-    "dsp_hpf_active", "pcm_signed",
+    "dsp_auto_gain_enabled", "dsp_hpf_active", "pcm_signed",
 ]);
 const TELEMETRY_STRING_LIMITS = Object.freeze({
     wifi_ssid: 32, ip: 15, wifi_gateway_ip: 15, firmware: 32,
     firmware_version: 32, idf_version: 32, build_date: 16, build_time: 16,
     build_id: 64, i2s_input_mode: 16, audio_profile: 32, pcm_format: 32,
+    dsp_hpf_preset: 24, dsp_ns_level: 8, dsp_vad_level: 8, dsp_limiter_level: 8,
     reset_reason_name: 32, last_error_module: 32, last_error: 192,
 });
 
@@ -433,9 +437,11 @@ function createWebRtcSignaling({
             return true;
         }
         if (!AUDIO_MIC_MODES.has(message.mic_mode) ||
-            typeof message.noise_suppression_enabled !== "boolean" ||
-            typeof message.vad_enabled !== "boolean" ||
-            typeof message.limiter_enabled !== "boolean") {
+            typeof message.auto_gain_enabled !== "boolean" ||
+            !AUDIO_HPF_PRESETS.has(message.hpf_preset) ||
+            !AUDIO_NS_LEVELS.has(message.noise_suppression_level) ||
+            !AUDIO_PROCESSING_LEVELS.has(message.vad_level) ||
+            !AUDIO_PROCESSING_LEVELS.has(message.limiter_level)) {
             fail(ws, "invalid_audio_settings");
             return true;
         }
@@ -443,9 +449,11 @@ function createWebRtcSignaling({
             type: "webrtc_audio_settings",
             session_id: state.sessionId,
             mic_mode: message.mic_mode,
-            noise_suppression_enabled: message.noise_suppression_enabled,
-            vad_enabled: message.vad_enabled,
-            limiter_enabled: message.limiter_enabled,
+            auto_gain_enabled: message.auto_gain_enabled,
+            hpf_preset: message.hpf_preset,
+            noise_suppression_level: message.noise_suppression_level,
+            vad_level: message.vad_level,
+            limiter_level: message.limiter_level,
         })) {
             endSession(state, "peer_unavailable");
         }
@@ -466,9 +474,11 @@ function createWebRtcSignaling({
             return true;
         }
         if (typeof message.ok !== "boolean" || !AUDIO_MIC_MODES.has(message.mic_mode) ||
-            typeof message.noise_suppression_enabled !== "boolean" ||
-            typeof message.vad_enabled !== "boolean" ||
-            typeof message.limiter_enabled !== "boolean") {
+            typeof message.auto_gain_enabled !== "boolean" ||
+            !AUDIO_HPF_PRESETS.has(message.hpf_preset) ||
+            !AUDIO_NS_LEVELS.has(message.noise_suppression_level) ||
+            !AUDIO_PROCESSING_LEVELS.has(message.vad_level) ||
+            !AUDIO_PROCESSING_LEVELS.has(message.limiter_level)) {
             fail(ws, "invalid_audio_settings_ack");
             return true;
         }
@@ -476,9 +486,11 @@ function createWebRtcSignaling({
             type: "webrtc_audio_settings_ack",
             session_id: state.sessionId,
             mic_mode: message.mic_mode,
-            noise_suppression_enabled: message.noise_suppression_enabled,
-            vad_enabled: message.vad_enabled,
-            limiter_enabled: message.limiter_enabled,
+            auto_gain_enabled: message.auto_gain_enabled,
+            hpf_preset: message.hpf_preset,
+            noise_suppression_level: message.noise_suppression_level,
+            vad_level: message.vad_level,
+            limiter_level: message.limiter_level,
             ok: message.ok,
         })) {
             endSession(state, "peer_unavailable");

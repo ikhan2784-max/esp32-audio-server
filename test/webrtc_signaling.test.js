@@ -65,6 +65,9 @@ test("routes a bounded authenticated device health snapshot to its request callb
             firmware_version: "2.5.0",
             build_id: "a".repeat(64),
             dsp_input_peak: 1234,
+            dsp_ns_level: "off",
+            dsp_vad_level: "medium",
+            dsp_limiter_level: "low",
             source_token: "must-not-pass-through",
         },
     }), true);
@@ -82,6 +85,9 @@ test("routes a bounded authenticated device health snapshot to its request callb
         firmware_version: "2.5.0",
         build_id: "a".repeat(64),
         dsp_input_peak: 1234,
+        dsp_ns_level: "off",
+        dsp_vad_level: "medium",
+        dsp_limiter_level: "low",
     }]]);
 });
 
@@ -279,6 +285,70 @@ test("rejects unsupported audio profile rates from listeners and devices", () =>
         command: "audio_profile", sample_rate_hz: 44100, ok: true, restarting: false,
     });
     assert.equal(invalidAck.device.last("webrtc_error").reason, "invalid_audio_control_ack");
+});
+
+test("relays all four ESP32 DSP levels and validates each level on request and ack", () => {
+    for (const noise_suppression_level of ["off", "low", "medium", "high"]) {
+        for (const vad_level of ["off", "low", "medium", "high"]) {
+            for (const limiter_level of ["off", "low", "medium", "high"]) {
+                const harness = makeHarness();
+                const { signaling, device, listener } = harness;
+                const sessionId = joinBoth(harness);
+                const settings = {
+                    type: "webrtc_audio_settings",
+                    session_id: sessionId,
+                    mic_mode: "mic1",
+                    auto_gain_enabled: true,
+                    hpf_preset: "voice_clarity",
+                    noise_suppression_level,
+                    vad_level,
+                    limiter_level,
+                };
+
+                assert.equal(signaling.handleMessage(listener, settings), true);
+                assert.deepEqual(device.last("webrtc_audio_settings"), settings);
+                assert.equal(signaling.handleMessage(device, {
+                    type: "webrtc_audio_settings_ack",
+                    session_id: sessionId,
+                    mic_mode: "mic1",
+                    auto_gain_enabled: true,
+                    hpf_preset: "voice_clarity",
+                    noise_suppression_level,
+                    vad_level,
+                    limiter_level,
+                    ok: true,
+                }), true);
+                assert.equal(listener.last("webrtc_audio_settings_ack").noise_suppression_level,
+                    noise_suppression_level);
+                assert.equal(listener.last("webrtc_audio_settings_ack").vad_level, vad_level);
+                assert.equal(listener.last("webrtc_audio_settings_ack").limiter_level, limiter_level);
+            }
+        }
+    }
+});
+
+test("rejects invalid ESP32 DSP level names", () => {
+    for (const [field, value] of [
+        ["noise_suppression_level", "maximum"],
+        ["vad_level", "maximum"],
+        ["limiter_level", "maximum"],
+    ]) {
+        const harness = makeHarness();
+        const sessionId = joinBoth(harness);
+        harness.signaling.handleMessage(harness.listener, {
+            type: "webrtc_audio_settings",
+            session_id: sessionId,
+            mic_mode: "mic1",
+            auto_gain_enabled: true,
+            hpf_preset: "voice_clarity",
+            noise_suppression_level: "off",
+            vad_level: "medium",
+            limiter_level: "low",
+            [field]: value,
+        });
+        assert.equal(harness.listener.last("webrtc_error").reason, "invalid_audio_settings");
+        assert.equal(harness.device.last("webrtc_audio_settings"), undefined);
+    }
 });
 
 test("rejects stale, out-of-range, and wrong-direction microphone gain controls", () => {

@@ -57,3 +57,26 @@ test("gain controls are separated between Settings and Listener with safe defaul
     assert.match(html, /const selectedGain = Math\.min\(3, boostGain \* volumeGain\)/);
     assert.match(html, /micGainEl\.value = micGainEl\.min/);
 });
+
+test("audio-processing controls expose four levels with tested defaults", () => {
+    for (const [id, selected] of [
+        ["gtcrnLevel", "medium"],
+        ["firmwareNoiseSuppression", "off"],
+        ["firmwareVad", "medium"],
+        ["firmwareLimiter", "low"],
+    ]) {
+        const elementStart = html.indexOf(`id="${id}"`);
+        assert.ok(elementStart >= 0, `${id} control should exist`);
+        const selectStart = html.lastIndexOf("<select", elementStart);
+        const selectEnd = html.indexOf("</select>", elementStart);
+        const selectMarkup = html.slice(selectStart, selectEnd + "</select>".length);
+        for (const level of ["off", "low", "medium", "high"]) {
+            assert.match(selectMarkup, new RegExp(`option value="${level}"`), `${id} should offer ${level}`);
+        }
+        assert.match(selectMarkup, new RegExp(`option value="${selected}" selected`), `${id} should default to ${selected}`);
+    }
+    assert.match(html, /noise_suppression_level: firmwareNoiseSuppressionEl\.value/);
+    assert.match(html, /vad_level: firmwareVadEl\.value/);
+    assert.match(html, /limiter_level: firmwareLimiterEl\.value/);
+    assert.match(html, /gtcrnLevelEl\.addEventListener\("change"/);
+});

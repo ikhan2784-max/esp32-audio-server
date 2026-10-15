@@ -44,6 +44,10 @@ const app = express();
 const server = http.createServer(app);
 
 app.use(express.json({ limit: "4kb" }));
+app.use("/audio-suppressor/custom", requireHttps, express.static(
+    path.join(__dirname, "audio-suppressor"),
+    { fallthrough: false, index: false, maxAge: "1h" }
+));
 app.use("/audio-suppressor", requireHttps, express.static(
     path.join(__dirname, "node_modules", "@sapphi-red", "web-noise-suppressor", "dist"),
     { fallthrough: false, index: false, maxAge: "1h" }
@@ -211,7 +215,7 @@ app.get("/", requireHttps, (req, res) => {
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
-    res.sendFile(__dirname + "/index.html");
+    res.sendFile("index.html", { root: __dirname });
 });
 
 app.get("/health", (req, res) => res.status(200).send("OK"));
@@ -292,7 +296,7 @@ app.get("/phase5-listener", requireHttps, (req, res) => {
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
-    res.sendFile(__dirname + "/webrtc-listener.html");
+    res.sendFile("webrtc-listener.html", { root: __dirname });
 });
 
 app.get("/api/device-status", requireHttps, (req, res) => {
