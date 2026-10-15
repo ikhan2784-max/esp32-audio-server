@@ -11,6 +11,7 @@ class GtcrnLevelProcessor extends AudioWorkletProcessor {
     super();
     this.level = "medium";
     this.gain = 1;
+    this.speechHoldSamples = 0;
     this.port.onmessage = (event) => {
       const next = event.data && event.data.level;
       if (Object.prototype.hasOwnProperty.call(GTCRN_LEVELS, next)) {
@@ -26,6 +27,7 @@ class GtcrnLevelProcessor extends AudioWorkletProcessor {
     if (!inputChannels || inputChannels.length === 0) {
       for (const output of outputChannels) output.fill(0);
       this.gain = 1;
+      this.speechHoldSamples = 0;
       return true;
     }
 
@@ -44,16 +46,17 @@ class GtcrnLevelProcessor extends AudioWorkletProcessor {
     const kneeDb = 12;
     const lower = profile.thresholdDbfs - kneeDb / 2;
     const upper = profile.thresholdDbfs + kneeDb / 2;
+    const sampleRateSafe = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 48000;
+    const frameLength = Math.min(...outputChannels.map((channel) => channel.length));
     let targetGain;
-    if (dbfs >= upper) targetGain = 1;
+    if (dbfs >= upper) this.speechHoldSamples = Math.round(sampleRateSafe * 0.12);
+    if (this.speechHoldSamples > 0) targetGain = 1;
     else if (dbfs <= lower) targetGain = profile.attenuation;
     else {
       const position = (dbfs - lower) / (upper - lower);
       targetGain = profile.attenuation + position * (1 - profile.attenuation);
     }
 
-    const sampleRateSafe = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 48000;
-    const frameLength = Math.min(...outputChannels.map((channel) => channel.length));
     for (let i = 0; i < frameLength; i++) {
       const tauSeconds = targetGain < this.gain ? 0.035 : 0.008;
       const smoothing = 1 - Math.exp(-1 / (sampleRateSafe * tauSeconds));
@@ -63,6 +66,7 @@ class GtcrnLevelProcessor extends AudioWorkletProcessor {
         outputChannels[channelIndex][i] = input ? input[i] * this.gain : 0;
       }
     }
+    this.speechHoldSamples = Math.max(0, this.speechHoldSamples - frameLength);
     return true;
   }
 }

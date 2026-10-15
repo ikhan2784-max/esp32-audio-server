@@ -2527,7 +2527,9 @@ async function prepareAudioOutput() {
     const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
     if (!AudioContextConstructor) throw new Error("Web Audio is not supported in this browser");
 
-    const context = new AudioContextConstructor({ latencyHint: "interactive", sampleRate: 48000 });
+    // GTCRN runs synchronously in an AudioWorklet. Give the browser a larger
+    // render buffer so short scheduling delays are less likely to become gaps.
+    const context = new AudioContextConstructor({ latencyHint: "balanced", sampleRate: 48000 });
     if (context.sampleRate !== 48000 && context.sampleRate !== 16000) {
       await context.close();
       throw new Error(`GTCRN does not support ${context.sampleRate} Hz playback`);
