@@ -16,6 +16,7 @@ const AUDIO_PROCESSING_LEVELS = new Set(["off", "low", "medium", "high"]);
 const AUDIO_HPF_PRESETS = new Set(["voice_clarity", "quiet_room", "noisy_room"]);
 const MAX_SIGNAL_BUFFERED_BYTES = 64 * 1024;
 const TELEMETRY_MAX_AGE_MS = 15000;
+const DEFAULT_CONNECTION_FRESH_MS = 15000;
 const TELEMETRY_NUMBER_RANGES = Object.freeze({
     wifi_rssi: [-120, 0],
     wifi_retry_count: [0, Number.MAX_SAFE_INTEGER],
@@ -105,6 +106,8 @@ function createWebRtcSignaling({
     deviceRegistry,
     isListenerSessionValid,
     isListenerAuthorizedForDevice = () => true,
+    isConnectionAlive = (ws) => Boolean(ws && ws.readyState === WebSocket.OPEN &&
+        (!Number.isFinite(ws.lastPongAt) || Date.now() - ws.lastPongAt <= DEFAULT_CONNECTION_FRESH_MS)),
     onHealthCheckResponse = () => {},
 }) {
     const credentials = deviceRegistry || createDeviceCredentialRegistry({ sourceToken });
@@ -152,7 +155,7 @@ function createWebRtcSignaling({
 
     function pairIfReady(state) {
         if (state.sessionId !== null || !state.device || !state.listener ||
-            state.device.readyState !== WebSocket.OPEN || state.listener.readyState !== WebSocket.OPEN) {
+            !isConnectionAlive(state.device) || !isConnectionAlive(state.listener)) {
             return;
         }
         state.sessionId = crypto.randomUUID();
@@ -223,11 +226,10 @@ function createWebRtcSignaling({
         const state = states.get(deviceId);
         // A close frame can race with a page refresh on a new TCP connection.
         // Release dead references before deciding that another listener owns the slot.
-        if (state.listener && state.listener !== ws &&
-            state.listener.readyState !== WebSocket.OPEN) {
+        if (state.listener && state.listener !== ws && !isConnectionAlive(state.listener)) {
             handleClose(state.listener);
         }
-        if (state.device && state.device.readyState !== WebSocket.OPEN) {
+        if (state.device && !isConnectionAlive(state.device)) {
             handleClose(state.device);
         }
         if (state.listener && state.listener !== ws) {
@@ -691,9 +693,11 @@ function createWebRtcSignaling({
                 session_active: false,
             };
         }
+        if (state.device && !isConnectionAlive(state.device)) handleClose(state.device);
+        if (state.listener && !isConnectionAlive(state.listener)) handleClose(state.listener);
         const result = {
-            device_connected: !!state.device && state.device.readyState === WebSocket.OPEN,
-            listener_connected: !!state.listener && state.listener.readyState === WebSocket.OPEN,
+            device_connected: isConnectionAlive(state.device),
+            listener_connected: isConnectionAlive(state.listener),
             session_active: state.sessionId !== null,
         };
         if (state.telemetry && Date.now() - state.telemetryAt <= TELEMETRY_MAX_AGE_MS) {

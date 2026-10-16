@@ -2410,15 +2410,16 @@ function refreshListeningTimerText() {
 }
 
 function startListeningTimer() {
-  stopListeningTimer();
-  listeningElapsedMs = 0;
+  if (!listenerActive || audioEl.paused || !hasLiveAudioTrack() || listeningStartedAtMs) return;
   listeningStartedAtMs = performance.now();
   listeningTimerEl.hidden = false;
   refreshListeningTimerText();
-  listeningTimerInterval = window.setInterval(refreshListeningTimerText, 250);
+  if (!listeningTimerInterval) {
+    listeningTimerInterval = window.setInterval(refreshListeningTimerText, 250);
+  }
 }
 
-function stopListeningTimer() {
+function stopListeningTimer(reset = false) {
   if (listeningStartedAtMs) {
     listeningElapsedMs += performance.now() - listeningStartedAtMs;
     listeningStartedAtMs = 0;
@@ -2426,6 +2427,7 @@ function stopListeningTimer() {
   if (listeningTimerInterval) window.clearInterval(listeningTimerInterval);
   listeningTimerInterval = null;
   listeningTimerEl.hidden = true;
+  if (reset) listeningElapsedMs = 0;
   refreshListeningTimerText();
 }
 
@@ -2484,15 +2486,22 @@ audioEl.addEventListener("play", () => {
   }
   if (hasLiveAudioTrack()) setState("Audio ready — buffering");
 });
-audioEl.addEventListener("playing", () => setState("Audio is playing"));
+audioEl.addEventListener("playing", () => {
+  if (!listenerActive || !hasLiveAudioTrack()) return;
+  startListeningTimer();
+  setState("Audio is playing");
+});
 audioEl.addEventListener("waiting", () => {
+  stopListeningTimer();
   if (listenerActive && hasLiveAudioTrack()) setState("Audio buffering…");
 });
 audioEl.addEventListener("pause", () => {
+  stopListeningTimer();
   syncPlaybackGain();
   if (listenerActive && hasLiveAudioTrack()) setState("Audio ready — press play");
 });
 audioEl.addEventListener("ended", () => {
+  stopListeningTimer();
   if (listenerActive && hasLiveAudioTrack()) setState("Audio ready — press play");
 });
 audioEl.addEventListener("volumechange", syncPlaybackGain);
@@ -2843,6 +2852,7 @@ function syncRecordButton() {
 }
 
 function closePeer() {
+  stopListeningTimer();
   recordingStartAttempt++;
   if (recordingActive) stopRecording();
   if (statsTimer) clearInterval(statsTimer);
@@ -3037,12 +3047,14 @@ async function createPeer() {
       : new MediaStream([event.track]);
     for (const track of remoteStream.getAudioTracks()) {
       track.addEventListener("mute", () => {
+        stopListeningTimer();
         if (listenerActive) setState("Audio buffering…");
       });
       track.addEventListener("unmute", () => {
-        if (listenerActive) setState("Audio is playing");
+        if (listenerActive) setState("Audio ready — buffering");
       });
       track.addEventListener("ended", () => {
+        stopListeningTimer();
         if (recordingActive) stopRecording();
         syncRecordButton();
         if (listenerActive) setState("Audio track ended — reconnecting");
@@ -3082,6 +3094,7 @@ async function createPeer() {
   };
   peer.oniceconnectionstatechange = () => {
     if (peer && peer.iceConnectionState === "disconnected") {
+      stopListeningTimer();
       setState("Peer disconnected — checking connection");
     }
   };
@@ -3343,7 +3356,7 @@ async function startListening() {
   const startAttempt = ++listenerStartAttempt;
   manualStop = false;
   listenerActive = true;
-  startListeningTimer();
+  stopListeningTimer(true);
   window.setListenerActive(true);
   setListenButtonActive(true);
   errorEl.textContent = "";

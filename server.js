@@ -487,6 +487,7 @@ wss.on("connection", (ws, req) => {
     ws.pingOutstanding = false;
     ws.pingSentAt = 0;
     ws.connectedAt = Date.now();
+    ws.lastPongAt = ws.connectedAt;
 
     console.log(`WS connected: ${ip}`);
 
@@ -494,6 +495,7 @@ wss.on("connection", (ws, req) => {
         ws.isAlive = true;
         ws.pingOutstanding = false;
         ws.pingSentAt = 0;
+        ws.lastPongAt = Date.now();
     });
 
     ws.pingTimer = setInterval(() => {
@@ -786,6 +788,8 @@ const heartbeat = setInterval(() => {
                     `Terminating dead WS (no pong in ${Math.floor(elapsed / 1000)}s): ` +
                     `role=${ws.role || "unknown"}`
                 );
+                // Clear signaling presence synchronously; the socket close event is async.
+                webrtcSignaling.handleClose(ws);
                 try { ws.terminate(); } catch {}
             }
         }

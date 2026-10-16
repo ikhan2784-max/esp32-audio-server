@@ -217,6 +217,22 @@ test("a closed listener reservation is reclaimed during the next listener join",
     assert.equal(signaling.getStatus().listener_connected, true);
 });
 
+test("reports an open device websocket offline when its last pong is stale", () => {
+    const { signaling, device, listener } = makeHarness();
+    signaling.handleMessage(device, {
+        type: "webrtc_device_hello",
+        device: "ESP32-S3-INMP441",
+        source_token: "test-only-token",
+    });
+    device.lastPongAt = Date.now() - 16000;
+
+    assert.equal(signaling.getStatus().device_connected, false);
+    assert.equal(signaling.handleMessage(listener, { type: "webrtc_listener_hello" }), true);
+    assert.equal(listener.last("webrtc_waiting_for_device").device_id, "ESP32-S3-INMP441");
+    assert.equal(signaling.getStatus().device_connected, false);
+    assert.equal(signaling.getStatus().session_active, false);
+});
+
 test("device presence changes are pushed to an active listener", () => {
     const harness = makeHarness();
     const { signaling, device, listener } = harness;

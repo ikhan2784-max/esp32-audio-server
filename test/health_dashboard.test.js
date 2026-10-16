@@ -80,3 +80,56 @@ test("audio-processing controls expose four levels with tested defaults", () => 
     assert.match(html, /limiter_level: firmwareLimiterEl\.value/);
     assert.match(html, /gtcrnLevelEl\.addEventListener\("change"/);
 });
+
+test("play timer stays hidden while waiting and accumulates only actual playback", () => {
+    const extract = (name) => {
+        const match = html.match(new RegExp(`^function ${name}\\([^\\n]*\\) \\{[\\s\\S]*?^\\}`, "m"));
+        assert.ok(match, `${name} helper should exist`);
+        return match[0];
+    };
+    let now = 0;
+    let nextInterval = 1;
+    const context = vm.createContext({
+        performance: { now: () => now },
+        window: {
+            setInterval: () => nextInterval++,
+            clearInterval: () => {},
+        },
+        listeningElapsedMs: 0,
+        listeningStartedAtMs: 0,
+        listeningTimerInterval: null,
+        listeningTimerEl: { hidden: true, textContent: "" },
+        listenerActive: true,
+        audioEl: { paused: true },
+        hasLiveAudioTrack: () => false,
+    });
+    vm.runInContext([
+        extract("formatElapsedClock"),
+        extract("refreshListeningTimerText"),
+        extract("startListeningTimer"),
+        extract("stopListeningTimer"),
+    ].join("\n"), context);
+
+    vm.runInContext("startListeningTimer()", context);
+    assert.equal(context.listeningTimerEl.hidden, true);
+    assert.equal(context.listeningTimerInterval, null);
+
+    context.audioEl.paused = false;
+    context.hasLiveAudioTrack = () => true;
+    now = 1000;
+    vm.runInContext("startListeningTimer()", context);
+    now = 6100;
+    vm.runInContext("stopListeningTimer()", context);
+    assert.equal(context.listeningTimerEl.hidden, true);
+    assert.equal(context.listeningElapsedMs, 5100);
+
+    now = 8000;
+    vm.runInContext("startListeningTimer()", context);
+    assert.equal(context.listeningTimerEl.hidden, false);
+    assert.equal(context.listeningTimerEl.textContent, "PLAY 00:05");
+    assert.match(html, /audioEl\.addEventListener\("playing", \(\) => \{[\s\S]{0,140}startListeningTimer\(\)/);
+    for (const event of ["waiting", "pause", "ended"]) {
+        const handler = html.match(new RegExp(`audioEl\\.addEventListener\\("${event}",[\\s\\S]{0,180}?\\n\\}\\);`));
+        assert.ok(handler && handler[0].includes("stopListeningTimer()"), `${event} should hide/pause the play timer`);
+    }
+});
