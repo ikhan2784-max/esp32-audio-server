@@ -51,11 +51,12 @@ test("gain controls are separated between Settings and Listener with safe defaul
         "master volume must stay on the Listener page");
     assert.ok(settingsBoost > settingsPanel,
         "the existing playback boost must move into Settings");
-    assert.match(html, /id="micGain" type="range" min="25" max="200" step="5" value="25"/);
+    assert.match(html, /id="autoGain" type="checkbox" checked/);
+    assert.match(html, /id="micGain" type="range" min="25" max="200" step="5" value="50"/);
     assert.match(html, /id="playVolume" type="range" min="0" max="300" step="1" value="0"/);
     assert.match(html, /id="listenerVolume" type="range" min="0" max="300" step="1" value="100"/);
     assert.match(html, /const selectedGain = Math\.min\(3, boostGain \* volumeGain\)/);
-    assert.match(html, /micGainEl\.value = micGainEl\.min/);
+    assert.match(html, /micGainEl\.value = "50"/);
 });
 
 test("audio-processing controls expose four levels with tested defaults", () => {
