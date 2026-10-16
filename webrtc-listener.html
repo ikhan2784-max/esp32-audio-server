@@ -1128,6 +1128,7 @@ function buildHealthCategories() {
   const deviceOnline = serverOnlineKnown ? device.device_connected :
     typeof d.signaling_connected === "boolean" ? d.signaling_connected :
       typeof healthEvidence.deviceSignaling === "boolean" ? healthEvidence.deviceSignaling : undefined;
+  const audioSessionConnected = d.peer_connected === true || device?.session_active === true;
   const taskStates = [d.audio_capture_running, d.dsp_running, d.webrtc_running];
   const taskStateText = (value) => value === true ? "running" :
     value === false ? "stopped" : "not reported";
@@ -1153,9 +1154,12 @@ function buildHealthCategories() {
       makeHealthItem("Clipping percentage", "Unsupported", "This firmware reports peak and limiter counters, but not a sample-rail count needed to calculate a percentage.", false),
       makeHealthItem("Silent/stuck microphone detection", "Unsupported", "No time-windowed stuck-sample detector is exposed yet.", false),
       makeHealthItem("DMA buffer overruns and underruns", "Unsupported", "The I²S driver does not expose DMA overrun/underrun counters; app buffer errors and drops are reported separately.", false),
-      makeHealthItem("Dropped audio samples", !hasData ? "Not Tested" :
-        healthCounterStatus([d.audio_buffer_overflows, d.dsp_input_underflows, d.dsp_output_overflows, d.opus_dropped_blocks, d.opus_dropped_frames], "Warning"),
-        hasData ? `Audio buffer ${d.audio_buffer_overflows ?? "n/a"} · DSP underflow/overflow ${d.dsp_input_underflows ?? "n/a"}/${d.dsp_output_overflows ?? "n/a"} · Opus drops ${d.opus_dropped_blocks ?? "n/a"}/${d.opus_dropped_frames ?? "n/a"}.` : "Drop counters are not available."),
+      makeHealthItem("Dropped audio samples", !hasData ? "Not Tested" : (() => {
+        const counters = [d.audio_buffer_overflows, d.dsp_input_underflows, d.dsp_output_overflows, d.opus_dropped_blocks];
+        if (audioSessionConnected) counters.push(d.audio_frames_dropped, d.opus_dropped_frames);
+        return healthCounterStatus(counters, "Warning");
+      })(),
+        hasData ? `Audio buffer ${d.audio_buffer_overflows ?? "n/a"} · DSP underflow/overflow ${d.dsp_input_underflows ?? "n/a"}/${d.dsp_output_overflows ?? "n/a"} · Opus PCM drops ${d.opus_dropped_blocks ?? "n/a"} · encoded/transport drops ${audioSessionConnected ? `${d.opus_dropped_frames ?? "n/a"}/${d.audio_frames_dropped ?? "n/a"}` : "not counted while no listener is connected"}.` : "Drop counters are not available."),
       makeHealthItem("Microphone self-test", "Not Tested", "The online check does not inject a test signal or consume the live audio stream.", false),
     ] },
     { name: "Audio DSP", items: [
@@ -2061,7 +2065,10 @@ function updateDeviceHealthScore(device, telemetry, fresh) {
   }
 
   const faultFields = ["audio_capture_errors", "audio_buffer_overflows", "dsp_errors",
-    "dsp_output_overflows", "audio_frames_dropped", "opus_dropped_frames"];
+    "dsp_output_overflows"];
+  if (telemetry.peer_connected === true || device?.session_active === true) {
+    faultFields.push("audio_frames_dropped", "opus_dropped_frames");
+  }
   const audioFaults = faultFields.reduce((sum, field) => {
     const count = Number(telemetry[field]);
     return sum + (Number.isFinite(count) && count > 0 ? count : 0);
