@@ -8,7 +8,7 @@ const MAX_CANDIDATE_CHARS = 2048;
 const SIGNAL_WINDOW_MS = 60 * 1000;
 const MAX_SIGNALS_PER_WINDOW = 120;
 const MAX_CONTROL_MESSAGES_PER_WINDOW = 60;
-const MIC_GAIN_MIN_PERCENT = 25;
+const MIC_GAIN_MIN_PERCENT = 0;
 const MIC_GAIN_MAX_PERCENT = 200;
 const AUDIO_MIC_MODES = new Set(["mic1", "mic2", "both_mono"]);
 const AUDIO_NS_LEVELS = new Set(["off", "low", "medium", "high"]);
@@ -121,6 +121,7 @@ function createWebRtcSignaling({
         lastSessionDurationMs: null,
         webrtcSessionsStarted: 0,
         webrtcSessionsEnded: 0,
+        recentEndedSessionIds: [],
         lastDeviceSeenAtMs: 0,
         telemetry: null,
         telemetryAt: 0,
@@ -152,6 +153,8 @@ function createWebRtcSignaling({
 
     function endSession(state, reason, except) {
         if (state.sessionId !== null) {
+            state.recentEndedSessionIds.push(state.sessionId);
+            if (state.recentEndedSessionIds.length > 4) state.recentEndedSessionIds.shift();
             const endedAtMs = Date.now();
             const message = { type: "webrtc_session_end", device_id: state.deviceId, session_id: state.sessionId, reason };
             if (state.device && state.device !== except) send(state.device, message);
@@ -162,6 +165,10 @@ function createWebRtcSignaling({
             state.sessionStartedAtMs = 0;
         }
         state.sessionId = null;
+    }
+
+    function isRecentlyEndedSession(state, sessionId) {
+        return typeof sessionId === "string" && state.recentEndedSessionIds.includes(sessionId);
     }
 
     function closeClient(ws, code, reason) {
@@ -308,8 +315,15 @@ function createWebRtcSignaling({
             ws.role === "webrtc_device" && ws.authenticated;
         const senderIsListener = !!state && ws === state.listener &&
             ws.role === "webrtc_listener" && ws.authenticated;
-        if ((!senderIsDevice && !senderIsListener) || state.sessionId === null ||
-            message.session_id !== state.sessionId) {
+        if (!senderIsDevice && !senderIsListener) {
+            fail(ws, "invalid_signaling_session");
+            return true;
+        }
+        if (state.sessionId === null || message.session_id !== state.sessionId) {
+            // A peer may emit final ICE candidates while esp_peer_close() is
+            // draining callbacks. Ignore only a session ID the server itself
+            // recently ended; arbitrary or forged IDs remain protocol errors.
+            if (senderIsDevice && isRecentlyEndedSession(state, message.session_id)) return true;
             fail(ws, "invalid_signaling_session");
             return true;
         }
@@ -438,7 +452,12 @@ function createWebRtcSignaling({
         const state = stateFor(ws);
         const senderIsDevice = !!state && ws === state.device &&
             ws.role === "webrtc_device" && ws.authenticated;
-        if (!senderIsDevice || state.sessionId === null || message.session_id !== state.sessionId) {
+        if (!senderIsDevice) {
+            fail(ws, "invalid_signaling_session");
+            return true;
+        }
+        if (state.sessionId === null || message.session_id !== state.sessionId) {
+            if (isRecentlyEndedSession(state, message.session_id)) return true;
             fail(ws, "invalid_signaling_session");
             return true;
         }
@@ -529,7 +548,12 @@ function createWebRtcSignaling({
         const state = stateFor(ws);
         const senderIsDevice = !!state && ws === state.device &&
             ws.role === "webrtc_device" && ws.authenticated;
-        if (!senderIsDevice || state.sessionId === null || message.session_id !== state.sessionId) {
+        if (!senderIsDevice) {
+            fail(ws, "invalid_signaling_session");
+            return true;
+        }
+        if (state.sessionId === null || message.session_id !== state.sessionId) {
+            if (isRecentlyEndedSession(state, message.session_id)) return true;
             fail(ws, "invalid_signaling_session");
             return true;
         }

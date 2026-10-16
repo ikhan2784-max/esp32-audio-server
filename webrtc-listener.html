@@ -111,7 +111,14 @@
     input[type="range"] { width:100%; accent-color:#178eff; }
     .volume-row input { margin:0; }
     .volume-row output { width:76px; color:#d8ecfa; text-align:right; font-size:.7rem; white-space:nowrap; }
-    .volume-scale { display:flex; justify-content:space-between; margin:3px 47px 0 26px; color:#819bae; font-size:.57rem; font-variant-numeric:tabular-nums; }
+    .volume-scale { display:flex; justify-content:space-between; margin:3px 8px 0; color:#819bae; font-size:.57rem; font-variant-numeric:tabular-nums; }
+    .range-ticks { display:grid; margin:3px 8px 0; color:#819bae; font-size:.57rem; font-variant-numeric:tabular-nums; }
+    .range-ticks-7 { grid-template-columns:repeat(7,minmax(0,1fr)); }
+    .range-ticks-9 { grid-template-columns:repeat(9,minmax(0,1fr)); }
+    .range-ticks-11 { grid-template-columns:repeat(11,minmax(0,1fr)); }
+    .range-ticks span { text-align:center; white-space:nowrap; }
+    .range-ticks span:first-child { text-align:left; }
+    .range-ticks span:last-child { text-align:right; }
     .settings-stack { display:grid; gap:9px; }
     .setting-group { padding:12px; border:1px solid var(--border); border-radius:14px; background:linear-gradient(150deg,#0c1e2c,#091723); }
     .setting-group h2 { margin:0 0 10px; color:#cce7f6; font-size:.75rem; letter-spacing:.05em; }
@@ -131,12 +138,18 @@
     .toggle span::before { content:""; position:absolute; width:15px; height:15px; left:2px; top:2px; border-radius:50%; background:#bfd0dc; transition:.15s; }
     .toggle input:checked + span { border-color:#1689e9; background:#0878df; }
     .toggle input:checked + span::before { left:18px; background:#fff; }
+    .gtcrn-toggle-group { display:flex; align-items:center; gap:9px; }
+    .gtcrn-toggle-group strong { min-width:2.1em; color:#8fb0c3; font-size:.66rem; text-align:right; }
+    .gtcrn-toggle-group:has(input:checked) strong { color:#65e7ae; }
+    .processing-subsection { margin-top:10px; padding-top:10px; border-top:1px solid #173044; }
+    .processing-subheading { margin:0 0 10px; color:#91b4c8; font-size:.63rem; letter-spacing:.08em; }
+    .browser-ai-subsection { margin-top:0; padding-top:0; border-top:0; }
     .gain-control { padding:0; margin:0; border:0; background:transparent; }
     .gain-heading { display:flex; justify-content:space-between; gap:10px; color:#e0edf4; font-size:.75rem; font-weight:700; }
     #micGain { width:100%; margin:12px 0 5px; }
     #playVolume { width:100%; margin:12px 0 5px; }
     #gtcrnBlend { width:100%; margin:12px 0 5px; }
-    .gain-control .volume-scale { margin-left:0; margin-right:85px; }
+    .gtcrn-scale { margin-inline:8px; }
     #micGainValue { color:#61bfff; font-variant-numeric:tabular-nums; }
     #gtcrnBlendValue { color:#61bfff; font-variant-numeric:tabular-nums; }
     #micGainStatus, #processingStatus, #audioSettingsStatus { display:block; min-height:1.2em; color:#8da6b7; font-size:.66rem; }
@@ -443,7 +456,7 @@
       .spec-card { min-width:0; padding:8px 3px; }
       .spec-card strong { overflow:hidden; font-size:clamp(.62rem,2.9vw,.76rem); text-overflow:ellipsis; white-space:nowrap; }
       .spec-card span { font-size:.5rem; letter-spacing:.035em; }
-      .volume-scale { margin-right:38px; font-size:.55rem; }
+      .volume-scale, .range-ticks { font-size:.52rem; }
       .diagnostic-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
       .metric { min-width:0; padding:10px; }
       .metric strong { font-size:.76rem; }
@@ -525,7 +538,7 @@
         <div class="volume-control">
           <label class="volume-row" for="listenerVolume"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M4 10v4h4l5 4V6l-5 4H4Z"/><path d="M17 9a5 5 0 0 1 0 6m2-9a9 9 0 0 1 0 12"/></svg><input id="listenerVolume" type="range" min="0" max="300" step="1" value="100" list="listenerVolumeMarks" aria-label="Listener playback volume; 100 percent is normal level"><output id="listenerVolumeValue">100% · 1.0×</output></label>
           <datalist id="listenerVolumeMarks"><option value="0"></option><option value="50"></option><option value="100"></option><option value="150"></option><option value="200"></option><option value="250"></option><option value="300"></option></datalist>
-          <div class="volume-scale" aria-hidden="true"><span>0%</span><span>50%</span><span>100%</span><span>150%</span><span>200%</span><span>250%</span><span>300%</span></div>
+          <div class="volume-scale range-ticks range-ticks-7" aria-hidden="true"><span>0%</span><span>50%</span><span>100%</span><span>150%</span><span>200%</span><span>250%</span><span>300%</span></div>
           <p class="helper">0% mutes playback, 100% is normal level, and higher values boost it up to 3×. Combined browser gain is capped at 3×.</p>
         </div>
       </section>
@@ -552,26 +565,30 @@
           <p class="helper">AGC is enabled by default. Turn it off to adjust the microphone gain slider manually.</p>
           <div class="gain-control">
           <label class="gain-heading" id="gainHeading" for="micGain"><span>Microphone gain</span><output id="micGainValue" for="micGain">50%</output></label>
-          <input id="micGain" type="range" min="25" max="200" step="5" value="50" disabled>
+          <input id="micGain" type="range" min="0" max="200" step="1" value="50" disabled>
+          <div class="range-ticks range-ticks-9" aria-hidden="true"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span><span>125%</span><span>150%</span><span>175%</span><span>200%</span></div>
           <span id="micGainStatus" role="status" aria-live="polite">AGC is on by default; post-DSP output gain starts at 50%. Disable AGC to adjust fixed gain manually.</span>
           <p class="helper">Session-only gain after the SNF DSP, before Opus. 100% is 1.0×. Higher settings may clip.</p>
         </div><div class="gain-control volume-control">
           <label class="gain-heading" for="playVolume"><span>Listener playback boost</span><output id="playVolumeValue">0% · 1.0×</output></label>
           <input id="playVolume" type="range" min="0" max="300" step="1" value="0" list="playVolumeMarks" aria-label="Listener playback boost; zero keeps the clean baseline">
           <datalist id="playVolumeMarks"><option value="0"></option><option value="50"></option><option value="100"></option><option value="150"></option><option value="200"></option><option value="250"></option><option value="300"></option></datalist>
-          <div class="volume-scale" aria-hidden="true"><span>0%</span><span>50%</span><span>100%</span><span>150%</span><span>200%</span><span>250%</span><span>300%</span></div>
+          <div class="volume-scale range-ticks range-ticks-7" aria-hidden="true"><span>0%</span><span>50%</span><span>100%</span><span>150%</span><span>200%</span><span>250%</span><span>300%</span></div>
           <p class="helper">0% adds no boost and preserves the clean 1× baseline. This control is independent of the Listener page volume; combined browser gain is capped at 3×.</p>
         </div></section>
         <section class="setting-group"><h2>AUDIO PROCESSING</h2>
-          <div class="setting-row"><span>Browser AI noise suppression (GTCRN)</span><strong id="gtcrnEnabledState" role="status" aria-live="polite">Enabled</strong></div>
+          <div class="processing-subsection browser-ai-subsection">
+          <div class="setting-row gtcrn-control-row"><span>Browser AI noise suppression (GTCRN)</span><span class="gtcrn-toggle-group"><strong id="gtcrnEnabledState" role="status" aria-live="polite">On</strong><label class="toggle" aria-label="Enable Browser AI noise suppression"><input id="gtcrnEnabled" type="checkbox" checked><span></span></label></span></div>
           <div class="gain-control">
             <label class="gain-heading" for="gtcrnBlend"><span>Suppression blend</span><output id="gtcrnBlendValue" for="gtcrnBlend">15%</output></label>
             <input id="gtcrnBlend" type="range" min="0" max="100" step="1" value="15" aria-label="GTCRN suppression blend, from original audio to processed audio">
+            <div class="range-ticks range-ticks-11" aria-hidden="true"><span>0%</span><span>10%</span><span>20%</span><span>30%</span><span>40%</span><span>50%</span><span>60%</span><span>70%</span><span>80%</span><span>90%</span><span>100%</span></div>
             <div class="volume-scale gtcrn-scale" aria-hidden="true"><span>Natural voice</span><span>Maximum cleanup</span></div>
             <div class="gtcrn-blend-summary"><strong>Selected configuration</strong><span id="gtcrnBlendSummary" aria-live="polite">Original audio: 85% · GTCRN processed audio: 15%</span></div>
             <span id="processingStatus" role="status" aria-live="polite">GTCRN blend 15% will activate when listening starts.</span>
             <p class="helper">0% plays the original audio directly. Higher values mix in more GTCRN output; 100% uses only the processed signal.</p>
-          </div>
+          </div></div>
+          <div class="processing-subsection"><h3 class="processing-subheading">ON-DEVICE PROCESSING</h3>
           <label class="gain-heading" for="hpfPreset"><span>High-pass filter preset</span></label>
           <select class="settings-select" id="hpfPreset" disabled>
             <option value="voice_clarity" selected>Voice clarity</option>
@@ -592,7 +609,7 @@
           <select class="settings-select" id="firmwareLimiter" disabled>
             <option value="off">Off</option><option value="low" selected>Low</option>
             <option value="medium">Medium</option><option value="high">High</option>
-          </select>
+          </select></div>
           <span id="audioSettingsStatus" role="status" aria-live="polite">Connect to the selected SNF device to change microphone mode and DSP controls.</span>
         </section>
         <section class="setting-group"><div class="setting-heading-row"><h2>SESSION TIMEOUT</h2><span id="sessionTimeoutTimer" class="session-countdown" aria-label="Time until automatic sign out">Checking…</span></div>
@@ -717,6 +734,7 @@ const micGainEl = document.getElementById("micGain");
 const micGainValueEl = document.getElementById("micGainValue");
 const micGainStatusEl = document.getElementById("micGainStatus");
 const autoGainEl = document.getElementById("autoGain");
+const gtcrnEnabledEl = document.getElementById("gtcrnEnabled");
 const gtcrnBlendEl = document.getElementById("gtcrnBlend");
 const gtcrnBlendValueEl = document.getElementById("gtcrnBlendValue");
 const gtcrnBlendSummaryEl = document.getElementById("gtcrnBlendSummary");
@@ -841,9 +859,13 @@ try {
       && Number.isInteger(savedGtcrnBlend) && savedGtcrnBlend >= 0 && savedGtcrnBlend <= 100) {
     gtcrnBlendEl.value = String(savedGtcrnBlend);
   }
+  const savedGtcrnEnabled = localStorage.getItem("snf-gtcrn-enabled");
+  if (savedGtcrnEnabled === "true" || savedGtcrnEnabled === "false") {
+    gtcrnEnabledEl.checked = savedGtcrnEnabled === "true";
+  }
 } catch {}
 updateGtcrnBlendDisplay();
-audioProcessingStatus = Number(gtcrnBlendEl.value) === 0
+audioProcessingStatus = !gtcrnEnabledEl.checked || Number(gtcrnBlendEl.value) === 0
   ? "GTCRN off · original WebRTC audio"
   : `GTCRN blend ${gtcrnBlendEl.value}% will activate when listening starts.`;
 processingStatusEl.textContent = audioProcessingStatus;
@@ -1444,7 +1466,7 @@ async function runHealthCheck() {
     const hasObservedLevel = Number.isFinite(observedLevel);
     logHealthResult(results, "Browser audio level", hasObservedLevel,
       hasObservedLevel ? `${formatAudioLevelDbfs(observedLevel)} at the ${noiseSuppressionActive ? "processed output" : "incoming audio"} meter` : "no current Web Audio level sample", !hasObservedLevel);
-    const blendPercent = Number(gtcrnBlendEl.value);
+    const blendPercent = gtcrnEnabledEl.checked ? Number(gtcrnBlendEl.value) : 0;
     logHealthResult(results, "Noise suppression", true,
       noiseSuppressionActive ? `GTCRN blend ${blendPercent}% active` : blendPercent > 0
         ? `GTCRN blend ${blendPercent}% selected; direct audio is currently active`
@@ -2454,7 +2476,7 @@ function refreshAudioSettingsAvailability() {
   firmwareLimiterEl.disabled = !available;
   autoGainEl.disabled = !available;
   hpfPresetEl.disabled = !available;
-  gtcrnBlendEl.disabled = false;
+  gtcrnBlendEl.disabled = !gtcrnEnabledEl.checked;
   refreshMicGainAvailability();
   if (!available) {
     audioSettingsStatusEl.textContent = "Connect to the selected SNF to change microphone mode, AGC, filter preset, or DSP controls.";
@@ -2624,11 +2646,13 @@ function syncPlaybackGain() {
 
 function updateGtcrnBlendDisplay() {
   if (!gtcrnBlendEl) return;
-  const processedPercent = Math.max(0, Math.min(100, Number(gtcrnBlendEl.value) || 0));
+  const selectedPercent = Math.max(0, Math.min(100, Number(gtcrnBlendEl.value) || 0));
+  const processedPercent = gtcrnEnabledEl.checked ? selectedPercent : 0;
   const originalPercent = 100 - processedPercent;
-  gtcrnBlendValueEl.value = `${processedPercent}%`;
+  gtcrnBlendValueEl.value = `${selectedPercent}%`;
   gtcrnBlendSummaryEl.textContent = `Original audio: ${originalPercent}% · GTCRN processed audio: ${processedPercent}%`;
-  gtcrnEnabledStateEl.textContent = processedPercent > 0 ? "Enabled" : "Off";
+  gtcrnEnabledStateEl.textContent = gtcrnEnabledEl.checked ? "On" : "Off";
+  gtcrnBlendEl.disabled = !gtcrnEnabledEl.checked;
 }
 
 function setGtcrnBlendMix(processedPercent) {
@@ -2679,7 +2703,7 @@ audioEl.addEventListener("volumechange", syncPlaybackGain);
 function refreshAudioProcessingStatus() {
   const hasLiveTrack = remoteStream && remoteStream.getAudioTracks().some((track) => track.readyState === "live");
   const sampleRate = audioContext ? `${audioContext.sampleRate / 1000} kHz` : "";
-  const processedPercent = Number(gtcrnBlendEl.value);
+  const processedPercent = gtcrnEnabledEl.checked ? Number(gtcrnBlendEl.value) : 0;
   const blendDescription = `${100 - processedPercent}% original · ${processedPercent}% processed`;
   if (processedPercent === 0) {
     setAudioProcessingStatus(hasLiveTrack
@@ -2781,7 +2805,7 @@ function enableNoiseSuppression() {
   }
   const initialization = (async () => {
     await prepareAudioOutput();
-    if (Number(gtcrnBlendEl.value) <= 0) {
+    if (!gtcrnEnabledEl.checked || Number(gtcrnBlendEl.value) <= 0) {
       disableNoiseSuppression();
       return;
     }
@@ -2793,7 +2817,7 @@ function enableNoiseSuppression() {
       await audioContext.audioWorklet.addModule("/audio-suppressor/gtcrn/workletProcessor.js");
       gtcrnWorkletLoaded = true;
     }
-    if (!listenerActive || Number(gtcrnBlendEl.value) <= 0) {
+    if (!listenerActive || !gtcrnEnabledEl.checked || Number(gtcrnBlendEl.value) <= 0) {
       disableNoiseSuppression();
       return;
     }
@@ -2838,7 +2862,7 @@ function enableNoiseSuppression() {
       disableNoiseSuppression();
       return;
     }
-    if (Number(gtcrnBlendEl.value) <= 0) {
+    if (!gtcrnEnabledEl.checked || Number(gtcrnBlendEl.value) <= 0) {
       setGtcrnBlendMix(0);
       noiseSuppressionActive = false;
       refreshAudioProcessingStatus();
@@ -2883,9 +2907,11 @@ function disableNoiseSuppression() {
 }
 
 function restoreDirectAudio(message) {
-  gtcrnBlendEl.value = "0";
+  gtcrnEnabledEl.checked = false;
+  gtcrnEnabledStateEl.textContent = "Off";
+  gtcrnBlendEl.disabled = true;
   updateGtcrnBlendDisplay();
-  try { localStorage.setItem("snf-gtcrn-blend-percent", "0"); } catch {}
+  try { localStorage.setItem("snf-gtcrn-enabled", "false"); } catch {}
   disableNoiseSuppression();
   if (remoteStream) {
     if (audioContext && playbackGain) {
@@ -3017,7 +3043,8 @@ async function updateMediaStatus(targetPeer) {
     : "no inbound audio RTP packets";
   const processing = noiseSuppressionActive
     ? (packets > 0 ? `GTCRN blend ${gtcrnBlendEl.value}% active` : `GTCRN blend ${gtcrnBlendEl.value}% ready; no audio packets received`)
-    : Number(gtcrnBlendEl.value) > 0 ? `GTCRN blend ${gtcrnBlendEl.value}% selected; inactive` : "noise suppression off";
+    : gtcrnEnabledEl.checked && Number(gtcrnBlendEl.value) > 0
+      ? `GTCRN blend ${gtcrnBlendEl.value}% selected; inactive` : "noise suppression off";
   mediaStatusEl.textContent = `Audio: track ${trackState}; ${receiveState}; ${playbackState}; ${processing}${graphLevels}${silentFilterWarning}${silentInputWarning}${jitterBuffer}${decoderStatus}.`;
 }
 
@@ -3580,7 +3607,7 @@ async function startListening() {
   try {
     await prepareAudioOutput();
     if (startAttempt !== listenerStartAttempt || !listenerActive) return;
-    if (Number(gtcrnBlendEl.value) > 0) await enableNoiseSuppression();
+    if (gtcrnEnabledEl.checked && Number(gtcrnBlendEl.value) > 0) await enableNoiseSuppression();
     else disableNoiseSuppression();
   } catch (error) {
     if (startAttempt !== listenerStartAttempt || !listenerActive) {
@@ -3662,7 +3689,7 @@ gtcrnBlendEl.addEventListener("input", () => {
     if (gtcrnDisableTimer) window.clearTimeout(gtcrnDisableTimer);
     gtcrnDisableTimer = window.setTimeout(() => {
       gtcrnDisableTimer = null;
-      if (Number(gtcrnBlendEl.value) === 0) disableNoiseSuppression();
+      if (gtcrnEnabledEl.checked && Number(gtcrnBlendEl.value) === 0) disableNoiseSuppression();
     }, 90);
     return;
   }
@@ -3680,8 +3707,40 @@ gtcrnBlendEl.addEventListener("input", () => {
 });
 
 gtcrnBlendEl.addEventListener("change", async () => {
-  if (Number(gtcrnBlendEl.value) === 0 || !listenerActive || !audioContext
+  if (!gtcrnEnabledEl.checked || Number(gtcrnBlendEl.value) === 0 || !listenerActive || !audioContext
       || (noiseSuppressionActive && gtcrnNode && gtcrnGraphConnected)) return;
+  try {
+    await enableNoiseSuppression();
+  } catch (error) {
+    restoreDirectAudio(`AI noise suppression unavailable; continuing with direct audio. ${error.message}`);
+  }
+});
+
+gtcrnEnabledEl.addEventListener("change", async () => {
+  const enabled = gtcrnEnabledEl.checked;
+  try { localStorage.setItem("snf-gtcrn-enabled", String(enabled)); } catch {}
+  updateGtcrnBlendDisplay();
+  if (gtcrnDisableTimer) {
+    window.clearTimeout(gtcrnDisableTimer);
+    gtcrnDisableTimer = null;
+  }
+  if (!enabled) {
+    setGtcrnBlendMix(0);
+    noiseSuppressionActive = false;
+    silentInputSinceMs = null;
+    refreshAudioProcessingStatus();
+    gtcrnDisableTimer = window.setTimeout(() => {
+      gtcrnDisableTimer = null;
+      if (!gtcrnEnabledEl.checked) disableNoiseSuppression();
+    }, 90);
+    return;
+  }
+  if (!listenerActive || Number(gtcrnBlendEl.value) === 0) {
+    setGtcrnBlendMix(0);
+    noiseSuppressionActive = false;
+    refreshAudioProcessingStatus();
+    return;
+  }
   try {
     await enableNoiseSuppression();
   } catch (error) {
