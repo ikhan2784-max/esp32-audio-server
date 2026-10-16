@@ -20,7 +20,13 @@
                 window.location.replace("/");
                 return;
             }
-            if (response.ok) lastSuccessfulRefresh = Date.now();
+            if (response.ok) {
+                lastSuccessfulRefresh = Date.now();
+                const session = await response.json().catch(() => null);
+                if (session) {
+                    window.dispatchEvent(new CustomEvent("sessionactivity", { detail: session }));
+                }
+            }
         } catch {
             // A later user action or active-listener heartbeat can retry.
         } finally {

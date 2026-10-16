@@ -116,9 +116,19 @@ function createWebRtcSignaling({
         device: null,
         listener: null,
         sessionId: null,
+        sessionStartedAtMs: 0,
+        lastSessionStartedAtMs: 0,
+        lastSessionDurationMs: null,
+        webrtcSessionsStarted: 0,
+        webrtcSessionsEnded: 0,
+        lastDeviceSeenAtMs: 0,
         telemetry: null,
         telemetryAt: 0,
     }]));
+
+    function timestampOrNull(value) {
+        return Number.isFinite(value) && value > 0 ? new Date(value).toISOString() : null;
+    }
 
     function send(ws, value) {
         if (!ws || ws.readyState !== WebSocket.OPEN ||
@@ -142,9 +152,14 @@ function createWebRtcSignaling({
 
     function endSession(state, reason, except) {
         if (state.sessionId !== null) {
+            const endedAtMs = Date.now();
             const message = { type: "webrtc_session_end", device_id: state.deviceId, session_id: state.sessionId, reason };
             if (state.device && state.device !== except) send(state.device, message);
             if (state.listener && state.listener !== except) send(state.listener, message);
+            state.webrtcSessionsEnded++;
+            state.lastSessionDurationMs = state.sessionStartedAtMs > 0
+                ? Math.max(0, endedAtMs - state.sessionStartedAtMs) : null;
+            state.sessionStartedAtMs = 0;
         }
         state.sessionId = null;
     }
@@ -159,6 +174,9 @@ function createWebRtcSignaling({
             return;
         }
         state.sessionId = crypto.randomUUID();
+        state.sessionStartedAtMs = Date.now();
+        state.lastSessionStartedAtMs = state.sessionStartedAtMs;
+        state.webrtcSessionsStarted++;
         const message = {
             type: "webrtc_session_ready",
             device_id: state.deviceId,
@@ -190,9 +208,18 @@ function createWebRtcSignaling({
         }
         if (state.device && state.device !== ws) {
             endSession(state, "device_replaced", state.device);
+            state.lastDeviceSeenAtMs = Math.max(
+                state.lastDeviceSeenAtMs,
+                Number.isFinite(state.device.lastPongAt) ? state.device.lastPongAt : 0,
+                state.telemetryAt
+            );
             closeClient(state.device, 1012, "Device session replaced");
         }
         state.device = ws;
+        state.lastDeviceSeenAtMs = Math.max(
+            state.lastDeviceSeenAtMs,
+            Number.isFinite(ws.lastPongAt) ? ws.lastPongAt : Date.now()
+        );
         ws.deviceId = deviceId;
         ws.role = "webrtc_device";
         ws.authenticated = true;
@@ -668,6 +695,11 @@ function createWebRtcSignaling({
         const state = stateFor(ws);
         if (!state) return;
         if (ws === state.device) {
+            state.lastDeviceSeenAtMs = Math.max(
+                state.lastDeviceSeenAtMs,
+                Number.isFinite(ws.lastPongAt) ? ws.lastPongAt : 0,
+                state.telemetryAt
+            );
             endSession(state, "device_disconnected", ws);
             state.device = null;
             send(state.listener, {
@@ -695,10 +727,23 @@ function createWebRtcSignaling({
         }
         if (state.device && !isConnectionAlive(state.device)) handleClose(state.device);
         if (state.listener && !isConnectionAlive(state.listener)) handleClose(state.listener);
+        const deviceConnected = isConnectionAlive(state.device);
+        const listenerConnected = isConnectionAlive(state.listener);
+        const lastSeenAtMs = deviceConnected
+            ? Math.max(state.lastDeviceSeenAtMs, Number.isFinite(state.device.lastPongAt) ? state.device.lastPongAt : 0, state.telemetryAt)
+            : Math.max(state.lastDeviceSeenAtMs, state.telemetryAt);
         const result = {
-            device_connected: isConnectionAlive(state.device),
-            listener_connected: isConnectionAlive(state.listener),
+            device_connected: deviceConnected,
+            listener_connected: listenerConnected,
+            listener_count: listenerConnected ? 1 : 0,
             session_active: state.sessionId !== null,
+            connected_at: deviceConnected ? timestampOrNull(state.device.connectedAt) : null,
+            last_seen: timestampOrNull(lastSeenAtMs),
+            webrtc_sessions_started: state.webrtcSessionsStarted,
+            webrtc_sessions_ended: state.webrtcSessionsEnded,
+            last_session_started_at: timestampOrNull(state.lastSessionStartedAtMs),
+            last_session_duration_ms: state.sessionId !== null && state.sessionStartedAtMs > 0
+                ? Math.max(0, Date.now() - state.sessionStartedAtMs) : state.lastSessionDurationMs,
         };
         if (state.telemetry && Date.now() - state.telemetryAt <= TELEMETRY_MAX_AGE_MS) {
             const telemetryAgeMs = Math.max(0, Date.now() - state.telemetryAt);

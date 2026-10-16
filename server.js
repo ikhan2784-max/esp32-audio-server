@@ -252,14 +252,23 @@ app.post("/api/session/activity", requireHttps, requireSameOrigin, (req, res) =>
     if (!authState.touchSession(sessionId)) {
         return res.status(401).json({ ok: false, error: "Session expired" });
     }
-    return res.json({ ok: true });
+    const session = authState.getSession(sessionId);
+    return res.json({
+        ok: true,
+        timeout_minutes: session.timeoutMinutes,
+        idle_expires_at_ms: session.idleTimeoutMs === 0 ? null : session.expiresAt,
+    });
 });
 
 app.get("/api/session/settings", requireHttps, (req, res) => {
     res.setHeader("Cache-Control", "no-store");
     const session = getSession(req);
     if (!session) return res.status(401).json({ ok: false, error: "Unauthorized" });
-    return res.json({ ok: true, timeout_minutes: session.timeoutMinutes ?? 30 });
+    return res.json({
+        ok: true,
+        timeout_minutes: session.timeoutMinutes ?? 30,
+        idle_expires_at_ms: session.idleTimeoutMs === 0 ? null : session.expiresAt,
+    });
 });
 
 app.post("/api/session/timeout", requireHttps, requireSameOrigin, (req, res) => {
@@ -279,7 +288,12 @@ app.post("/api/session/timeout", requireHttps, requireSameOrigin, (req, res) => 
         : Math.floor(SESSION_DURATION_MS / 1000);
     res.setHeader("Set-Cookie",
         `${SESSION_COOKIE_NAME}=${encodeURIComponent(sessionId)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAgeSeconds}`);
-    return res.json({ ok: true, timeout_minutes: timeoutMinutes });
+    const session = authState.getSession(sessionId);
+    return res.json({
+        ok: true,
+        timeout_minutes: timeoutMinutes,
+        idle_expires_at_ms: session && session.idleTimeoutMs !== 0 ? session.expiresAt : null,
+    });
 });
 
 app.get("/session-activity.js", requireHttps, (req, res) => {
