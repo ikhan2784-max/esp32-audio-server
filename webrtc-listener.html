@@ -478,7 +478,7 @@
       </div>
       <div class="header-status" aria-label="Device and audio status">
         <div id="deviceOnlinePill" class="device-pill" role="status" aria-label="ESP32 device connection status"><i class="status-dot" aria-hidden="true"></i><span id="deviceStatusLabel">CHECKING</span></div>
-        <span id="playbackTimer" class="activity-timer" aria-label="Audio playback elapsed time" title="Audio playback time" hidden>PLAY 00:00</span>
+        <span id="listeningTimer" class="activity-timer" aria-label="Listening session elapsed time" title="Listening session duration" hidden>LISTEN 00:00</span>
       </div>
       <small id="deviceSelectStatus" class="hidden-audio-label" role="status" aria-live="polite">Choose which ESP32 supplies the listener audio.</small>
     </header>
@@ -726,7 +726,7 @@ const logListEl = document.getElementById("logList");
 const logCountEl = document.getElementById("logCount");
 const deviceOnlinePill = document.getElementById("deviceOnlinePill");
 const deviceStatusLabel = document.getElementById("deviceStatusLabel");
-const playbackTimerEl = document.getElementById("playbackTimer");
+const listeningTimerEl = document.getElementById("listeningTimer");
 const recordingTimerEl = document.getElementById("recordingTimer");
 const runHealthCheckButton = document.getElementById("runHealthCheck");
 const healthCheckStatusEl = document.getElementById("healthCheckStatus");
@@ -826,9 +826,9 @@ audioProcessingStatus = gtcrnLevelEl.value === "off"
   ? "Browser AI noise suppression off · waiting for audio"
   : `GTCRN ${gtcrnLevelEl.value} will activate when listening starts.`;
 processingStatusEl.textContent = audioProcessingStatus;
-let playbackElapsedMs = 0;
-let playbackStartedAtMs = 0;
-let playbackTimerInterval = null;
+let listeningElapsedMs = 0;
+let listeningStartedAtMs = 0;
+let listeningTimerInterval = null;
 let healthCheckRunning = false;
 let latestHealthSnapshot = null;
 let latestHealthSnapshotAt = 0;
@@ -1390,7 +1390,7 @@ async function runHealthCheck() {
     addLog("Full device, Render, WebRTC and browser health check started", "info", "health", "Health");
 
   try {
-    const requiredIds = ["deviceOnlinePill", "playbackTimer", "deviceSelect", "start", "audio", "record", "recordingTimer", "panel-logs", "runHealthCheck", "healthCheckStatus"];
+    const requiredIds = ["deviceOnlinePill", "listeningTimer", "deviceSelect", "start", "audio", "record", "recordingTimer", "panel-logs", "runHealthCheck", "healthCheckStatus"];
     const missingIds = requiredIds.filter((id) => !document.getElementById(id));
     logHealthResult(results, "Listener UI", missingIds.length === 0,
       missingIds.length ? `missing controls: ${missingIds.join(", ")}` : "required controls are present");
@@ -2404,43 +2404,29 @@ function hasLiveAudioTrack() {
   return Boolean(remoteStream && remoteStream.getAudioTracks().some((track) => track.readyState === "live"));
 }
 
-function refreshPlaybackTimerText() {
-  const elapsed = playbackElapsedMs + (playbackStartedAtMs ? performance.now() - playbackStartedAtMs : 0);
-  playbackTimerEl.textContent = `PLAY ${formatElapsedClock(elapsed)}`;
+function refreshListeningTimerText() {
+  const elapsed = listeningElapsedMs + (listeningStartedAtMs ? performance.now() - listeningStartedAtMs : 0);
+  listeningTimerEl.textContent = `LISTEN ${formatElapsedClock(elapsed)}`;
 }
 
-function startPlaybackTimer() {
-  if (!hasLiveAudioTrack() || audioEl.paused || audioEl.ended) return;
-  if (!playbackStartedAtMs) playbackStartedAtMs = performance.now();
-  playbackTimerEl.hidden = false;
-  refreshPlaybackTimerText();
-  if (!playbackTimerInterval) {
-    playbackTimerInterval = window.setInterval(() => {
-      if (!hasLiveAudioTrack() || audioEl.paused || audioEl.ended) {
-        pausePlaybackTimer();
-        return;
-      }
-      refreshPlaybackTimerText();
-    }, 250);
+function startListeningTimer() {
+  stopListeningTimer();
+  listeningElapsedMs = 0;
+  listeningStartedAtMs = performance.now();
+  listeningTimerEl.hidden = false;
+  refreshListeningTimerText();
+  listeningTimerInterval = window.setInterval(refreshListeningTimerText, 250);
+}
+
+function stopListeningTimer() {
+  if (listeningStartedAtMs) {
+    listeningElapsedMs += performance.now() - listeningStartedAtMs;
+    listeningStartedAtMs = 0;
   }
-  setState("Audio is playing");
-}
-
-function pausePlaybackTimer() {
-  if (playbackStartedAtMs) {
-    playbackElapsedMs += performance.now() - playbackStartedAtMs;
-    playbackStartedAtMs = 0;
-  }
-  if (playbackTimerInterval) window.clearInterval(playbackTimerInterval);
-  playbackTimerInterval = null;
-  playbackTimerEl.hidden = true;
-  refreshPlaybackTimerText();
-}
-
-function resetPlaybackTimer() {
-  pausePlaybackTimer();
-  playbackElapsedMs = 0;
-  refreshPlaybackTimerText();
+  if (listeningTimerInterval) window.clearInterval(listeningTimerInterval);
+  listeningTimerInterval = null;
+  listeningTimerEl.hidden = true;
+  refreshListeningTimerText();
 }
 
 function refreshRecordingTimerText() {
@@ -2498,18 +2484,15 @@ audioEl.addEventListener("play", () => {
   }
   if (hasLiveAudioTrack()) setState("Audio ready — buffering");
 });
-audioEl.addEventListener("playing", startPlaybackTimer);
+audioEl.addEventListener("playing", () => setState("Audio is playing"));
 audioEl.addEventListener("waiting", () => {
-  pausePlaybackTimer();
   if (listenerActive && hasLiveAudioTrack()) setState("Audio buffering…");
 });
 audioEl.addEventListener("pause", () => {
-  pausePlaybackTimer();
   syncPlaybackGain();
   if (listenerActive && hasLiveAudioTrack()) setState("Audio ready — press play");
 });
 audioEl.addEventListener("ended", () => {
-  pausePlaybackTimer();
   if (listenerActive && hasLiveAudioTrack()) setState("Audio ready — press play");
 });
 audioEl.addEventListener("volumechange", syncPlaybackGain);
@@ -2875,7 +2858,6 @@ function closePeer() {
     mediaStreamSource = null;
   }
   remoteStream = null;
-  resetPlaybackTimer();
   syncRecordButton();
   if (!recordingFinalizing) recordStatusEl.textContent = "Connect to audio to record a WAV file.";
   audioEl.pause();
@@ -2920,6 +2902,7 @@ function connectSocket() {
       errorEl.textContent = message.reason || "Signaling rejected";
       if (message.reason === "listener_busy") {
         listenerActive = false;
+        stopListeningTimer();
         listenerStartAttempt++;
         window.setListenerActive(false);
         setListenButtonActive(false);
@@ -2929,6 +2912,7 @@ function connectSocket() {
       }
       if (message.reason === "listener_session_required" || message.reason === "listener_session_expired") {
         listenerActive = false;
+        stopListeningTimer();
         listenerStartAttempt++;
         window.setListenerActive(false);
         setListenButtonActive(false);
@@ -3042,20 +3026,17 @@ async function createPeer() {
     }
   };
   peer.ontrack = async (event) => {
-    resetPlaybackTimer();
     remoteStream = event.streams && event.streams[0]
       ? event.streams[0]
       : new MediaStream([event.track]);
     for (const track of remoteStream.getAudioTracks()) {
       track.addEventListener("mute", () => {
-        pausePlaybackTimer();
         if (listenerActive) setState("Audio buffering…");
       });
       track.addEventListener("unmute", () => {
-        if (!audioEl.paused && !audioEl.ended) startPlaybackTimer();
+        if (listenerActive) setState("Audio is playing");
       });
       track.addEventListener("ended", () => {
-        pausePlaybackTimer();
         if (recordingActive) stopRecording();
         syncRecordButton();
         if (listenerActive) setState("Audio track ended — reconnecting");
@@ -3356,6 +3337,7 @@ async function startListening() {
   const startAttempt = ++listenerStartAttempt;
   manualStop = false;
   listenerActive = true;
+  startListeningTimer();
   window.setListenerActive(true);
   setListenButtonActive(true);
   errorEl.textContent = "";
@@ -3385,6 +3367,7 @@ function stopListening() {
   listenerStartAttempt++;
   manualStop = true;
   listenerActive = false;
+  stopListeningTimer();
   window.setListenerActive(false);
   if (reconnectTimer) clearTimeout(reconnectTimer);
   reconnectTimer = null;
@@ -3543,6 +3526,7 @@ window.addEventListener("pagehide", () => {
   listenerStartAttempt++;
   manualStop = true;
   listenerActive = false;
+  stopListeningTimer();
   window.setListenerActive(false);
   if (socket) socket.close(1000, "Page closed");
   if (appStatusTimer) clearInterval(appStatusTimer);
