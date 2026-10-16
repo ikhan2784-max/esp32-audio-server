@@ -817,6 +817,7 @@ let lastHealthScoreLogKey = null;
 const previousHealthHeapByDevice = new Map();
 let previousTransportHealthDeviceId = "";
 let previousTransportHealthState = null;
+let latestActiveTransportDropObservation = null;
 let lastLoggedAudioProfile = null;
 let pendingAudioProfileHz = null;
 let pendingAudioProfileTimer = null;
@@ -1118,6 +1119,15 @@ function healthCounterStatus(values, positiveStatus) {
   return reported.length === counters.length ? "Healthy" : "Not Tested";
 }
 
+function droppedAudioHealthStatus(data, activeTransportDrops) {
+  const counters = [data?.audio_buffer_overflows, data?.dsp_input_underflows,
+    data?.dsp_output_overflows, data?.opus_dropped_blocks];
+  if (data?.peer_connected === true && Number.isFinite(activeTransportDrops)) {
+    counters.push(activeTransportDrops);
+  }
+  return healthCounterStatus(counters, "Warning");
+}
+
 function historicalNetworkStatus(data) {
   if (!data || typeof data.wifi_connected !== "boolean") return "Not Tested";
   // Retry/disconnect totals are cumulative since boot. A prior recovery is not
@@ -1179,7 +1189,10 @@ function buildHealthCategories() {
   const deviceOnline = serverOnlineKnown ? device.device_connected :
     typeof d.signaling_connected === "boolean" ? d.signaling_connected :
       typeof healthEvidence.deviceSignaling === "boolean" ? healthEvidence.deviceSignaling : undefined;
-  const audioSessionConnected = d.peer_connected === true || device?.session_active === true;
+  const transportObservation = latestActiveTransportDropObservation?.deviceId === selectedDeviceId
+    ? latestActiveTransportDropObservation : null;
+  const activeTransportDrops = d.peer_connected === true && transportObservation?.peerConnected === true
+    ? transportObservation.dropped : null;
   const taskStates = [d.audio_capture_running, d.dsp_running, d.webrtc_running];
   const taskStateText = (value) => value === true ? "running" :
     value === false ? "stopped" : "not reported";
@@ -1205,12 +1218,9 @@ function buildHealthCategories() {
       makeHealthItem("Clipping percentage", "Unsupported", "This firmware reports peak and limiter counters, but not a sample-rail count needed to calculate a percentage.", false),
       makeHealthItem("Silent/stuck microphone detection", "Unsupported", "No time-windowed stuck-sample detector is exposed yet.", false),
       makeHealthItem("DMA buffer overruns and underruns", "Unsupported", "The I²S driver does not expose DMA overrun/underrun counters; app buffer errors and drops are reported separately.", false),
-      makeHealthItem("Dropped audio samples", !hasData ? "Not Tested" : (() => {
-        const counters = [d.audio_buffer_overflows, d.dsp_input_underflows, d.dsp_output_overflows, d.opus_dropped_blocks];
-        if (audioSessionConnected) counters.push(d.audio_frames_dropped, d.opus_dropped_frames);
-        return healthCounterStatus(counters, "Warning");
-      })(),
-        hasData ? `Audio buffer ${d.audio_buffer_overflows ?? "n/a"} · DSP underflow/overflow ${d.dsp_input_underflows ?? "n/a"}/${d.dsp_output_overflows ?? "n/a"} · Opus PCM drops ${d.opus_dropped_blocks ?? "n/a"} · encoded/transport drops ${audioSessionConnected ? `${d.opus_dropped_frames ?? "n/a"}/${d.audio_frames_dropped ?? "n/a"}` : "not counted while no listener is connected"}.` : "Drop counters are not available."),
+      makeHealthItem("Dropped audio samples", !hasData ? "Not Tested" :
+        droppedAudioHealthStatus(d, activeTransportDrops),
+        hasData ? `Audio buffer ${d.audio_buffer_overflows ?? "n/a"} · DSP underflow/overflow ${d.dsp_input_underflows ?? "n/a"}/${d.dsp_output_overflows ?? "n/a"} · Opus PCM drops ${d.opus_dropped_blocks ?? "n/a"} · encoded queue drops since boot ${d.opus_dropped_frames ?? "n/a"} (may include idle drops before a peer connected) · WebRTC send drops since boot ${d.audio_frames_dropped ?? "n/a"}${d.peer_connected === true ? ` · new active-peer drops since latest telemetry ${activeTransportDrops ?? "baseline pending"}` : " · no active WebRTC peer; lifetime transport counters are informational"}.` : "Drop counters are not available."),
       makeHealthItem("Microphone self-test", "Not Tested", "The online check does not inject a test signal or consume the live audio stream.", false),
     ] },
     { name: "Audio DSP", items: [
@@ -1294,7 +1304,7 @@ function buildHealthCategories() {
         rtpAvailable ? `${browser.packetsReceived} received RTP packet(s) · ${browser.bytesReceived ?? "n/a"} byte(s).` : "Browser inbound RTP counters are unavailable.", Boolean(listenerActive)),
       makeHealthItem("Transport packet loss and jitter", !rtpAvailable ? "Not Tested" :
         Number(browser.packetsLost || 0) > 0 ? "Warning" : "Healthy",
-        rtpAvailable ? `${browser.packetsLost || 0} reported lost packet(s) · ${Number.isFinite(browser.jitterMs) ? `${browser.jitterMs.toFixed(1)} ms jitter` : "jitter unavailable"}.` : "Browser receiver statistics are unavailable.", Boolean(listenerActive)),
+        rtpAvailable ? `${Math.floor(browser.packetsReceived || 0).toLocaleString()} received · ${Math.floor(browser.packetsLost || 0).toLocaleString()} lost${Number.isFinite(browser.packetLossPercent) ? ` (${browser.packetLossPercent.toFixed(2)}% of received + lost)` : ""}${Number.isFinite(browser.packetsDiscarded) ? ` · ${Math.floor(browser.packetsDiscarded)} discarded` : ""} · ${Number.isFinite(browser.jitterMs) ? `${browser.jitterMs.toFixed(1)} ms RTP jitter` : "jitter unavailable"}${Number.isFinite(browser.concealedSamples) ? ` · ${Math.floor(browser.concealedSamples).toLocaleString()} concealed samples in ${Math.floor(browser.concealmentEvents || 0)} event(s)${Number.isFinite(browser.silentConcealedSamples) ? ` (${Math.floor(browser.silentConcealedSamples)} silent)` : ""}` : ""}${Number.isFinite(browser.jitterBufferAverageMs) ? ` · jitter buffer avg ${Math.round(browser.jitterBufferAverageMs)} ms (target ${Number.isFinite(browser.jitterBufferTargetAverageMs) ? `${Math.round(browser.jitterBufferTargetAverageMs)} ms` : "n/a"})` : ""}.` : "Browser receiver statistics are unavailable.", Boolean(listenerActive)),
       makeHealthItem("End-to-end latency estimate", !Number.isFinite(browser?.rttMs) ? "Not Tested" : "Healthy",
         Number.isFinite(browser?.rttMs) ? `Selected ICE pair RTT ${browser.rttMs.toFixed(1)} ms; one-way latency is not directly measured.` : "No selected-candidate RTT measurement is available.", false),
       makeHealthItem("Listener track and playback started", !listenerActive ? "Not Tested" :
@@ -1470,7 +1480,14 @@ async function getBrowserHealthStats() {
     packetsReceived: null,
     bytesReceived: null,
     packetsLost: null,
+    packetLossPercent: null,
+    packetsDiscarded: null,
+    concealedSamples: null,
+    silentConcealedSamples: null,
+    concealmentEvents: null,
     jitterMs: null,
+    jitterBufferAverageMs: null,
+    jitterBufferTargetAverageMs: null,
     rttMs: null,
     candidatePair: null,
   };
@@ -1490,8 +1507,24 @@ async function getBrowserHealthStats() {
     if (inbound) {
       snapshot.packetsReceived = Number.isFinite(inbound.packetsReceived) ? inbound.packetsReceived : null;
       snapshot.bytesReceived = Number.isFinite(inbound.bytesReceived) ? inbound.bytesReceived : null;
-      snapshot.packetsLost = Number.isFinite(inbound.packetsLost) ? inbound.packetsLost : null;
+      snapshot.packetsLost = Number.isFinite(inbound.packetsLost) ? Math.max(0, inbound.packetsLost) : null;
+      snapshot.packetsDiscarded = Number.isFinite(inbound.packetsDiscarded) ? inbound.packetsDiscarded : null;
+      snapshot.concealedSamples = Number.isFinite(inbound.concealedSamples) ? inbound.concealedSamples : null;
+      snapshot.silentConcealedSamples = Number.isFinite(inbound.silentConcealedSamples) ? inbound.silentConcealedSamples : null;
+      snapshot.concealmentEvents = Number.isFinite(inbound.concealmentEvents) ? inbound.concealmentEvents : null;
       snapshot.jitterMs = Number.isFinite(inbound.jitter) ? inbound.jitter * 1000 : null;
+      const packetTotal = (snapshot.packetsReceived || 0) + (snapshot.packetsLost || 0);
+      snapshot.packetLossPercent = packetTotal > 0 && Number.isFinite(snapshot.packetsLost)
+        ? 100 * snapshot.packetsLost / packetTotal : null;
+      const emitted = inbound.jitterBufferEmittedCount;
+      if (Number.isFinite(emitted) && emitted > 0) {
+        if (Number.isFinite(inbound.jitterBufferDelay)) {
+          snapshot.jitterBufferAverageMs = inbound.jitterBufferDelay * 1000 / emitted;
+        }
+        if (Number.isFinite(inbound.jitterBufferTargetDelay)) {
+          snapshot.jitterBufferTargetAverageMs = inbound.jitterBufferTargetDelay * 1000 / emitted;
+        }
+      }
     }
     if (selectedPair) {
       snapshot.rttMs = Number.isFinite(selectedPair.currentRoundTripTime) ? selectedPair.currentRoundTripTime * 1000 : null;
@@ -2112,6 +2145,7 @@ function updateDeviceHealthScore(device, telemetry, fresh) {
   if (!fresh || !telemetry) {
     previousTransportHealthDeviceId = selectedDeviceId;
     previousTransportHealthState = null;
+    latestActiveTransportDropObservation = null;
     card.classList.remove("healthy", "warning", "critical");
     valueEl.textContent = "Waiting";
     reasonsEl.textContent = "A score appears when current device telemetry is available.";
@@ -2151,6 +2185,11 @@ function updateDeviceHealthScore(device, telemetry, fresh) {
   const transport = activeTransportDropDelta(telemetry, previousTransport);
   previousTransportHealthDeviceId = selectedDeviceId;
   previousTransportHealthState = transport.state;
+  latestActiveTransportDropObservation = {
+    deviceId: selectedDeviceId,
+    peerConnected: transport.state.peerConnected,
+    dropped: transport.dropped,
+  };
   if (transport.dropped > 0) {
     penalize(Math.min(24, Math.ceil(transport.dropped * 2)),
       `${transport.dropped} new audio frame drop(s) during active WebRTC playback`);
