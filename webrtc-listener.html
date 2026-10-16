@@ -1174,15 +1174,30 @@ async function fetchHealthCheck(url, responseType = "json", timeoutMs = 6000, re
       credentials: requestOptions.credentials || "same-origin",
       signal: controller.signal
     });
-    if (!response.ok) return { ok: false, status: response.status, body: null };
-    const body = responseType === "text" ? await response.text() : await response.json();
-    return { ok: true, status: response.status, body };
+    const responseText = await response.text();
+    if (responseType === "text") {
+      return { ok: response.ok, status: response.status, body: responseText };
+    }
+    let body;
+    try {
+      body = responseText ? JSON.parse(responseText) : null;
+    } catch {
+      return {
+        ok: false,
+        status: response.status,
+        body: null,
+        detail: `expected JSON but received ${response.headers.get("content-type") || "a non-JSON response"}`
+      };
+    }
+    return { ok: response.ok, status: response.status, body };
   } catch (error) {
     return {
       ok: false,
       status: 0,
       body: null,
-      detail: error?.name === "AbortError" ? `timed out after ${timeoutMs / 1000}s` : "network or response error"
+      detail: error?.name === "AbortError"
+        ? `timed out after ${timeoutMs / 1000}s`
+        : `network/response error${error?.message ? `: ${error.message}` : ""}`
     };
   } finally {
     window.clearTimeout(timeout);
@@ -1743,38 +1758,50 @@ async function runHealthCheck() {
         const valid = result.ok && result.body?.ok === true && result.body?.device_id === selectedDeviceId;
         lastHealthRunEvidence.selectedDeviceStatusApi = valid;
         logHealthResult(results, "Selected device status API", valid,
-          valid ? `HTTP ${result.status} · status returned for ${brandText(selectedDeviceId)}` : result.status ? `HTTP ${result.status}` : (result.detail || "invalid JSON response"));
-        if (valid) {
-          const online = result.body.device_connected === true;
-          lastHealthRunEvidence.deviceSignaling = online;
-          logHealthResult(results, "SNF signaling connection", online,
-            online ? "device is online and connected to Render" : "device is currently offline", !online);
-          const telemetryAge = result.body.telemetry?.telemetry_age_ms;
-          const freshTelemetry = Number.isFinite(telemetryAge) && telemetryAge >= 0 && telemetryAge <= 15000;
-          lastHealthRunEvidence.deviceTelemetry = freshTelemetry;
-          logHealthResult(results, "SNF telemetry", freshTelemetry,
-            freshTelemetry ? `fresh · ${Math.floor(telemetryAge / 1000)}s old` : "no fresh telemetry received in the last 15s", !freshTelemetry);
+          valid ? `HTTP ${result.status} · status returned for ${brandText(selectedDeviceId)}` : result.status ? `HTTP ${result.status}${result.body?.error ? ` · ${result.body.error}` : ""}` : (result.detail || "invalid JSON response"));
+        if (!valid) {
+          lastHealthRunEvidence.deviceSnapshot = false;
+          logHealthSkipped("Firmware read-only health snapshot", "selected device status could not be verified");
+          return;
         }
-      })());
-      backendChecks.push((async () => {
-        const path = `/api/devices/${encodeURIComponent(selectedDeviceId)}/health-check`;
-        const result = await fetchHealthCheck(path, "json", 8500, { method: "POST" });
-        const valid = result.ok && result.body?.ok === true && result.body?.device_id === selectedDeviceId &&
-          result.body?.data && typeof result.body.data === "object";
-        lastHealthRunEvidence.deviceSnapshot = valid;
-        if (valid) {
-          latestHealthSnapshot = result.body.data;
+
+        const online = result.body.device_connected === true;
+        lastHealthRunEvidence.deviceSignaling = online;
+        logHealthResult(results, "SNF signaling connection", online,
+          online ? "device is online and connected to Render" : "device is currently offline", !online);
+        const telemetryAge = result.body.telemetry?.telemetry_age_ms;
+        const freshTelemetry = Number.isFinite(telemetryAge) && telemetryAge >= 0 && telemetryAge <= 15000;
+        lastHealthRunEvidence.deviceTelemetry = freshTelemetry;
+        logHealthResult(results, "SNF telemetry", freshTelemetry,
+          freshTelemetry ? `fresh · ${Math.floor(telemetryAge / 1000)}s old` : "no fresh telemetry received in the last 15s", !freshTelemetry);
+
+        if (!online) {
+          lastHealthRunEvidence.deviceSnapshot = false;
+          logHealthSkipped("Firmware read-only health snapshot", "device is offline; reconnect SNF to Render, then run the check again");
+          return;
+        }
+
+        const healthPath = `/api/devices/${encodeURIComponent(selectedDeviceId)}/health-check`;
+        const healthResult = await fetchHealthCheck(healthPath, "json", 8500, { method: "POST" });
+        const snapshotValid = healthResult.ok && healthResult.body?.ok === true && healthResult.body?.device_id === selectedDeviceId &&
+          healthResult.body?.data && typeof healthResult.body.data === "object";
+        lastHealthRunEvidence.deviceSnapshot = snapshotValid;
+        if (snapshotValid) {
+          latestHealthSnapshot = healthResult.body.data;
           latestHealthSnapshotAt = Date.now();
           observeOpusFrameRate(latestHealthSnapshot);
           logHealthResult(results, "Firmware read-only health snapshot", true,
-            `request ${result.body.request_id} completed at ${new Date(result.body.checked_at).toLocaleTimeString()}`);
+            `request ${healthResult.body.request_id} completed at ${new Date(healthResult.body.checked_at).toLocaleTimeString()}`);
         } else {
-          const detail = result.status ? `HTTP ${result.status}${result.body?.error ? ` · ${result.body.error}` : ""}` : (result.detail || "device snapshot unavailable");
+          const detail = healthResult.status
+            ? `HTTP ${healthResult.status}${healthResult.body?.error ? ` · ${healthResult.body.error}` : ""}`
+            : (healthResult.detail || "device snapshot unavailable");
           logHealthResult(results, "Firmware read-only health snapshot", false, detail, true);
         }
       })());
     } else {
       logHealthResult(results, "Selected device status API", false, "skipped because no device is selected", true);
+      logHealthSkipped("Firmware read-only health snapshot", "select a registered device first");
     }
 
     backendChecks.push((async () => {
@@ -1813,11 +1840,14 @@ async function runHealthCheck() {
     const totals = { Healthy: 0, Warning: 0, Critical: 0, "Not Tested": 0 };
     for (const item of allItems) totals[item.status] = (totals[item.status] || 0) + 1;
     const summary = `${allItems.length} checks · ${totals.Healthy} healthy · ${totals.Warning} warning · ${totals.Critical} critical · ${totals["Not Tested"]} not tested`;
-    healthCheckStatusEl.textContent = `Health check complete · ${totals.Critical ? "critical issues found" : totals.Warning ? "review warnings" : "no measured failures"}. Detailed results are in the Health Check log.`;
+    const deviceOffline = lastHealthRunEvidence.deviceSignaling === false;
+    healthCheckStatusEl.textContent = deviceOffline
+      ? `Health check complete · SNF is offline. Browser and Render checks ran; firmware checks were skipped. Reconnect SNF and run again.`
+      : `Health check complete · ${totals.Critical ? "critical issues found" : totals.Warning ? "review warnings" : "no measured failures"}. Detailed results are in the Health Check log.`;
     addLog(`Full Health Check complete · ${summary}`, totals.Critical ? "error" : totals.Warning ? "warning" : totals.Healthy ? "success" : "info", "health");
-  } catch {
-    healthCheckStatusEl.textContent = "Health check stopped unexpectedly; see the Health Check log for completed checks.";
-    addLog("Health check stopped unexpectedly", "error", "health");
+  } catch (error) {
+    healthCheckStatusEl.textContent = `Health check stopped unexpectedly${error?.message ? ` · ${error.message}` : ""}; see the Health Check log for completed checks.`;
+    addLog(`Health check stopped unexpectedly${error?.message ? `: ${error.message}` : ""}`, "error", "health");
   } finally {
     healthCheckRunning = false;
     runHealthCheckButton.disabled = false;
