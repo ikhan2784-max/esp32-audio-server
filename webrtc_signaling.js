@@ -14,6 +14,14 @@ const AUDIO_MIC_MODES = new Set(["mic1", "mic2", "both_mono"]);
 const AUDIO_NS_LEVELS = new Set(["off", "low", "medium", "high"]);
 const AUDIO_PROCESSING_LEVELS = new Set(["off", "low", "medium", "high"]);
 const AUDIO_HPF_PRESETS = new Set(["voice_clarity", "quiet_room", "noisy_room"]);
+const DIAGNOSTIC_STAGES = new Set([
+    "start_requested", "session_ready", "capture_resume", "capture_ready", "opus_ready", "webrtc_setup",
+    "webrtc_connected", "webrtc_disconnected", "first_opus_packet_sent", "first_rtp_received",
+    "audio_track_received", "playback_started", "playback_failed", "audio_level_detected",
+    "session_end", "power_standby", "i2s_capture_ready", "session_ready_timeout", "audio_track_timeout",
+    "first_rtp_timeout", "playback_timeout"
+]);
+const DIAGNOSTIC_STATUSES = new Set(["pass", "warning", "fail", "info"]);
 const MAX_SIGNAL_BUFFERED_BYTES = 64 * 1024;
 const TELEMETRY_MAX_AGE_MS = 15000;
 const DEFAULT_CONNECTION_FRESH_MS = 15000;
@@ -35,6 +43,7 @@ const TELEMETRY_NUMBER_RANGES = Object.freeze({
     free_psram: [0, Number.MAX_SAFE_INTEGER],
     total_psram: [0, Number.MAX_SAFE_INTEGER],
     audio_capture_errors: [0, Number.MAX_SAFE_INTEGER],
+    audio_capture_recoveries: [0, Number.MAX_SAFE_INTEGER],
     audio_buffer_overflows: [0, Number.MAX_SAFE_INTEGER],
     dsp_errors: [0, Number.MAX_SAFE_INTEGER],
     dsp_limiter_clipped: [0, Number.MAX_SAFE_INTEGER],
@@ -82,6 +91,7 @@ const TELEMETRY_NUMBER_RANGES = Object.freeze({
     app_partition_free_bytes: [0, Number.MAX_SAFE_INTEGER],
     audio_tx_max_us: [0, Number.MAX_SAFE_INTEGER],
     audio_tx_slow_count: [0, Number.MAX_SAFE_INTEGER],
+    power_idle_timeout_ms: [0, 60000],
     pcm_channels: [0, 8],
 });
 const TELEMETRY_BOOLEAN_FIELDS = new Set([
@@ -90,7 +100,7 @@ const TELEMETRY_BOOLEAN_FIELDS = new Set([
     "i2s_initialized", "audio_capture_initialized", "audio_capture_running",
     "dsp_initialized", "dsp_running", "webrtc_running", "signaling_connected",
     "opus_running", "dsp_ns_enabled", "dsp_vad_enabled", "dsp_limiter_enabled",
-    "dsp_auto_gain_enabled", "dsp_hpf_active", "pcm_signed",
+    "dsp_auto_gain_enabled", "dsp_hpf_active", "pcm_signed", "auto_power_saving_enabled",
 ]);
 const TELEMETRY_STRING_LIMITS = Object.freeze({
     wifi_ssid: 32, ip: 15, wifi_gateway_ip: 15, firmware: 32,
@@ -98,6 +108,7 @@ const TELEMETRY_STRING_LIMITS = Object.freeze({
     build_id: 64, i2s_input_mode: 16, audio_profile: 32, pcm_format: 32,
     dsp_hpf_preset: 24, dsp_ns_level: 8, dsp_vad_level: 8, dsp_limiter_level: 8,
     reset_reason_name: 32, last_error_module: 32, last_error: 192,
+    audio_power_state: 16,
 });
 
 function createWebRtcSignaling({
@@ -153,6 +164,7 @@ function createWebRtcSignaling({
 
     function endSession(state, reason, except) {
         if (state.sessionId !== null) {
+            console.info(`[audio-trace] at=${new Date().toISOString()} device=${state.deviceId} session=${state.sessionId} source=Render stage=session_end status=info reason=${String(reason || "unspecified").replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, 120)}`);
             state.recentEndedSessionIds.push(state.sessionId);
             if (state.recentEndedSessionIds.length > 4) state.recentEndedSessionIds.shift();
             const endedAtMs = Date.now();
@@ -188,12 +200,20 @@ function createWebRtcSignaling({
             type: "webrtc_session_ready",
             device_id: state.deviceId,
             session_id: state.sessionId,
+            request_id: state.listener && state.listener.traceRequestId
+                ? state.listener.traceRequestId : undefined,
         };
+        console.info(`[audio-trace] at=${new Date(state.sessionStartedAtMs).toISOString()} device=${state.deviceId} session=${state.sessionId} source=Render stage=session_ready status=pass reason=signaling_paired_media_is_direct_p2p`);
         send(state.device, { ...message, role: "offerer" });
         send(state.listener, { ...message, role: "answerer" });
     }
 
     function fail(ws, reason) {
+        const state = stateFor(ws);
+        if (state && ws.role === "webrtc_listener") {
+            const safeReason = String(reason || "unspecified").replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, 120);
+            console.info(`[audio-trace] at=${new Date().toISOString()} device=${state.deviceId} session=${state.sessionId || "pending"} request=${ws.traceRequestId || "none"} source=Render stage=signaling_rejected status=fail reason=${safeReason}`);
+        }
         send(ws, { type: "webrtc_error", reason });
         closeClient(ws, 1008, "WebRTC signaling rejected");
     }
@@ -257,6 +277,9 @@ function createWebRtcSignaling({
             fail(ws, "device_access_denied");
             return true;
         }
+        const requestId = typeof message.request_id === "string" &&
+            /^[A-Za-z0-9_-]{8,64}$/.test(message.request_id)
+            ? message.request_id : crypto.randomUUID();
         const state = states.get(deviceId);
         // A close frame can race with a page refresh on a new TCP connection.
         // Release dead references before deciding that another listener owns the slot.
@@ -274,6 +297,8 @@ function createWebRtcSignaling({
         ws.deviceId = deviceId;
         ws.role = "webrtc_listener";
         ws.authenticated = true;
+        ws.traceRequestId = requestId;
+        console.info(`[audio-trace] at=${new Date().toISOString()} device=${deviceId} session=pending request=${requestId} source=Listener stage=start_requested status=pass reason=authenticated_listener_requested_audio`);
         send(ws, { type: "webrtc_listener_ready", device_id: deviceId });
         send(ws, {
             type: "webrtc_device_status",
@@ -392,6 +417,69 @@ function createWebRtcSignaling({
         }
         ws.controlCount = (ws.controlCount || 0) + 1;
         return ws.controlCount <= MAX_CONTROL_MESSAGES_PER_WINDOW;
+    }
+
+    function handleDiagnosticEvent(ws, message) {
+        if (message.type !== "webrtc_diagnostic_event") return false;
+        const state = stateFor(ws);
+        const senderIsDevice = !!state && ws === state.device &&
+            ws.role === "webrtc_device" && ws.authenticated === true;
+        const senderIsListener = !!state && ws === state.listener &&
+            ws.role === "webrtc_listener" && ws.authenticated === true;
+        if ((!senderIsDevice && !senderIsListener) ||
+            typeof message.stage !== "string" || !DIAGNOSTIC_STAGES.has(message.stage) ||
+            typeof message.status !== "string" || !DIAGNOSTIC_STATUSES.has(message.status) ||
+            (message.reason !== undefined &&
+                (typeof message.reason !== "string" || message.reason.length > 160 ||
+                    /[\u0000-\u001f\u007f]/.test(message.reason))) ||
+            (message.device_uptime_ms !== undefined &&
+                (!Number.isSafeInteger(message.device_uptime_ms) || message.device_uptime_ms < 0))) {
+            fail(ws, "invalid_diagnostic_event");
+            return true;
+        }
+        if (typeof isListenerSessionValid !== "function" ||
+            (senderIsListener && (!isListenerSessionValid(ws) || !listenerAuthorized(ws, state)))) {
+            fail(ws, "listener_session_expired");
+            return true;
+        }
+        const isStart = senderIsListener && message.stage === "start_requested" &&
+            state.sessionId === null && message.request_id === ws.traceRequestId;
+        const isStandby = senderIsDevice && message.stage === "power_standby" &&
+            state.sessionId === null && state.recentEndedSessionIds.includes(message.session_id);
+        if (!isStart && !isStandby &&
+            (state.sessionId === null || message.session_id !== state.sessionId)) {
+            fail(ws, "invalid_diagnostic_session");
+            return true;
+        }
+        if (!controlRateAllowed(ws)) {
+            fail(ws, "control_rate_limited");
+            return true;
+        }
+        const now = Date.now();
+        const session = isStart ? "pending" : state.sessionId;
+        const source = senderIsDevice ? "SNF" : "Listener";
+        const reason = message.reason ? message.reason : "none";
+        console.info(`[audio-trace] at=${new Date(now).toISOString()} device=${state.deviceId} session=${session} request=${ws.traceRequestId || "none"} source=Render stage=trace_received reported_source=${source} reported_stage=${message.stage} status=${message.status} reason=${reason}${Number.isSafeInteger(message.device_uptime_ms) ? ` device_uptime_ms=${message.device_uptime_ms}` : ""}${message.stage === "first_opus_packet_sent" ? " media=direct_p2p_not_received_by_Render" : ""}`);
+        const peer = senderIsDevice ? state.listener : state.device;
+        if (!isStart && !isStandby && peer && peer.readyState === WebSocket.OPEN) {
+            const forwarded = {
+                type: "webrtc_diagnostic_event",
+                device_id: state.deviceId,
+                session_id: state.sessionId,
+                stage: message.stage,
+                status: message.status,
+                source,
+                at: new Date(now).toISOString(),
+            };
+            if (message.reason) forwarded.reason = message.reason;
+            if (Number.isSafeInteger(message.device_uptime_ms)) {
+                forwarded.device_uptime_ms = message.device_uptime_ms;
+            }
+            if (!send(peer, forwarded)) {
+                console.warn(`[audio-trace] at=${new Date().toISOString()} device=${state.deviceId} session=${state.sessionId} source=Render stage=${message.stage} status=warning reason=trace_forward_failed`);
+            }
+        }
+        return true;
     }
 
     function handleAudioControl(ws, message) {
@@ -521,6 +609,8 @@ function createWebRtcSignaling({
         }
         if (!AUDIO_MIC_MODES.has(message.mic_mode) ||
             typeof message.auto_gain_enabled !== "boolean" ||
+            (message.auto_power_saving_enabled !== undefined &&
+                typeof message.auto_power_saving_enabled !== "boolean") ||
             !AUDIO_HPF_PRESETS.has(message.hpf_preset) ||
             !AUDIO_NS_LEVELS.has(message.noise_suppression_level) ||
             !AUDIO_PROCESSING_LEVELS.has(message.vad_level) ||
@@ -528,7 +618,7 @@ function createWebRtcSignaling({
             fail(ws, "invalid_audio_settings");
             return true;
         }
-        if (!send(state.device, {
+        const forwardedSettings = {
             type: "webrtc_audio_settings",
             session_id: state.sessionId,
             mic_mode: message.mic_mode,
@@ -537,7 +627,11 @@ function createWebRtcSignaling({
             noise_suppression_level: message.noise_suppression_level,
             vad_level: message.vad_level,
             limiter_level: message.limiter_level,
-        })) {
+        };
+        if (message.auto_power_saving_enabled !== undefined) {
+            forwardedSettings.auto_power_saving_enabled = message.auto_power_saving_enabled;
+        }
+        if (!send(state.device, forwardedSettings)) {
             endSession(state, "peer_unavailable");
         }
         return true;
@@ -563,6 +657,8 @@ function createWebRtcSignaling({
         }
         if (typeof message.ok !== "boolean" || !AUDIO_MIC_MODES.has(message.mic_mode) ||
             typeof message.auto_gain_enabled !== "boolean" ||
+            (message.auto_power_saving_enabled !== undefined &&
+                typeof message.auto_power_saving_enabled !== "boolean") ||
             !AUDIO_HPF_PRESETS.has(message.hpf_preset) ||
             !AUDIO_NS_LEVELS.has(message.noise_suppression_level) ||
             !AUDIO_PROCESSING_LEVELS.has(message.vad_level) ||
@@ -570,7 +666,7 @@ function createWebRtcSignaling({
             fail(ws, "invalid_audio_settings_ack");
             return true;
         }
-        if (!send(state.listener, {
+        const forwardedAck = {
             type: "webrtc_audio_settings_ack",
             session_id: state.sessionId,
             mic_mode: message.mic_mode,
@@ -580,7 +676,11 @@ function createWebRtcSignaling({
             vad_level: message.vad_level,
             limiter_level: message.limiter_level,
             ok: message.ok,
-        })) {
+        };
+        if (message.auto_power_saving_enabled !== undefined) {
+            forwardedAck.auto_power_saving_enabled = message.auto_power_saving_enabled;
+        }
+        if (!send(state.listener, forwardedAck)) {
             endSession(state, "peer_unavailable");
         }
         return true;
@@ -755,6 +855,7 @@ function createWebRtcSignaling({
     function handleMessage(ws, message) {
         if (!message || typeof message !== "object" || Array.isArray(message)) return false;
         return handleListenerStop(ws, message) || handleJoin(ws, message) || handleSignal(ws, message) ||
+            handleDiagnosticEvent(ws, message) ||
             handleAudioControl(ws, message) || handleAudioControlAck(ws, message) ||
             handleAudioSettings(ws, message) || handleAudioSettingsAck(ws, message) ||
             handleDeviceHealthResponse(ws, message) ||

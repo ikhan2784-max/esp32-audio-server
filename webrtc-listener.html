@@ -637,6 +637,10 @@
           </select></div>
           <span id="audioSettingsStatus" role="status" aria-live="polite">Connect to the selected SNF device to change AGC and DSP controls. This build uses one mic.</span>
         </section>
+        <section class="setting-group"><h2>POWER MANAGEMENT</h2>
+          <div class="setting-row"><span>Automatic power saving</span><label class="toggle" aria-label="Enable automatic microphone standby"><input id="autoPowerSaving" type="checkbox" checked><span></span></label></div>
+          <span id="powerSavingStatus" class="helper" role="status" aria-live="polite">On · microphone and DSP stop after 30 seconds without a listener; Render signaling stays connected. Sleep mode is not used.</span>
+        </section>
         <section class="setting-group"><div class="setting-heading-row"><h2>SESSION TIMEOUT</h2><span id="sessionTimeoutTimer" class="session-countdown" aria-label="Time until automatic sign out">Checking…</span></div>
           <label class="gain-heading" for="sessionTimeout"><span>Sign out after inactivity</span></label>
           <select class="settings-select" id="sessionTimeout">
@@ -708,7 +712,7 @@
         <div class="log-toolbar"><div class="filter-list" role="group" aria-label="Filter event log"><button class="filter-button" data-log-filter="all" aria-pressed="true" type="button">All</button><button class="filter-button" data-log-filter="info" aria-pressed="false" type="button">Info</button><button class="filter-button" data-log-filter="warning" aria-pressed="false" type="button">Warning</button><button class="filter-button" data-log-filter="error" aria-pressed="false" type="button">Error</button><button class="filter-button" data-log-filter="backend" aria-pressed="false" type="button">Backend</button><button class="filter-button" data-log-filter="health" aria-pressed="false" type="button">Health Check</button></div><label class="autoscroll-option"><input type="checkbox" id="autoScrollLogs" checked> Auto-scroll</label><div><button class="small-button danger" id="clearLogs" type="button">Clear</button> <button class="small-button" id="exportLogs" type="button">Export</button></div></div>
         <div class="log-list" id="logList" aria-live="polite"><div class="log-entry"><span class="log-time">—</span><span class="log-level info">INFO</span><span class="log-source listener">LISTENER:</span><span>listener page ready</span></div></div>
       </section>
-      <p class="helper">Each entry identifies its source: Listener, Audio, Settings, SNF, Render or Health. Health Check entries show measured evidence. This page does not expose private Render host logs or audio payloads.</p>
+      <p class="helper">Each entry identifies its source. The end-to-end trace retains the last 100 milestones in this browser and includes session IDs and timestamps. Render records and forwards milestone reports; Opus media travels directly over WebRTC and is not relayed or stored by Render.</p>
     </section>
 
     <section class="tab-panel" id="panel-system" role="tabpanel" aria-labelledby="tab-system" hidden>
@@ -775,6 +779,15 @@ const firmwareVadEl = document.getElementById("firmwareVad");
 const firmwareLimiterEl = document.getElementById("firmwareLimiter");
 const hpfPresetEl = document.getElementById("hpfPreset");
 const audioSettingsStatusEl = document.getElementById("audioSettingsStatus");
+const autoPowerSavingEl = document.getElementById("autoPowerSaving");
+const powerSavingStatusEl = document.getElementById("powerSavingStatus");
+const AUTO_POWER_SAVING_STORAGE_KEY = "snf-auto-power-saving";
+try {
+  const savedPowerSaving = localStorage.getItem(AUTO_POWER_SAVING_STORAGE_KEY);
+  if (savedPowerSaving === "true" || savedPowerSaving === "false") {
+    autoPowerSavingEl.checked = savedPowerSaving === "true";
+  }
+} catch {}
 const sessionTimeoutEl = document.getElementById("sessionTimeout");
 const sessionTimeoutTimerEl = document.getElementById("sessionTimeoutTimer");
 const autoScrollLogsEl = document.getElementById("autoScrollLogs");
@@ -803,7 +816,19 @@ const levelSourceEl = document.getElementById("levelSource");
 const systemHotspotToggleEl = document.getElementById("systemHotspotToggle");
 
 const MAX_LOG_ENTRIES = 200;
-let logEntries = [];
+const E2E_TRACE_STORAGE_KEY = "snf-e2e-audio-trace-v1";
+function loadPersistedTraceEntries() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(E2E_TRACE_STORAGE_KEY) || "[]");
+    if (!Array.isArray(saved)) return [];
+    return saved.slice(-100).map((entry) => ({
+      at: new Date(entry.at), level: ["info", "success", "warning", "error"].includes(entry.level) ? entry.level : "info",
+      category: "listener", source: ["Listener", "Audio", "SNF", "Render"].includes(entry.source) ? entry.source : "Listener",
+      message: typeof entry.message === "string" ? entry.message.slice(0, 400) : ""
+    })).filter((entry) => Number.isFinite(entry.at.getTime()) && entry.message.startsWith("E2E ·"));
+  } catch { return []; }
+}
+let logEntries = loadPersistedTraceEntries();
 let activeLogFilter = "all";
 try { autoScrollLogsEl.checked = localStorage.getItem("esp32-listener-auto-scroll") !== "false"; } catch {}
 let lastStatusDeviceId = null;
@@ -864,6 +889,10 @@ let audioSettingsRequestedSessionId = null;
 let listenerActive = false;
 let manualStop = false;
 let listenerStartAttempt = 0;
+let diagnosticRequestId = null;
+let traceSessionId = null;
+const traceMilestones = new Set();
+let e2eTimeouts = Object.create(null);
 let reconnectTimer = null;
 let reconnectAttempt = 0;
 let statsTimer = null;
@@ -1050,6 +1079,70 @@ function addLog(message, level = "info", category = "listener", source = "") {
   logEntries.push({ at: new Date(), level: safeLevel, category: safeCategory, source: safeSource, message: brandText(message).slice(0, 400) });
   if (logEntries.length > MAX_LOG_ENTRIES) logEntries.splice(0, logEntries.length - MAX_LOG_ENTRIES);
   renderLogs();
+}
+
+function recordE2ETrace(stage, status, reason = "", source = "Listener", sendToBackend = true) {
+  const safeStage = /^[a-z_]{3,48}$/.test(String(stage)) ? String(stage) : "unknown_stage";
+  const safeStatus = ["pass", "warning", "fail", "info"].includes(status) ? status : "info";
+  const safeReason = String(reason || "none").replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, 140);
+  const currentSessionId = sessionId || traceSessionId || "pending";
+  const message = `E2E · ${safeStage} · session=${currentSessionId} · ${safeStatus} · ${safeReason}`;
+  const level = safeStatus === "pass" ? "success" : safeStatus === "fail" ? "error" : safeStatus === "warning" ? "warning" : "info";
+  addLog(message, level, "listener", source);
+  try {
+    const saved = JSON.parse(localStorage.getItem(E2E_TRACE_STORAGE_KEY) || "[]");
+    const entries = Array.isArray(saved) ? saved : [];
+    entries.push({ at: new Date().toISOString(), level, source, message });
+    localStorage.setItem(E2E_TRACE_STORAGE_KEY, JSON.stringify(entries.slice(-100)));
+  } catch {}
+  if (sendToBackend && sessionId && socket && socket.readyState === WebSocket.OPEN) {
+    send({
+      type: "webrtc_diagnostic_event",
+      session_id: sessionId,
+      stage: safeStage,
+      status: safeStatus,
+      reason: safeReason
+    });
+  }
+  if (status === "fail" || stage === "session_end" || stage === "playback_started") {
+    clearE2ETimeout(stage === "playback_started" ? "playback" : null);
+  }
+  if (stage === "session_ready") {
+    clearE2ETimeout("session_ready");
+    armE2ETimeout("audio_track", 20000, "audio_track_timeout",
+      "Session was ready, but the browser received no remote audio track within 20 seconds");
+  } else if (stage === "audio_track_received") {
+    clearE2ETimeout("audio_track");
+    armE2ETimeout("first_rtp", 20000, "first_rtp_timeout",
+      "Remote track arrived, but no inbound audio RTP packets were reported within 20 seconds");
+    armE2ETimeout("playback", 8000, "playback_timeout",
+      "Remote audio track arrived, but browser playback did not start within 8 seconds");
+  } else if (stage === "first_rtp_received") {
+    clearE2ETimeout("first_rtp");
+  }
+  if (stage === "session_end") clearE2ETimeout();
+}
+
+function clearE2ETimeout(name = null) {
+  const names = name ? [name] : Object.keys(e2eTimeouts);
+  for (const key of names) {
+    if (e2eTimeouts[key]) window.clearTimeout(e2eTimeouts[key]);
+    delete e2eTimeouts[key];
+  }
+}
+
+function armE2ETimeout(name, delayMs, stage, reason) {
+  clearE2ETimeout(name);
+  const expectedRequest = diagnosticRequestId;
+  const expectedSession = sessionId || traceSessionId;
+  e2eTimeouts[name] = window.setTimeout(() => {
+    delete e2eTimeouts[name];
+    if (!listenerActive || diagnosticRequestId !== expectedRequest ||
+        (expectedSession && (sessionId || traceSessionId) !== expectedSession) ||
+        traceMilestones.has(stage)) return;
+    traceMilestones.add(stage);
+    recordE2ETrace(stage, "fail", reason, name === "playback" || name === "audio_track" ? "Audio" : "Listener");
+  }, delayMs);
 }
 
 function selectLogFilter(filter) {
@@ -2036,6 +2129,7 @@ function updateInformationDashboard(device, telemetry, fresh) {
     const unavailable = selectedDeviceId ? "Status unavailable" : "No device selected";
     setMetric("infoDevice", `${selectedDeviceId ? brandText(selectedDeviceId) : "SNF"} · ${unavailable.toLowerCase()}`);
     for (const id of telemetryFields) setMetric(id, "No fresh device telemetry");
+    powerSavingStatusEl.textContent = "Waiting for device power-management telemetry.";
     for (const id of ["infoListeners", "infoConnectionSince", "infoLastSeen", "infoLastPlayed",
       "infoLastPlayedDuration", "infoWebrtcSessions", "infoRtp"]) setMetric(id, unavailable);
     setMetric("infoPeer", peer?.connectionState || unavailable);
@@ -2071,12 +2165,19 @@ function updateInformationDashboard(device, telemetry, fresh) {
 
   if (!fresh || !telemetry) {
     for (const id of telemetryFields) setMetric(id, "No fresh device telemetry");
+    powerSavingStatusEl.textContent = "Device is online; current power state is waiting for fresh telemetry.";
     const state = device?.device_connected ? "online" : "offline";
     setMetric("informationUpdated", `Render connection is ${state}; last device heartbeat ${formatTimestamp(lastSeen)}. Firmware information updates when telemetry arrives.`);
     return;
   }
 
   const d = telemetry;
+  const powerSavingEnabled = d.auto_power_saving_enabled === true;
+  powerSavingStatusEl.textContent = !powerSavingEnabled
+    ? "Off · capture and DSP stay active when no listener is connected."
+    : d.audio_power_state === "standby"
+      ? "On · standby: microphone, DSP, and Opus are stopped; Render signaling remains connected for wake-up."
+      : "On · active: capture stays ready during a session and enters standby after 30 idle seconds.";
   const rate = Number.isFinite(d.i2s_sample_rate_hz) ? d.i2s_sample_rate_hz : 0;
   const pcmBits = Number.isFinite(d.pcm_bits) ? d.pcm_bits : 0;
   const slotBits = Number.isFinite(d.i2s_slot_bits) ? d.i2s_slot_bits : 0;
@@ -2100,7 +2201,7 @@ function updateInformationDashboard(device, telemetry, fresh) {
   setMetric("infoI2sFormat", `${validBits || "?"}-bit source · ${slotBits || "?"}-bit slots · ${rate || "?"} Hz`);
   setMetric("infoInputMode", "Single mic · LEFT slot · mono output");
   setMetric("infoCapture", `${d.audio_capture_running === true ? "Running" : d.audio_capture_running === false ? "Stopped" : "Not reported"} · ${Number.isFinite(d.audio_samples_captured) ? d.audio_samples_captured.toLocaleString() : "samples not reported"}`);
-  setMetric("infoCaptureErrors", `${d.audio_capture_errors ?? "Not reported"} errors · ${d.audio_buffer_overflows ?? "Not reported"} capture overflows`);
+  setMetric("infoCaptureErrors", `${d.audio_capture_errors ?? "Not reported"} errors · ${d.audio_buffer_overflows ?? "Not reported"} capture overflows · ${d.audio_capture_recoveries ?? "Not reported"} recoveries`);
   setMetric("infoDsp", `${d.dsp_running === true ? "Running" : d.dsp_running === false ? "Stopped" : "Not reported"} · ${d.dsp_errors ?? "—"} errors · ${d.dsp_input_underflows ?? "—"} input underflows / ${d.dsp_output_overflows ?? "—"} output overflows`);
   setMetric("infoOpus", `${Number.isFinite(d.opus_encoded_frames) ? d.opus_encoded_frames.toLocaleString() : "Not reported"} frames · ${formatBytes(d.opus_encoded_bytes)}`);
   setMetric("infoAudioTransport", `${Number.isFinite(d.audio_frames_sent) ? d.audio_frames_sent.toLocaleString() : "Not reported"} sent · ${d.audio_frames_dropped ?? "—"} dropped · ${d.opus_dropped_frames ?? "—"} Opus drops`);
@@ -2737,6 +2838,7 @@ function currentAudioSettings() {
   return {
     mic_mode: "mic1",
     auto_gain_enabled: autoGainEl.checked,
+    auto_power_saving_enabled: autoPowerSavingEl.checked,
     hpf_preset: hpfPresetEl.value,
     noise_suppression_level: firmwareNoiseSuppressionEl.value,
     vad_level: firmwareVadEl.value,
@@ -2749,6 +2851,10 @@ function applyAudioSettings(settings) {
   firmwareVadEl.value = settings.vad_level;
   firmwareLimiterEl.value = settings.limiter_level;
   autoGainEl.checked = Boolean(settings.auto_gain_enabled);
+  if (typeof settings.auto_power_saving_enabled === "boolean") {
+    autoPowerSavingEl.checked = settings.auto_power_saving_enabled;
+    try { localStorage.setItem(AUTO_POWER_SAVING_STORAGE_KEY, String(autoPowerSavingEl.checked)); } catch {}
+  }
   hpfPresetEl.value = settings.hpf_preset;
   micGainValueEl.value = `${effectiveMicGainPercent()}%`;
   refreshMicGainAvailability();
@@ -2760,6 +2866,7 @@ function refreshAudioSettingsAvailability() {
   firmwareVadEl.disabled = !available;
   firmwareLimiterEl.disabled = !available;
   autoGainEl.disabled = !available;
+  autoPowerSavingEl.disabled = !available;
   hpfPresetEl.disabled = !available;
   updateGtcrnBlendDisplay();
   refreshMicGainAvailability();
@@ -2796,18 +2903,23 @@ function handleAudioSettingsAck(message) {
   }
   const accepted = {
     auto_gain_enabled: message.auto_gain_enabled,
+    auto_power_saving_enabled: message.auto_power_saving_enabled,
     hpf_preset: message.hpf_preset,
     noise_suppression_level: message.noise_suppression_level,
     vad_level: message.vad_level,
     limiter_level: message.limiter_level
   };
   if (typeof accepted.auto_gain_enabled !== "boolean" ||
+      typeof accepted.auto_power_saving_enabled !== "boolean" ||
       !["voice_clarity", "quiet_room", "noisy_room"].includes(accepted.hpf_preset) ||
       !["off", "low", "medium", "high"].includes(accepted.noise_suppression_level) ||
       !["off", "low", "medium", "high"].includes(accepted.vad_level) ||
       !["off", "low", "medium", "high"].includes(accepted.limiter_level)) return;
   appliedAudioSettings = accepted;
   applyAudioSettings(accepted);
+  powerSavingStatusEl.textContent = accepted.auto_power_saving_enabled
+    ? "On · SNF will stop capture and DSP 30 seconds after the listener session ends; Render signaling remains connected."
+    : "Off · capture and DSP remain active without a listener.";
   const hpfLabel = accepted.hpf_preset.replaceAll("_", " ");
   audioSettingsStatusEl.textContent = `Single mic · AGC ${accepted.auto_gain_enabled ? "on" : "off"} · ${hpfLabel} · gate ${accepted.noise_suppression_level} · VAD ${accepted.vad_level} · limiter ${accepted.limiter_level}.`;
   const desiredGain = effectiveMicGainPercent();
@@ -3325,6 +3437,10 @@ audioEl.addEventListener("play", () => {
 audioEl.addEventListener("playing", () => {
   if (!listenerActive || !hasPlayableAudioTrack()) return;
   startListeningTimer();
+  if (sessionId && !traceMilestones.has("playback_started")) {
+    traceMilestones.add("playback_started");
+    recordE2ETrace("playback_started", "pass", "Browser media element emitted playing with a live remote audio track", "Audio");
+  }
   if (peer && peer.connectionState === "connected") setState("Audio is playing");
 });
 audioEl.addEventListener("waiting", () => {
@@ -3620,6 +3736,10 @@ async function updateMediaStatus(targetPeer) {
   const trackState = track ? `${track.readyState}${track.muted ? ", muted" : ", unmuted"}` : "not received";
   const packets = inboundAudio?.packetsReceived ?? 0;
   const bytes = inboundAudio?.bytesReceived ?? 0;
+  if (packets > 0 && sessionId && !traceMilestones.has("first_rtp_received")) {
+    traceMilestones.add("first_rtp_received");
+    recordE2ETrace("first_rtp_received", "pass", `Browser RTP stats report ${Math.floor(packets)} audio packets / ${Math.floor(bytes)} bytes`, "Listener");
+  }
   latestInboundAudioStats = inboundAudio && Number.isFinite(packets) && Number.isFinite(bytes)
     ? { packetsReceived: packets, bytesReceived: bytes } : null;
   setMetric("infoRtp", latestInboundAudioStats
@@ -3690,6 +3810,14 @@ async function updateMediaStatus(targetPeer) {
   const activeInputSignalPresent = Number.isFinite(inboundAudio?.audioLevel)
     && inboundAudio.audioLevel > 0.01
     && Number.isFinite(latestInputDbfs) && latestInputDbfs > -55;
+  if (sessionId && !traceMilestones.has("audio_level_detected") &&
+      ((Number.isFinite(inboundAudio?.audioLevel) && inboundAudio.audioLevel > 0.01) ||
+       (Number.isFinite(latestInputDbfs) && latestInputDbfs > -55))) {
+    traceMilestones.add("audio_level_detected");
+    recordE2ETrace("audio_level_detected", "pass",
+      `Browser detected non-silent audio · RTP level ${Number.isFinite(inboundAudio?.audioLevel) ? inboundAudio.audioLevel.toFixed(3) : "n/a"} · Web Audio ${formatAudioLevelDbfs(latestInputDbfs)}`,
+      "Audio");
+  }
   const webAudioInputSilent = latestInputDbfs === Number.NEGATIVE_INFINITY
     || (Number.isFinite(latestInputDbfs) && latestInputDbfs < -85);
   const webAudioOutputSilent = latestOutputDbfs === Number.NEGATIVE_INFINITY
@@ -3800,7 +3928,12 @@ function connectSocket() {
   setState(`Connecting to ${selectedDeviceId}`);
   current.onopen = () => {
     if (socket !== current || !listenerActive) return;
-    current.send(JSON.stringify({ type: "webrtc_listener_hello", device_id: selectedDeviceId }));
+    current.send(JSON.stringify({
+      type: "webrtc_listener_hello",
+      device_id: selectedDeviceId,
+      request_id: diagnosticRequestId
+    }));
+    recordE2ETrace("signaling_connected", "pass", `Render signaling opened · request=${diagnosticRequestId}`, "Render", false);
   };
   current.onmessage = async (event) => {
     if (socket !== current) return;
@@ -3811,8 +3944,15 @@ function connectSocket() {
       if (message.device_id === selectedDeviceId) void refreshAppStatus();
       return;
     }
+    if (message.type === "webrtc_diagnostic_event" && message.session_id === sessionId) {
+      const source = ["Listener", "Audio", "SNF", "Render"].includes(message.source) ? message.source : "Render";
+      recordE2ETrace(message.stage, message.status, message.reason || `${source} reported stage`, source, false);
+      return;
+    }
     if (message.type === "webrtc_error") {
       errorEl.textContent = message.reason || "Signaling rejected";
+      recordE2ETrace("signaling_rejected", "fail",
+        `Render rejected signaling request: ${message.reason || "unspecified"}`, "Render", false);
       if (message.reason === "listener_busy") {
         listenerActive = false;
         stopListeningTimer();
@@ -3847,9 +3987,12 @@ function connectSocket() {
     }
     if (message.type === "webrtc_session_ready") {
       sessionId = message.session_id;
+      traceSessionId = sessionId;
+      recordE2ETrace("session_ready", "pass", `Render assigned session · request=${message.request_id || diagnosticRequestId}`, "Render");
       syncDeviceActionAvailability();
       appliedAudioSettings = {
         mic_mode: "mic1", auto_gain_enabled: false,
+        auto_power_saving_enabled: autoPowerSavingEl.checked,
         hpf_preset: "voice_clarity", noise_suppression_level: "off",
         vad_level: "medium", limiter_level: "low"
       };
@@ -3864,8 +4007,12 @@ function connectSocket() {
       refreshMicGainAvailability();
       reconnectAttempt = 0;
       errorEl.textContent = "";
-      try { await createPeer(); }
+      try {
+        await createPeer();
+        if (peer && sessionId === traceSessionId) recordE2ETrace("webrtc_setup", "pass", "Browser receive-only peer and offer created", "Listener");
+      }
       catch (error) {
+        recordE2ETrace("webrtc_setup", "fail", `Peer setup failed: ${error.message}`, "Listener");
         errorEl.textContent = `Could not create the online audio connection: ${error.message}`;
         setState("Peer setup failed");
         closePeer();
@@ -3876,6 +4023,7 @@ function connectSocket() {
       return;
     }
     if (message.type === "webrtc_session_end") {
+      if (sessionId) recordE2ETrace("session_end", "info", `Render ended session: ${message.reason || "unspecified"}`, "Render");
       closePeer();
       if (hotspotControlPending) {
         finishHotspotControlPending();
@@ -3910,6 +4058,7 @@ function connectSocket() {
   current.onerror = () => { if (socket === current) setState("Signaling error"); };
   current.onclose = () => {
     if (socket !== current) return;
+    if (sessionId && !manualStop) recordE2ETrace("session_end", "warning", "Listener signaling socket closed unexpectedly", "Render", false);
     socket = null;
     if (hotspotControlPending) {
       finishHotspotControlPending();
@@ -3953,6 +4102,10 @@ async function createPeer() {
     }
   };
   peer.ontrack = async (event) => {
+    if (sessionId && !traceMilestones.has("audio_track_received")) {
+      traceMilestones.add("audio_track_received");
+      recordE2ETrace("audio_track_received", "pass", `Browser received remote ${event.track?.kind || "media"} track`, "Audio");
+    }
     remoteStream = event.streams && event.streams[0]
       ? event.streams[0]
       : new MediaStream([event.track]);
@@ -3998,6 +4151,7 @@ async function createPeer() {
         });
       }
     } catch (error) {
+      recordE2ETrace("playback_failed", "fail", `Browser playback promise rejected: ${error.message}`, "Audio");
       restoreDirectAudio(`Processed playback could not start (${error.message}); direct audio restored.`);
     }
   };
@@ -4010,6 +4164,10 @@ async function createPeer() {
       sendAudioSettings();
     }
     if (peer.connectionState === "connected") {
+      if (sessionId && !traceMilestones.has("webrtc_connected")) {
+        traceMilestones.add("webrtc_connected");
+        recordE2ETrace("webrtc_connected", "pass", "Browser RTCPeerConnection state is connected", "Audio");
+      }
       if (!audioEl.paused && audioEl.readyState >= 2 && hasPlayableAudioTrack()) {
         startListeningTimer();
         setState("Audio is playing");
@@ -4017,6 +4175,9 @@ async function createPeer() {
         setState("Peer connected — waiting for audio");
       }
     } else {
+      if (peer.connectionState === "failed" && sessionId) {
+        recordE2ETrace("webrtc_disconnected", "fail", `Browser peer failed · ICE=${peer.iceConnectionState}`, "Audio");
+      }
       stopListeningTimer();
       setState(`Peer ${peer.connectionState}`);
     }
@@ -4289,8 +4450,16 @@ async function startListening() {
     return;
   }
   const startAttempt = ++listenerStartAttempt;
+  diagnosticRequestId = crypto.randomUUID ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  traceSessionId = null;
+  traceMilestones.clear();
+  clearE2ETimeout();
+  recordE2ETrace("start_requested", "info", `User pressed Play · request=${diagnosticRequestId}`, "Listener", false);
   manualStop = false;
   listenerActive = true;
+  armE2ETimeout("session_ready", 20000, "session_ready_timeout",
+    "Start request did not receive a session-ready response from Render within 20 seconds");
   stopListeningTimer(true);
   window.setListenerActive(true);
   setListenButtonActive(true);
@@ -4316,6 +4485,8 @@ async function startListening() {
 }
 
 function stopListening() {
+  if (sessionId) recordE2ETrace("session_end", "info", "User pressed Stop", "Listener");
+  clearE2ETimeout();
   listenerStartAttempt++;
   manualStop = true;
   listenerActive = false;
@@ -4415,6 +4586,13 @@ autoGainEl.addEventListener("change", () => {
   micGainAppliedSessionId = null;
   micGainAppliedPercent = null;
   refreshMicGainAvailability();
+  sendAudioSettings();
+});
+autoPowerSavingEl.addEventListener("change", () => {
+  try { localStorage.setItem(AUTO_POWER_SAVING_STORAGE_KEY, String(autoPowerSavingEl.checked)); } catch {}
+  powerSavingStatusEl.textContent = autoPowerSavingEl.checked
+    ? "On · setting will apply when the SNF audio link connects."
+    : "Off · setting will apply when the SNF audio link connects.";
   sendAudioSettings();
 });
 document.getElementById("quality16k").addEventListener("change", (event) => {
