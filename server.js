@@ -34,10 +34,11 @@ const MAX_SESSIONS = 4096;
 const MAX_WEBSOCKET_CLIENTS = 64;
 const MAX_LEGACY_LISTENERS = 4;
 
-const WS_CLIENT_PING_MS            = 45000;
-const DEVICE_HEARTBEAT_INTERVAL_MS = 5000;
+const WS_CLIENT_PING_MS            = 5000;
+const WS_CLIENT_PONG_TIMEOUT_MS    = 15000;
+const DEVICE_HEARTBEAT_INTERVAL_MS = 2000;
 const DEVICE_HEARTBEAT_TIMEOUT_MS  = 60000;
-const LISTENER_PONG_TIMEOUT_MS     = 90000;
+const LISTENER_PONG_TIMEOUT_MS     = 15000;
 const SOURCE_KEEPALIVE_MS          = 60000;
 
 const app = express();
@@ -496,7 +497,7 @@ wss.on("connection", (ws, req) => {
     });
 
     ws.pingTimer = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) {
+        if (ws.readyState === WebSocket.OPEN && !ws.pingOutstanding) {
             try {
                 ws.pingOutstanding = true;
                 ws.pingSentAt = Date.now();
@@ -779,7 +780,7 @@ const heartbeat = setInterval(() => {
             const elapsed = now - ws.pingSentAt;
             const timeout = ws.role === "listener" || ws.role === "webrtc_listener"
                 ? LISTENER_PONG_TIMEOUT_MS
-                : DEVICE_HEARTBEAT_TIMEOUT_MS;
+                : WS_CLIENT_PONG_TIMEOUT_MS;
             if (elapsed > timeout) {
                 console.log(
                     `Terminating dead WS (no pong in ${Math.floor(elapsed / 1000)}s): ` +
@@ -837,7 +838,7 @@ server.listen(PORT, "0.0.0.0", () => {
     console.log(`HTTP/WS server on port ${PORT}`);
     console.log(`SOURCE_TOKEN: ${SOURCE_TOKEN ? "YES" : "NO"}`);
     console.log(`LISTENER_PIN: ${LISTENER_PIN ? "YES" : "NO"}`);
-    console.log(`Device heartbeat check: every ${DEVICE_HEARTBEAT_INTERVAL_MS / 1000}s, timeout ${DEVICE_HEARTBEAT_TIMEOUT_MS / 1000}s`);
-    console.log(`Per-connection WS ping: every ${WS_CLIENT_PING_MS / 1000}s (ONLY ping mechanism)`);
+    console.log(`Device heartbeat check: every ${DEVICE_HEARTBEAT_INTERVAL_MS / 1000}s, application timeout ${DEVICE_HEARTBEAT_TIMEOUT_MS / 1000}s`);
+    console.log(`Per-connection WS ping: every ${WS_CLIENT_PING_MS / 1000}s, pong timeout ${WS_CLIENT_PONG_TIMEOUT_MS / 1000}s`);
     console.log(`Server->ESP32 JSON keepalive: every ${SOURCE_KEEPALIVE_MS / 1000}s`);
 });

@@ -194,6 +194,13 @@ function createWebRtcSignaling({
         ws.role = "webrtc_device";
         ws.authenticated = true;
         send(ws, { type: "webrtc_device_ready", device_id: deviceId });
+        if (state.listener && state.listener.readyState === WebSocket.OPEN) {
+            send(state.listener, {
+                type: "webrtc_device_status",
+                device_id: deviceId,
+                online: true,
+            });
+        }
         pairIfReady(state);
         return true;
     }
@@ -214,6 +221,15 @@ function createWebRtcSignaling({
             return true;
         }
         const state = states.get(deviceId);
+        // A close frame can race with a page refresh on a new TCP connection.
+        // Release dead references before deciding that another listener owns the slot.
+        if (state.listener && state.listener !== ws &&
+            state.listener.readyState !== WebSocket.OPEN) {
+            handleClose(state.listener);
+        }
+        if (state.device && state.device.readyState !== WebSocket.OPEN) {
+            handleClose(state.device);
+        }
         if (state.listener && state.listener !== ws) {
             fail(ws, "listener_busy");
             return true;
@@ -223,6 +239,11 @@ function createWebRtcSignaling({
         ws.role = "webrtc_listener";
         ws.authenticated = true;
         send(ws, { type: "webrtc_listener_ready", device_id: deviceId });
+        send(ws, {
+            type: "webrtc_device_status",
+            device_id: deviceId,
+            online: !!state.device && state.device.readyState === WebSocket.OPEN,
+        });
         if (!state.device || state.device.readyState !== WebSocket.OPEN) {
             send(ws, { type: "webrtc_waiting_for_device", device_id: deviceId });
         }
@@ -235,6 +256,20 @@ function createWebRtcSignaling({
         if (message.type === "webrtc_device_hello") return handleDeviceJoin(ws, message);
         if (message.type === "webrtc_listener_hello") return handleListenerJoin(ws, message);
         return false;
+    }
+
+    function handleListenerStop(ws, message) {
+        if (message.type !== "webrtc_listener_stop") return false;
+        const state = stateFor(ws);
+        if (!state || ws !== state.listener || ws.role !== "webrtc_listener" || !ws.authenticated) {
+            return true;
+        }
+        endSession(state, "listener_stopped", ws);
+        state.listener = null;
+        delete ws.deviceId;
+        ws.authenticated = false;
+        closeClient(ws, 1000, "Listener stopped");
+        return true;
     }
 
     function handleSignal(ws, message) {
@@ -613,7 +648,7 @@ function createWebRtcSignaling({
 
     function handleMessage(ws, message) {
         if (!message || typeof message !== "object" || Array.isArray(message)) return false;
-        return handleJoin(ws, message) || handleSignal(ws, message) ||
+        return handleListenerStop(ws, message) || handleJoin(ws, message) || handleSignal(ws, message) ||
             handleAudioControl(ws, message) || handleAudioControlAck(ws, message) ||
             handleAudioSettings(ws, message) || handleAudioSettingsAck(ws, message) ||
             handleDeviceHealthResponse(ws, message) ||
@@ -633,6 +668,11 @@ function createWebRtcSignaling({
         if (ws === state.device) {
             endSession(state, "device_disconnected", ws);
             state.device = null;
+            send(state.listener, {
+                type: "webrtc_device_status",
+                device_id: state.deviceId,
+                online: false,
+            });
         }
         if (ws === state.listener) {
             endSession(state, "listener_disconnected", ws);

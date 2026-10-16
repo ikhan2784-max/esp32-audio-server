@@ -2898,6 +2898,10 @@ function connectSocket() {
     if (typeof event.data !== "string") return;
     let message;
     try { message = JSON.parse(event.data); } catch { return; }
+    if (message.type === "webrtc_device_status") {
+      if (message.device_id === selectedDeviceId) void refreshAppStatus();
+      return;
+    }
     if (message.type === "webrtc_error") {
       errorEl.textContent = message.reason || "Signaling rejected";
       if (message.reason === "listener_busy") {
@@ -2929,6 +2933,7 @@ function connectSocket() {
     }
     if (message.type === "webrtc_waiting_for_device") {
       setState(`Waiting for ${message.device_id || selectedDeviceId}`);
+      void refreshAppStatus();
       return;
     }
     if (message.type === "webrtc_session_ready") {
@@ -2969,6 +2974,7 @@ function connectSocket() {
       refreshMicGainAvailability();
       refreshAudioSettingsAvailability();
       setState(`Waiting for ${message.device_id || selectedDeviceId}`);
+      void refreshAppStatus();
       return;
     }
     if (message.type === "webrtc_audio_control_ack") {
@@ -3371,7 +3377,10 @@ function stopListening() {
   window.setListenerActive(false);
   if (reconnectTimer) clearTimeout(reconnectTimer);
   reconnectTimer = null;
-  if (socket) socket.close(1000, "Listener stopped");
+  if (socket) {
+    send({ type: "webrtc_listener_stop" });
+    socket.close(1000, "Listener stopped");
+  }
   socket = null;
   sessionId = null;
   closePeer();
@@ -3517,7 +3526,7 @@ new MutationObserver(() => {
 void refreshAppStatus();
 renderHealthDashboard();
 void loadSessionTimeout();
-appStatusTimer = setInterval(() => { void refreshAppStatus(); }, 10000);
+appStatusTimer = setInterval(() => { void refreshAppStatus(); }, 3000);
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) void refreshAppStatus();
 });
@@ -3528,7 +3537,10 @@ window.addEventListener("pagehide", () => {
   listenerActive = false;
   stopListeningTimer();
   window.setListenerActive(false);
-  if (socket) socket.close(1000, "Page closed");
+  if (socket) {
+    send({ type: "webrtc_listener_stop" });
+    socket.close(1000, "Page closed");
+  }
   if (appStatusTimer) clearInterval(appStatusTimer);
   closePeer();
   if (audioContext && audioContext.state !== "closed") void audioContext.close();

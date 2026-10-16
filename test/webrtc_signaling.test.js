@@ -187,6 +187,47 @@ test("rejects a second WebRTC listener without displacing the active listener", 
     assert.equal(signaling.getStatus().listener_connected, true);
 });
 
+test("listener stop releases its reservation so a refreshed page can reconnect", () => {
+    const harness = makeHarness();
+    const { signaling, device, listener } = harness;
+    joinBoth(harness);
+    const replacement = new MockSocket(true);
+
+    assert.equal(signaling.handleMessage(listener, { type: "webrtc_listener_stop" }), true);
+    assert.equal(listener.closeCode, 1000);
+    assert.equal(device.last("webrtc_session_end").reason, "listener_stopped");
+    assert.equal(signaling.getStatus().listener_connected, false);
+    assert.equal(signaling.getStatus().session_active, false);
+
+    assert.equal(signaling.handleMessage(replacement, { type: "webrtc_listener_hello" }), true);
+    assert.ok(replacement.last("webrtc_session_ready"));
+    assert.equal(replacement.last("webrtc_error"), undefined);
+});
+
+test("a closed listener reservation is reclaimed during the next listener join", () => {
+    const harness = makeHarness();
+    const { signaling, listener } = harness;
+    joinBoth(harness);
+    listener.readyState = WebSocket.CLOSED;
+    const replacement = new MockSocket(true);
+
+    assert.equal(signaling.handleMessage(replacement, { type: "webrtc_listener_hello" }), true);
+    assert.ok(replacement.last("webrtc_session_ready"));
+    assert.equal(replacement.last("webrtc_error"), undefined);
+    assert.equal(signaling.getStatus().listener_connected, true);
+});
+
+test("device presence changes are pushed to an active listener", () => {
+    const harness = makeHarness();
+    const { signaling, device, listener } = harness;
+    joinBoth(harness);
+    assert.equal(listener.last("webrtc_device_status").online, true);
+
+    signaling.handleClose(device);
+
+    assert.equal(listener.last("webrtc_device_status").online, false);
+});
+
 test("rejects wrong-direction and oversized SDP", () => {
     const harness = makeHarness();
     const { signaling, listener } = harness;
