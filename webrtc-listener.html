@@ -527,7 +527,7 @@
       <div class="section-heading"><h1><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3v18m-8-9h16"/></svg>LIVE AUDIO</h1><span class="live-state" id="state" aria-live="polite">Stopped</span></div>
       <section class="panel-card hero-card" aria-label="Live audio listener">
         <div class="mic-orb" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.6"><rect x="9" y="2.5" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0m-7 7v3m-4 0h8"/></svg></div>
-        <p class="hero-caption">One-way WebRTC audio from your SNF device</p>
+        <p class="hero-caption">One-way live audio from your SNF device</p>
         <div class="listen-actions">
           <button class="action-button" id="start" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path class="listen-start-icon" d="m8 5 11 7-11 7z"/><rect class="listen-stop-icon" x="6" y="6" width="12" height="12" rx="1"/></svg><span id="listenButtonLabel">Start listening</span></button>
           <button class="action-button record" id="record" type="button" disabled aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle class="record-start-icon" cx="12" cy="12" r="5"/><rect class="record-stop-icon" x="6" y="6" width="12" height="12" rx="1"/></svg><span id="recordButtonLabel">Start recording</span></button>
@@ -543,7 +543,7 @@
 
       <section class="panel-card">
         <div class="card-title"><span class="eyebrow">AUDIO LEVEL</span><output id="listenerDb">Waiting for audio</output></div>
-        <div class="level-label"><span id="levelSource">Incoming WebRTC audio</span><span id="levelWord">Idle</span></div>
+        <div class="level-label"><span id="levelSource">Incoming audio</span><span id="levelWord">Idle</span></div>
         <div class="level-track" role="meter" aria-label="Audio output level" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="level-fill" id="audioLevelFill"></div></div>
         <div class="volume-control">
           <label class="volume-row" for="listenerVolume"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M4 10v4h4l5 4V6l-5 4H4Z"/><path d="M17 9a5 5 0 0 1 0 6m2-9a9 9 0 0 1 0 12"/></svg><input id="listenerVolume" type="range" min="0" max="300" step="1" value="100" list="listenerVolumeMarks" aria-label="Listener playback volume; 100 percent is normal level"><output id="listenerVolumeValue">100% · 1.0×</output></label>
@@ -635,12 +635,12 @@
         <button class="small-button" id="diagnostics-tab-information" type="button" role="tab" aria-controls="diagnostics-information-view" data-diagnostics-view="information" aria-selected="false">Information</button>
       </div>
       <div class="diagnostics-view" id="diagnostics-health-view" role="tabpanel" aria-labelledby="diagnostics-tab-health">
-        <div class="health-toolbar"><div><h3>DEVICE HEALTH</h3><p>Live checks use current SNF telemetry, Render responses and browser WebRTC statistics.</p></div><button class="small-button health-check-button" id="runHealthCheck" type="button">Run Full Health Check</button></div>
-        <p class="helper" id="healthCheckStatus" role="status" aria-live="polite">Read-only checks for current SNF, Render, WebRTC and browser data.</p>
+        <div class="health-toolbar"><div><h3>DEVICE HEALTH</h3><p>Live checks use current SNF telemetry, Render responses and browser audio statistics.</p></div><button class="small-button health-check-button" id="runHealthCheck" type="button">Run Full Health Check</button></div>
+        <p class="helper" id="healthCheckStatus" role="status" aria-live="polite">Read-only checks for current SNF, Render, audio link and browser data.</p>
         <section class="health-score-card" id="healthScoreCard" aria-live="polite"><div class="health-score-heading"><span>Device Health Score</span><strong id="healthScoreValue">Waiting</strong></div><p class="health-score-reasons" id="healthScoreReasons">A score appears when current device telemetry is available.</p><p class="helper">Calculated from observed connectivity, retries, watchdog/reset reason, audio errors, uptime and free-heap trend. It is a diagnostic indicator, not a guarantee of hardware health.</p></section>
         <div class="health-summary" id="healthSummary" role="group" aria-label="Health check summary">Waiting for device telemetry.</div>
         <div class="health-card-grid" id="healthCards" aria-live="off"></div>
-        <p class="helper">Only checks backed by current telemetry or browser APIs are shown; unsupported hardware checks are omitted.</p>
+      <p class="helper">Only checks with current evidence are shown. Stream-specific checks appear while listening; unavailable or unsupported measurements are omitted.</p>
       </div>
       <div class="diagnostics-view" id="diagnostics-information-view" role="tabpanel" aria-labelledby="diagnostics-tab-information" hidden>
         <p class="helper" id="informationUpdated">Waiting for current SNF telemetry.</p>
@@ -660,11 +660,11 @@
         </div><p class="helper">The active app partition’s free space is separate from flash reserved for other partitions.</p></section>
         <section class="setting-group information-section"><h2>DEVICE CONNECTION</h2><div class="diagnostic-grid">
           <div class="metric"><span>Listeners</span><strong id="infoListeners">—</strong></div><div class="metric"><span>Connection since</span><strong id="infoConnectionSince">—</strong></div>
-          <div class="metric"><span>Last seen</span><strong id="infoLastSeen">—</strong></div><div class="metric"><span>Last WebRTC session</span><strong id="infoLastPlayed">—</strong></div>
-          <div class="metric wide"><span>Last WebRTC session duration</span><strong id="infoLastPlayedDuration">—</strong></div>
+          <div class="metric"><span>Last seen</span><strong id="infoLastSeen">—</strong></div><div class="metric"><span>Last listening session</span><strong id="infoLastPlayed">—</strong></div>
+          <div class="metric wide"><span>Last listening session duration</span><strong id="infoLastPlayedDuration">—</strong></div>
         </div></section>
-        <section class="setting-group information-section"><h2>WEBRTC</h2><div class="diagnostic-grid">
-          <div class="metric"><span>Peer connection</span><strong id="infoPeer">—</strong></div><div class="metric"><span>WebRTC sessions started / ended</span><strong id="infoWebrtcSessions">—</strong></div>
+        <section class="setting-group information-section"><h2>ONLINE AUDIO</h2><div class="diagnostic-grid">
+          <div class="metric"><span>Audio connection</span><strong id="infoPeer">—</strong></div><div class="metric"><span>Listening sessions started / ended</span><strong id="infoWebrtcSessions">—</strong></div>
           <div class="metric wide"><span>Active audio profile / PCM</span><strong id="infoAudioProfile">—</strong></div><div class="metric wide"><span>Mic / I²S format</span><strong id="infoI2sFormat">—</strong></div>
           <div class="metric"><span>Input mode / channel</span><strong id="infoInputMode">—</strong></div><div class="metric"><span>Capture state / samples</span><strong id="infoCapture">—</strong></div>
           <div class="metric"><span>Capture errors / overflows</span><strong id="infoCaptureErrors">—</strong></div><div class="metric"><span>DSP state / errors</span><strong id="infoDsp">—</strong></div>
@@ -722,7 +722,7 @@
       <button class="small-button" id="logout" type="button" style="width:100%;margin-top:8px">Sign out</button>
     </section>
 
-    <footer class="footer">SNF microphone → Render signaling → WebRTC listener · one-way audio</footer>
+    <footer class="footer">SNF microphone → Render → online listener · one-way audio</footer>
   </main>
 <script src="/session-activity.js"></script>
 <script>
@@ -875,7 +875,7 @@ try {
 } catch {}
 updateGtcrnBlendDisplay();
 audioProcessingStatus = !gtcrnEnabledEl.checked || Number(gtcrnBlendEl.value) === 0
-  ? "GTCRN off · original WebRTC audio"
+  ? "GTCRN off · original audio"
   : `GTCRN blend ${gtcrnBlendEl.value}% will activate when listening starts.`;
 processingStatusEl.textContent = audioProcessingStatus;
 let listeningElapsedMs = 0;
@@ -1013,6 +1013,10 @@ function logHealthResult(results, label, passed, detail, warning = false) {
   addLog(`${marker} · ${label}: ${detail}`, level, "health");
 }
 
+function logHealthSkipped(label, detail) {
+  addLog(`SKIP · ${label}: ${detail}`, "info", "health");
+}
+
 async function fetchHealthCheck(url, responseType = "json", timeoutMs = 6000, requestOptions = {}) {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
@@ -1061,6 +1065,13 @@ function healthCounterStatus(values, positiveStatus) {
   if (!reported.length) return "Not Tested";
   if (reported.some((value) => value > 0)) return positiveStatus;
   return reported.length === counters.length ? "Healthy" : "Not Tested";
+}
+
+function historicalNetworkStatus(data) {
+  if (!data || typeof data.wifi_connected !== "boolean") return "Not Tested";
+  // Retry/disconnect totals are cumulative since boot. A prior recovery is not
+  // an active fault when the station connection is currently healthy.
+  return data.wifi_connected ? "Healthy" : "Warning";
 }
 
 function healthBooleanGroupStatus(values, falseStatus = "Warning") {
@@ -1113,6 +1124,10 @@ function buildHealthCategories() {
     d.audio_capture_running && captured;
   const telemetryAge = telemetry?.telemetry_age_ms;
   const nowFresh = Number.isFinite(telemetryAge) && telemetryAge >= 0 && telemetryAge <= 15000;
+  const serverOnlineKnown = typeof device?.device_connected === "boolean";
+  const deviceOnline = serverOnlineKnown ? device.device_connected :
+    typeof d.signaling_connected === "boolean" ? d.signaling_connected :
+      typeof healthEvidence.deviceSignaling === "boolean" ? healthEvidence.deviceSignaling : undefined;
   const taskStates = [d.audio_capture_running, d.dsp_running, d.webrtc_running];
   const taskStateText = (value) => value === true ? "running" :
     value === false ? "stopped" : "not reported";
@@ -1146,17 +1161,19 @@ function buildHealthCategories() {
     { name: "Audio DSP", items: [
       healthBool(hasData ? d.dsp_running : undefined, "DSP pipeline active", "DSP task is running.", "DSP task is not running.", "Critical"),
       healthBool(hasData ? d.dsp_hpf_active : undefined, "High-pass/DC removal status", "The live DSP pipeline reports its HPF/DC stage active.", "HPF/DC stage is not active.", "Warning"),
-      healthBool(hasData ? d.dsp_ns_enabled : undefined, "Noise suppression status", d.dsp_ns_enabled ? "Runtime noise suppression is enabled." : "Runtime noise suppression is disabled by the current setting.", "Runtime noise-suppression state is not reported.", "Not Tested"),
-      makeHealthItem("VAD speech detection", !hasData || d.dsp_vad_enabled !== true || !Number.isFinite(rmsDb) ? "Not Tested" :
-        d.dsp_vad_voice === true ? "Healthy" : "Not Tested",
-        !hasData || !Number.isFinite(rmsDb) ? "VAD has no current measurement." : `VAD ${d.dsp_vad_voice ? "detected speech" : "did not detect speech in this snapshot"} · RMS ${rmsDb.toFixed(1)} dBFS; a quiet snapshot is not treated as a fault.`),
+      makeHealthItem("Noise suppression status", typeof d.dsp_ns_enabled !== "boolean" ? "Not Tested" : "Healthy",
+        typeof d.dsp_ns_enabled === "boolean" ? d.dsp_ns_enabled ? "Runtime noise suppression is enabled." : "Noise suppression is intentionally off by the selected setting; the direct audio path remains available." : "Runtime noise-suppression setting is not reported."),
+      makeHealthItem("VAD speech detection", !hasData || typeof d.dsp_vad_enabled !== "boolean" ||
+        (d.dsp_vad_enabled && (!Number.isFinite(rmsDb) || typeof d.dsp_vad_voice !== "boolean")) ? "Not Tested" : "Healthy",
+        !hasData || typeof d.dsp_vad_enabled !== "boolean" ? "VAD configuration is not reported." :
+          !d.dsp_vad_enabled ? "Voice detection is intentionally off by the selected setting." :
+            `VAD is operating and ${d.dsp_vad_voice ? "speech is detected" : "no speech is detected in this quiet/current snapshot"} · RMS ${rmsDb.toFixed(1)} dBFS.`),
       makeHealthItem("Input/output audio level comparison", !Number.isFinite(d.dsp_input_avg_abs) || !Number.isFinite(d.dsp_output_avg_abs) ? "Not Tested" : "Healthy",
         Number.isFinite(d.dsp_input_avg_abs) && Number.isFinite(d.dsp_output_avg_abs) ? `Average absolute level ${d.dsp_input_avg_abs} → ${d.dsp_output_avg_abs}.` : "DSP input/output level comparison is not reported."),
-      makeHealthItem("Gain and limiter activity", !Number.isFinite(d.dsp_measured_gain) ? "Not Tested" :
-        Number(d.dsp_limiter_clipped || 0) > 0 ? "Warning" : "Healthy",
-        Number.isFinite(d.dsp_measured_gain) ? `Measured gain ${Number(d.dsp_measured_gain).toFixed(2)}× · limiter count ${d.dsp_limiter_clipped ?? "n/a"} · limiter ${d.dsp_limiter_enabled ? "enabled" : "disabled"}.` : "Gain/limiter metrics are not reported."),
+      makeHealthItem("Gain and limiter activity", !Number.isFinite(d.dsp_measured_gain) ? "Not Tested" : "Healthy",
+        Number.isFinite(d.dsp_measured_gain) ? `Measured gain ${Number(d.dsp_measured_gain).toFixed(2)}× · limiter protection events ${d.dsp_limiter_clipped ?? "n/a"} · limiter ${d.dsp_limiter_enabled ? "enabled" : "disabled"}. Limiter interventions are protective activity, not post-processing clipping.` : "Gain/limiter metrics are not reported."),
       makeHealthItem("Clipping after processing", !Number.isFinite(outputPeak) ? "Not Tested" :
-        outputPeak >= 32767 || Number(d.dsp_limiter_clipped || 0) > 0 ? "Warning" : "Healthy",
+        outputPeak >= 32767 ? "Warning" : "Healthy",
         Number.isFinite(outputPeak) ? `Output peak ${Math.floor(outputPeak)} · limiter interventions ${d.dsp_limiter_clipped ?? "n/a"}; percentage is not available.` : "Processed peak telemetry is unavailable."),
       makeHealthItem("Processing time per frame", "Unsupported", "Per-frame DSP execution timing is not instrumented.", false),
       makeHealthItem("DSP CPU load", "Unsupported", "Per-task CPU utilization is not instrumented.", false),
@@ -1171,31 +1188,31 @@ function buildHealthCategories() {
       makeHealthItem("Gateway and DNS reachability", !hasData || !d.wifi_connected ? "Not Tested" : "Not Tested",
         d.wifi_gateway_ip ? `Gateway ${d.wifi_gateway_ip} is configured; DNS reachability is not actively probed.` : "Gateway/DNS reachability is not probed by the read-only check.", false),
       makeHealthItem("Connection and reconnection attempts", !hasData ? "Not Tested" :
-        healthCounterStatus([d.wifi_retry_count, d.wifi_disconnect_count], "Warning"),
-        hasData ? `Retries ${d.wifi_retry_count ?? "n/a"} · disconnects ${d.wifi_disconnect_count ?? "n/a"}.` : "Wi-Fi retry counters are unavailable."),
+        historicalNetworkStatus(d),
+        hasData ? `Cumulative since boot: ${d.wifi_retry_count ?? "n/a"} retries · ${d.wifi_disconnect_count ?? "n/a"} disconnects. Current station link ${d.wifi_connected ? "is connected" : "is disconnected"}.` : "Wi-Fi retry counters are unavailable."),
       makeHealthItem("Last disconnect reason", !hasData || !Number.isFinite(d.wifi_last_disconnect_reason) ? "Not Tested" :
-        Number(d.wifi_disconnect_count || 0) === 0 ? "Healthy" : "Warning",
-        Number.isFinite(d.wifi_last_disconnect_reason) ? Number(d.wifi_disconnect_count || 0) === 0 ? "No disconnect recorded since this counter reset." : `Last disconnect reason code ${d.wifi_last_disconnect_reason}.` : "Disconnect reason is not reported."),
+        d.wifi_connected ? "Healthy" : "Warning",
+        Number.isFinite(d.wifi_last_disconnect_reason) ? Number(d.wifi_disconnect_count || 0) === 0 ? "No disconnect recorded since this counter reset." : `Last disconnect reason code ${d.wifi_last_disconnect_reason} · ${d.wifi_disconnect_count} cumulative disconnect(s) since boot; current link ${d.wifi_connected ? "is connected" : "is disconnected"}.` : "Disconnect reason is not reported."),
       makeHealthItem("Hotspot state and client count", !hasData ? "Not Tested" : "Healthy",
         hasData ? `Hotspot ${d.hotspot_running ? "running" : "off"} · ${Number.isFinite(d.hotspot_clients) ? d.hotspot_clients : "unknown"} client(s).` : "Hotspot telemetry is unavailable."),
       makeHealthItem("AP/STA coexistence health", !hasData || !d.wifi_connected || !d.hotspot_running ? "Not Tested" : "Healthy",
         d.wifi_connected && d.hotspot_running ? "Station and hotspot are both active in this snapshot." : "AP/STA simultaneous operation is not currently observed." , false),
       makeHealthItem("Wi-Fi scan and saved-network tests", "Not Tested", "Scanning or changing saved credentials is not performed by a read-only health check.", false),
       makeHealthItem("Network stability and packet loss", !hasData ? "Not Tested" :
-        healthCounterStatus([d.wifi_disconnect_count, d.wifi_retry_count], "Warning"),
-        hasData ? `${d.wifi_disconnect_count ?? "n/a"} disconnect(s), ${d.wifi_retry_count ?? "n/a"} retry(ies); IP packet loss is not measured.` : "Network counters are unavailable."),
+        historicalNetworkStatus(d),
+        hasData ? `${d.wifi_disconnect_count ?? "n/a"} cumulative disconnect(s), ${d.wifi_retry_count ?? "n/a"} cumulative retry(ies) since boot · current station link ${d.wifi_connected ? "connected" : "disconnected"}; IP packet loss is not measured.` : "Network counters are unavailable."),
       healthBool(hasData ? d.signaling_connected : undefined, "Internet reachability", "Authenticated Render signaling is connected from the SNF.", "SNF has no active authenticated Render signaling connection.", "Warning"),
     ] },
     { name: "Render Backend", items: [
-      healthBool(healthEvidence.deviceSignaling, "DNS resolution", "SNF WSS signaling is connected; device-side name resolution succeeded.", "SNF-side DNS/WSS connection is not confirmed.", "Warning"),
-      healthBool(healthEvidence.deviceSignaling, "HTTPS/TLS handshake", "SNF established its secure WSS connection to Render.", "SNF-side TLS is not confirmed.", "Warning"),
-      healthBool(healthEvidence.deviceSignaling, "Authentication success/failure", "The device authenticated to the configured Render signaling service.", "Device authentication is not confirmed.", "Critical"),
-      healthBool(healthEvidence.deviceSignaling, "Signaling connection state", "Device signaling is connected.", "Device signaling is disconnected.", "Critical"),
-      healthBool(healthEvidence.deviceSignaling, "WebSocket state", "Authenticated device WebSocket is open.", "Device WebSocket is not connected.", "Critical"),
+      healthBool(healthEvidence.renderHealth, "Render HTTPS availability", "The browser resolved the Render host and received a healthy HTTPS response.", "Render HTTPS health endpoint did not respond successfully.", "Warning", false),
+      healthBool(healthEvidence.securePage, "Secure page delivery", "The listener is running in a secure browser context.", "The listener page is not running in a secure browser context.", "Warning", false),
+      healthBool(deviceOnline, "Device authentication and online state", "The authenticated SNF signaling connection is online.", "The SNF device is offline or its authenticated connection is unavailable.", "Warning"),
+      healthBool(deviceOnline, "Signaling connection state", "The device signaling connection is online.", "The device signaling connection is offline.", "Warning"),
+      healthBool(deviceOnline, "Online connection state", "The authenticated device connection is open.", "The authenticated device connection is not open.", "Warning"),
       makeHealthItem("Server ping / round-trip time", "Unsupported", "Server-side device signaling RTT is not measured.", false),
-      makeHealthItem("Last successful heartbeat", !device || !Number.isFinite(telemetryAge) ? "Not Tested" :
-        nowFresh ? "Healthy" : "Warning",
-        Number.isFinite(telemetryAge) ? `Most recent device telemetry ${Math.floor(telemetryAge / 1000)}s ago.` : "No heartbeat/telemetry timestamp is available."),
+      makeHealthItem("Last successful heartbeat", serverOnlineKnown ? device.device_connected ? "Healthy" : "Warning" :
+        !Number.isFinite(telemetryAge) ? "Not Tested" : nowFresh ? "Healthy" : "Warning",
+        Number.isFinite(telemetryAge) ? `Most recent device telemetry ${Math.floor(telemetryAge / 1000)}s ago${serverOnlineKnown ? ` · Render reports the device ${device.device_connected ? "online" : "offline"}` : ""}.` : serverOnlineKnown ? `Render reports the device ${device.device_connected ? "online" : "offline"}; no current firmware telemetry timestamp is available.` : "No heartbeat/telemetry timestamp is available."),
       makeHealthItem("Connection retry counter", "Unsupported", "A distinct device signaling reconnect counter is not exposed.", false),
       healthCounter(hasData ? d.signaling_errors : undefined, "Backend/signaling error count", "Reported signaling errors"),
       makeHealthItem("Server session state", !device ? "Not Tested" : device.session_active ? "Healthy" : "Not Tested",
@@ -1203,10 +1220,10 @@ function buildHealthCategories() {
       makeHealthItem("Unauthorized API request rejection", healthEvidence.unauthorizedApiRejected === true ? "Healthy" : healthEvidence.unauthorizedApiRejected === false ? "Warning" : "Not Tested",
         healthEvidence.unauthorizedApiRejected === true ? "An unauthenticated API request was rejected with HTTP 401." : healthEvidence.unauthorizedApiRejected === false ? "The unauthenticated API request was not rejected with HTTP 401." : "Run Full Health Check to verify the protected API rejects requests without session credentials.", false),
     ] },
-    { name: "WebRTC & Opus", items: [
+    { name: "Online Audio & Opus", items: [
       makeHealthItem("Peer connection state", !listenerActive || !peer ? "Not Tested" :
         peerState === "connected" ? "Healthy" : peerState === "failed" ? "Critical" : peerState === "closed" ? "Critical" : "Warning",
-        listenerActive && peer ? `Browser peer connection: ${peerState || "unknown"}.` : "Start listening to establish a browser peer connection.", Boolean(listenerActive)),
+        listenerActive && peer ? `Browser audio connection: ${peerState || "unknown"}.` : "Start listening to establish an audio connection.", Boolean(listenerActive)),
       makeHealthItem("ICE state and selected candidate", !listenerActive || !peer || !browser ? "Not Tested" :
         peer.iceConnectionState === "connected" || peer.iceConnectionState === "completed" ? "Healthy" :
           peer.iceConnectionState === "failed" ? "Critical" : "Warning",
@@ -1222,7 +1239,7 @@ function buildHealthCategories() {
         rtpAvailable ? `${browser.packetsReceived} received RTP packet(s) · ${browser.bytesReceived ?? "n/a"} byte(s).` : "Browser inbound RTP counters are unavailable.", Boolean(listenerActive)),
       makeHealthItem("Transport packet loss and jitter", !rtpAvailable ? "Not Tested" :
         Number(browser.packetsLost || 0) > 0 ? "Warning" : "Healthy",
-        rtpAvailable ? `${browser.packetsLost || 0} reported lost packet(s) · ${Number.isFinite(browser.jitterMs) ? `${browser.jitterMs.toFixed(1)} ms jitter` : "jitter unavailable"}.` : "WebRTC receiver statistics are unavailable.", Boolean(listenerActive)),
+        rtpAvailable ? `${browser.packetsLost || 0} reported lost packet(s) · ${Number.isFinite(browser.jitterMs) ? `${browser.jitterMs.toFixed(1)} ms jitter` : "jitter unavailable"}.` : "Browser receiver statistics are unavailable.", Boolean(listenerActive)),
       makeHealthItem("End-to-end latency estimate", !Number.isFinite(browser?.rttMs) ? "Not Tested" : "Healthy",
         Number.isFinite(browser?.rttMs) ? `Selected ICE pair RTT ${browser.rttMs.toFixed(1)} ms; one-way latency is not directly measured.` : "No selected-candidate RTT measurement is available.", false),
       makeHealthItem("Listener track and playback started", !listenerActive ? "Not Tested" :
@@ -1237,23 +1254,23 @@ function buildHealthCategories() {
         hasData && d.firmware ? `${d.firmware}${d.firmware_version ? ` v${d.firmware_version}` : ""}${d.build_id ? ` · build ${String(d.build_id).slice(0, 16)}` : ""}${d.idf_version ? ` · SNF-IDF ${d.idf_version}` : ""}${d.build_date && d.build_time ? ` · built ${d.build_date} ${d.build_time}` : ""}.` : "Running firmware identity is not reported."),
       makeHealthItem("Device uptime", Number.isFinite(d.uptime_ms) ? "Healthy" : "Not Tested",
         Number.isFinite(d.uptime_ms) ? formatDuration(d.uptime_ms / 1000) : "Uptime is not reported."),
-      makeHealthItem("Last boot/reset reason", Number.isFinite(d.reset_reason) ? "Healthy" : "Not Tested",
-        Number.isFinite(d.reset_reason) ? `Reset reason code ${d.reset_reason}.` : "Reset reason is not reported."),
+      makeHealthItem("Last boot/reset reason", Number.isFinite(d.reset_reason) || Boolean(d.reset_reason_name) ? "Healthy" : "Not Tested",
+        d.reset_reason_name ? `${d.reset_reason_name}${Number.isFinite(d.reset_reason) ? ` (code ${d.reset_reason})` : ""}.` : Number.isFinite(d.reset_reason) ? `Reset reason code ${d.reset_reason}.` : "Reset reason is not reported."),
       makeHealthItem("Free internal heap and minimum", Number.isFinite(d.free_internal_heap ?? d.free_heap) && Number.isFinite(d.min_free_internal_heap ?? d.min_free_heap) ? "Healthy" : "Not Tested",
         Number.isFinite(d.free_internal_heap ?? d.free_heap) ? `Free ${formatBytes(d.free_internal_heap ?? d.free_heap)} · minimum ${formatBytes(d.min_free_internal_heap ?? d.min_free_heap)}.` : "Heap counters are unavailable."),
       makeHealthItem("PSRAM availability", Number.isFinite(d.total_psram) ? Number(d.total_psram) > 0 ? "Healthy" : "Unsupported" : "Not Tested",
         Number.isFinite(d.total_psram) ? Number(d.total_psram) > 0 ? `${formatBytes(d.free_psram)} free of ${formatBytes(d.total_psram)}.` : "No PSRAM is available on this board/build." : "PSRAM size is not reported.", false),
       makeHealthItem("Largest allocatable memory block", Number.isFinite(d.largest_internal_block) ? "Healthy" : "Unsupported",
         Number.isFinite(d.largest_internal_block) ? formatBytes(d.largest_internal_block) : "Largest-block telemetry is not available.", false),
-      makeHealthItem("Task stack high-water marks", Number.isFinite(d.opus_task_stack_high_water_bytes) ? "Healthy" : "Not Tested",
-        Number.isFinite(d.opus_task_stack_high_water_bytes) ? `Opus task ${formatBytes(d.opus_task_stack_high_water_bytes)} · WebRTC task ${formatBytes(d.webrtc_task_stack_high_water_bytes)} remaining.` : "Task stack values are not available yet."),
+      makeHealthItem("Task stack high-water marks", Number.isFinite(d.opus_task_stack_high_water_bytes) && Number.isFinite(d.webrtc_task_stack_high_water_bytes) ? "Healthy" : "Not Tested",
+        Number.isFinite(d.opus_task_stack_high_water_bytes) && Number.isFinite(d.webrtc_task_stack_high_water_bytes) ? `Opus task ${formatBytes(d.opus_task_stack_high_water_bytes)} · audio link task ${formatBytes(d.webrtc_task_stack_high_water_bytes)} remaining.` : "Task stack values are not available yet."),
       makeHealthItem("CPU utilization estimate", "Unsupported", `Per-task CPU utilization is not instrumented${Number.isFinite(d.cpu_frequency_mhz) ? ` · CPU frequency ${d.cpu_frequency_mhz} MHz` : ""}.`, false),
       makeHealthItem("Watchdog reset count", "Not Tested", "Only the current reset reason is reported; watchdog history count is not exposed.", false),
       makeHealthItem("Crash and exception history", "Not Tested", "Crash-history records are not available through the health API.", false),
       makeHealthItem("NVS read/write status", "Not Tested", "The online snapshot does not run NVS writes or expose a current NVS status flag.", false),
       makeHealthItem("Task health and deadlock detection", !hasData ? "Not Tested" :
         healthBooleanGroupStatus(taskStates),
-        hasData ? `Capture ${taskStateText(d.audio_capture_running)} · DSP ${taskStateText(d.dsp_running)} · WebRTC ${taskStateText(d.webrtc_running)}.` : "Task health telemetry is unavailable."),
+        hasData ? `Capture ${taskStateText(d.audio_capture_running)} · DSP ${taskStateText(d.dsp_running)} · online audio ${taskStateText(d.webrtc_running)}.` : "Task health telemetry is unavailable."),
       healthCounter(d.brownout_count, "Brownout reset count", "Persistent brownout reset counter reported by firmware."),
       makeHealthItem("Temperature", Number.isFinite(d.temperature_c) ? "Healthy" : "Not Tested",
         Number.isFinite(d.temperature_c) ? `SNF internal temperature ${d.temperature_c.toFixed(1)} °C.` : "Temperature telemetry is unavailable.", false),
@@ -1272,7 +1289,8 @@ function buildHealthCategories() {
       healthEvidence.authenticatedApi ? "Authenticated device API returned successfully." : "Authenticated device API did not succeed.");
   }
   return categories
-    .map((category) => ({ ...category, items: category.items.filter((item) => item.status !== "Unsupported") }))
+    .map((category) => ({ ...category, items: category.items.filter((item) =>
+      item.status !== "Unsupported" && !(item.status === "Not Tested" && !item.required)) }))
     .filter((category) => category.items.length > 0);
 }
 
@@ -1433,24 +1451,26 @@ async function runHealthCheck() {
   healthCheckRunning = true;
   runHealthCheckButton.disabled = true;
   runHealthCheckButton.textContent = "Checking…";
-  healthCheckStatusEl.textContent = "Running the read-only browser, Render, SNF firmware, and WebRTC health checks…";
+  healthCheckStatusEl.textContent = "Running read-only browser, Render, SNF firmware and online audio checks…";
   selectLogFilter("health");
   const results = [];
   lastHealthRunEvidence = {};
   latestHealthSnapshot = null;
   latestHealthSnapshotAt = 0;
   latestBrowserHealthStats = null;
-    addLog("Full device, Render, WebRTC and browser health check started", "info", "health", "Health");
+    addLog("Full device, Render, online audio and browser health check started", "info", "health", "Health");
 
   try {
     const requiredIds = ["deviceOnlinePill", "listeningTimer", "deviceSelect", "start", "audio", "record", "recordingTimer", "panel-logs", "runHealthCheck", "healthCheckStatus"];
     const missingIds = requiredIds.filter((id) => !document.getElementById(id));
     logHealthResult(results, "Listener UI", missingIds.length === 0,
       missingIds.length ? `missing controls: ${missingIds.join(", ")}` : "required controls are present");
-    logHealthResult(results, "Secure browser context", window.isSecureContext === true,
-      window.isSecureContext === true ? `${location.protocol}//${location.host}` : "HTTPS secure context is required");
-    logHealthResult(results, "WebRTC support", typeof window.RTCPeerConnection === "function",
-      typeof window.RTCPeerConnection === "function" ? "RTCPeerConnection available" : "WebRTC is unavailable in this browser");
+    const securePage = window.isSecureContext === true;
+    lastHealthRunEvidence.securePage = securePage;
+    logHealthResult(results, "Secure browser context", securePage,
+      securePage ? `${location.protocol}//${location.host}` : "HTTPS secure context is required");
+    logHealthResult(results, "Online audio support", typeof window.RTCPeerConnection === "function",
+      typeof window.RTCPeerConnection === "function" ? "Browser audio connection support is available" : "Online audio is unavailable in this browser");
     const audioContextSupported = Boolean(window.AudioContext || window.webkitAudioContext);
     logHealthResult(results, "Web Audio support", audioContextSupported,
       audioContextSupported ? `AudioContext${audioContext ? ` running at ${audioContext.sampleRate} Hz` : " available"}` : "Web Audio is unavailable", !audioContextSupported);
@@ -1466,20 +1486,26 @@ async function runHealthCheck() {
     logHealthResult(results, "Selected listening device", Boolean(selectedDevice),
       selectedDevice ? selectedDeviceId : "no configured device is selected", !selectedDevice);
     const liveTrack = Boolean(remoteStream && remoteStream.getAudioTracks().some((track) => track.readyState === "live"));
-    logHealthResult(results, "Incoming audio track", liveTrack,
-      liveTrack ? "live WebRTC audio track received" : "no live audio track; start listening to test media", !liveTrack);
     const playing = Boolean(liveTrack && !audioEl.paused && !audioEl.ended);
-    logHealthResult(results, "Browser playback", playing,
-      playing ? "audio is playing" : liveTrack ? "audio ready — press play" : "not currently playing", !playing);
     const observedLevel = noiseSuppressionActive ? latestOutputDbfs : latestInputDbfs;
     const hasObservedLevel = Number.isFinite(observedLevel);
-    logHealthResult(results, "Browser audio level", hasObservedLevel,
-      hasObservedLevel ? `${formatAudioLevelDbfs(observedLevel)} at the ${noiseSuppressionActive ? "processed output" : "incoming audio"} meter` : "no current Web Audio level sample", !hasObservedLevel);
+    if (listenerActive) {
+      logHealthResult(results, "Incoming audio track", liveTrack,
+        liveTrack ? "live audio track received" : "no live audio track while listening is active", !liveTrack);
+      logHealthResult(results, "Browser playback", playing,
+        playing ? "audio is playing" : liveTrack ? "audio ready — press play" : "waiting for the active audio track", !playing);
+      logHealthResult(results, "Browser audio level", hasObservedLevel,
+        hasObservedLevel ? `${formatAudioLevelDbfs(observedLevel)} at the ${noiseSuppressionActive ? "processed output" : "incoming audio"} meter` : "no current Web Audio level sample while listening is active", !hasObservedLevel);
+    } else {
+      logHealthSkipped("Incoming audio track", "start listening to test live media");
+      logHealthSkipped("Browser playback", "playback is idle; this is not an error");
+      logHealthSkipped("Browser audio level", "level checks run while live audio is playing");
+    }
     const blendPercent = gtcrnEnabledEl.checked ? Number(gtcrnBlendEl.value) : 0;
     logHealthResult(results, "Noise suppression", true,
       noiseSuppressionActive ? `GTCRN blend ${blendPercent}% active` : blendPercent > 0
         ? `GTCRN blend ${blendPercent}% selected; direct audio is currently active`
-        : "off; direct WebRTC audio path selected");
+        : "off; direct audio path selected");
     latestBrowserHealthStats = await getBrowserHealthStats();
 
     const backendChecks = [
@@ -1514,7 +1540,7 @@ async function runHealthCheck() {
         const result = await fetchHealthCheck("/api/webrtc-status");
         const passed = result.ok && result.body?.ok === true && result.body?.transport === "webrtc";
         lastHealthRunEvidence.renderSignalingApi = passed;
-        logHealthResult(results, "WebRTC backend status", passed,
+        logHealthResult(results, "Render online status", passed,
           passed ? `HTTP ${result.status} · signaling reports ${result.body.transport}` : result.status ? `HTTP ${result.status}` : (result.detail || "invalid JSON response"));
       })(),
       (async () => {
@@ -1575,9 +1601,9 @@ async function runHealthCheck() {
         rejected ? "request without session cookies received HTTP 401" : `expected HTTP 401, received ${result.status || "no response"}`);
     })());
 
-    if (peer) {
+    if (peer && listenerActive) {
       const peerState = peer.connectionState;
-      logHealthResult(results, "WebRTC peer connection", peerState === "connected",
+      logHealthResult(results, "Online audio connection", peerState === "connected",
         peerState || "unknown", peerState !== "failed" && peerState !== "closed");
       try {
         const report = await peer.getStats();
@@ -1589,11 +1615,11 @@ async function runHealthCheck() {
         logHealthResult(results, "Inbound audio RTP", packets > 0,
           inbound ? `${packets} packet(s), ${Number(inbound.packetsLost || 0)} lost, ${Number.isFinite(inbound.jitter) ? Math.round(inbound.jitter * 1000) : "n/a"} ms jitter` : "no inbound audio RTP statistics", packets === 0);
       } catch {
-        logHealthResult(results, "WebRTC media statistics", false, "browser could not read peer statistics", true);
+        logHealthResult(results, "Online audio statistics", false, "browser could not read peer statistics", true);
       }
     } else {
-      logHealthResult(results, "WebRTC peer connection", false, "not connected; start listening to test the media path", true);
-      logHealthResult(results, "Inbound audio RTP", false, "not checked because there is no peer connection", true);
+      logHealthSkipped("Online audio connection", "start listening to test the media path");
+      logHealthSkipped("Incoming audio packets", "no active playback session");
     }
 
     await Promise.all(backendChecks);
@@ -1764,7 +1790,7 @@ function handleHotspotControlAck(message) {
 function updateAudioLevelMeter() {
   const filtered = noiseSuppressionActive && outputAnalyser;
   const dbfs = filtered ? latestOutputDbfs : latestInputDbfs;
-  levelSourceEl.textContent = filtered ? "GTCRN processed output" : "Incoming WebRTC audio";
+  levelSourceEl.textContent = filtered ? "GTCRN processed output" : "Incoming audio";
   document.getElementById("listenerDb").textContent = formatAudioLevelDbfs(dbfs);
   const percent = Number.isFinite(dbfs) ? Math.max(0, Math.min(100, Math.round((dbfs + 60) * (100 / 60)))) : 0;
   audioLevelFill.style.width = `${percent}%`;
@@ -1784,7 +1810,7 @@ function resetAudioLevelMeter() {
   audioLevelMeter.setAttribute("aria-valuenow", "0");
   document.getElementById("listenerDb").textContent = "Waiting for audio";
   document.getElementById("levelWord").textContent = "Idle";
-  levelSourceEl.textContent = "Incoming WebRTC audio";
+  levelSourceEl.textContent = "Incoming audio";
 }
 
 function formatBytes(value) {
@@ -1940,7 +1966,7 @@ function updateInformationDashboard(device, telemetry, fresh) {
     ? sessionDurationValue : null;
   setMetric("infoLastPlayedDuration", sessionDurationMs !== null
     ? `${device?.session_active ? "Active · " : ""}${formatDuration(sessionDurationMs / 1000)}`
-    : "No WebRTC session reported");
+    : "No listening session reported");
   setMetric("infoPeer", peer?.connectionState || (device?.session_active ? "Signaling session active" : "No active peer"));
   const connects = Number.isFinite(device?.webrtc_sessions_started) ? device.webrtc_sessions_started : null;
   const disconnects = Number.isFinite(device?.webrtc_sessions_ended) ? device.webrtc_sessions_ended : null;
@@ -2519,7 +2545,7 @@ function refreshMicGainAvailability() {
     micGainStatusEl.textContent = connected
       ? "AGC is on; post-DSP output gain starts at 50%."
       : "AGC will start with 50% post-DSP output gain; manual gain is disabled while AGC is on.";
-  } else if (!connected && sessionAvailable) micGainStatusEl.textContent = "Manual gain is enabled; it will apply when the WebRTC audio connection is up.";
+  } else if (!connected && sessionAvailable) micGainStatusEl.textContent = "Manual gain is enabled; it will apply when the online audio connection is up.";
   else if (!sessionAvailable) micGainStatusEl.textContent = "Start listening to enable manual microphone gain.";
 }
 
@@ -2890,7 +2916,7 @@ function refreshAudioProcessingStatus() {
   }
   if (processedPercent === 0) {
     setAudioProcessingStatus(hasLiveTrack
-      ? "GTCRN off · direct original WebRTC audio"
+      ? "GTCRN off · direct original audio"
       : "GTCRN off · waiting for audio");
     return;
   }
@@ -3024,7 +3050,7 @@ function enableNoiseSuppression() {
       const node = gtcrnNode;
       node.addEventListener("processorerror", () => {
         if (gtcrnNode !== node) return;
-        restoreDirectAudio("GTCRN processing failed. Direct WebRTC audio has been restored; noise suppression is off.");
+        restoreDirectAudio("GTCRN processing failed. Direct audio has been restored; noise suppression is off.");
       });
     }
     if (!inputAnalyser || !outputAnalyser || !playbackGain || !gtcrnWetGain || !gtcrnDryGain) {
@@ -3115,7 +3141,7 @@ function restoreDirectAudio(message) {
     }
     void audioEl.play().catch(() => setState("Audio ready — press play"));
   }
-  setAudioProcessingStatus("Direct WebRTC audio restored; Browser AI noise suppression is off");
+  setAudioProcessingStatus("Direct audio restored; Browser AI noise suppression is off");
   errorEl.textContent = message;
 }
 
@@ -3228,7 +3254,7 @@ async function updateMediaStatus(targetPeer) {
       || activeInputSignalPresent && webAudioOutputSilent);
   silentInputSinceMs = graphHasSignalMismatch ? (silentInputSinceMs ?? Date.now()) : null;
   if (silentInputSinceMs !== null && Date.now() - silentInputSinceMs >= 5000) {
-    restoreDirectAudio("GTCRN output stayed silent during active incoming audio. Direct WebRTC playback is restored; noise suppression is off.");
+  restoreDirectAudio("GTCRN output stayed silent during active incoming audio. Direct playback is restored; noise suppression is off.");
   }
   const receiveState = packets > 0
     ? `${codecLabel}; RTP ${packets} packets / ${bytes} bytes${packetLoss}${packetDiscard}${jitterMs === null ? "" : `, jitter ${jitterMs} ms`}; ${decodedSamples}${concealment}${silentConcealment}${concealmentEvents}${level === null ? "" : `, level ${level}`}`
@@ -3339,7 +3365,7 @@ function connectSocket() {
         window.setListenerActive(false);
         setListenButtonActive(false);
         setState("Another listener is already active");
-        errorEl.textContent = "This device already has an active WebRTC listener.";
+        errorEl.textContent = "This device already has an active listener.";
         return;
       }
       if (message.reason === "listener_session_required" || message.reason === "listener_session_expired") {
@@ -3374,7 +3400,7 @@ function connectSocket() {
       };
       applyAudioSettings(appliedAudioSettings);
       refreshAudioSettingsAvailability();
-      audioSettingsStatusEl.textContent = `Connected to ${brandText(selectedDeviceId)}; audio controls will be applied when WebRTC connects.`;
+      audioSettingsStatusEl.textContent = `Connected to ${brandText(selectedDeviceId)}; audio controls will be applied when the online audio link connects.`;
       micGainEl.value = "50";
       micGainValueEl.value = `${effectiveMicGainPercent()}%`;
       micGainAppliedSessionId = null;
@@ -3385,11 +3411,11 @@ function connectSocket() {
       errorEl.textContent = "";
       try { await createPeer(); }
       catch (error) {
-        errorEl.textContent = `Could not create WebRTC peer: ${error.message}`;
+        errorEl.textContent = `Could not create the online audio connection: ${error.message}`;
         setState("Peer setup failed");
         closePeer();
         if (socket && socket.readyState === WebSocket.OPEN) {
-          socket.close(WS_RECONNECT_CLOSE_CODE, "WebRTC peer setup failed");
+          socket.close(WS_RECONNECT_CLOSE_CODE, "Online audio setup failed");
         }
       }
       return;
@@ -3511,7 +3537,7 @@ async function createPeer() {
       }
       await audioEl.play();
     } catch (error) {
-      restoreDirectAudio(`Processed playback could not start (${error.message}); direct WebRTC audio restored.`);
+      restoreDirectAudio(`Processed playback could not start (${error.message}); direct audio restored.`);
     }
   };
   peer.onconnectionstatechange = () => {
@@ -3559,7 +3585,7 @@ async function handleSignal(message) {
       if (sessionId !== message.session_id || !send({
         type: "webrtc_signal", session_id: message.session_id,
         kind: "answer", sdp: peer.localDescription.sdp
-      })) throw new Error("Could not send the WebRTC answer");
+      })) throw new Error("Could not send the audio connection response");
       localDescriptionSent = true;
       for (const candidate of pendingLocalCandidates) send(candidate);
       pendingLocalCandidates = [];
@@ -3583,9 +3609,9 @@ async function handleSignal(message) {
       }
     }
   } catch (error) {
-    errorEl.textContent = `WebRTC signaling failed: ${error.message}`;
+    errorEl.textContent = `Online audio connection failed: ${error.message}`;
     if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.close(WS_RECONNECT_CLOSE_CODE, "WebRTC signaling failed");
+      socket.close(WS_RECONNECT_CLOSE_CODE, "Online audio connection failed");
     }
   }
 }
@@ -3702,7 +3728,7 @@ async function startRecording() {
   const startAttempt = ++recordingStartAttempt;
   const liveTracks = remoteStream ? remoteStream.getAudioTracks().filter((track) => track.readyState === "live") : [];
   if (!liveTracks.length) {
-    errorEl.textContent = "No live incoming WebRTC audio track is available to record.";
+    errorEl.textContent = "No live incoming audio is available to record.";
     return;
   }
   if (!audioContext || audioContext.state === "closed" || !audioContext.audioWorklet || typeof AudioWorkletNode === "undefined") {
