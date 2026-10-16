@@ -2470,14 +2470,17 @@ function syncPlaybackGain() {
   const selectedGain = Math.min(3, boostGain * volumeGain);
   playVolumeValueEl.textContent = `${selectedBoost}% · ${boostGain.toFixed(1)}×`;
   listenerVolumeValueEl.textContent = `${selectedVolume}% · ${volumeGain.toFixed(1)}×`;
-  if (!audioContext || !playbackGain) {
+  if (!audioContext || !playbackGain || audioContext.state !== "running") {
     audioEl.muted = false;
     audioEl.volume = Math.min(1, selectedGain);
     return;
   }
   audioEl.volume = 1;
   audioEl.muted = true;
-  const playing = remoteStream && !audioEl.paused;
+  // The element is muted on purpose when Web Audio owns output. Do not wait
+  // for its play() promise: mobile browsers may reject that muted element even
+  // though the WebRTC track and the Web Audio graph are live.
+  const playing = listenerActive && hasLiveAudioTrack();
   playbackGain.gain.setTargetAtTime(
     playing ? selectedGain : 0,
     audioContext.currentTime,
@@ -2561,6 +2564,7 @@ async function prepareAudioOutput() {
       inputAnalyser = inputMeter;
       outputAnalyser = outputMeter;
       playbackGain = gain;
+      context.addEventListener("statechange", syncPlaybackGain);
       syncPlaybackGain();
     } catch (error) {
       await context.close();
