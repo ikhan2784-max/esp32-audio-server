@@ -129,6 +129,9 @@ test("play timer stays hidden while waiting and accumulates only actual playback
     assert.equal(context.listeningTimerEl.hidden, false);
     assert.equal(context.listeningTimerEl.textContent, "PLAY 00:05");
     assert.match(html, /audioEl\.addEventListener\("playing", \(\) => \{[\s\S]{0,140}startListeningTimer\(\)/);
+    const unmuteHandler = html.match(/track\.addEventListener\("unmute", \(\) => \{[\s\S]*?\n      \}\);/);
+    assert.ok(unmuteHandler && unmuteHandler[0].includes("audioEl.readyState >= 2") &&
+        unmuteHandler[0].includes("startListeningTimer()"), "audio-track recovery should resume the timer only when media data is ready");
     for (const event of ["waiting", "pause", "ended"]) {
         const handler = html.match(new RegExp(`audioEl\\.addEventListener\\("${event}",[\\s\\S]{0,180}?\\n\\}\\);`));
         assert.ok(handler && handler[0].includes("stopListeningTimer()"), `${event} should hide/pause the play timer`);

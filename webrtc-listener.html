@@ -3051,7 +3051,13 @@ async function createPeer() {
         if (listenerActive) setState("Audio buffering…");
       });
       track.addEventListener("unmute", () => {
-        if (listenerActive) setState("Audio ready — buffering");
+        if (!listenerActive) return;
+        if (!audioEl.paused && audioEl.readyState >= 2) {
+          startListeningTimer();
+          setState("Audio is playing");
+        } else {
+          setState("Audio ready — buffering");
+        }
       });
       track.addEventListener("ended", () => {
         stopListeningTimer();
