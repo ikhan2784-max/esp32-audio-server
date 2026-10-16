@@ -614,7 +614,7 @@
             <option value="off">Off</option><option value="low" selected>Low</option>
             <option value="medium">Medium</option><option value="high">High</option>
           </select></div>
-          <span id="audioSettingsStatus" role="status" aria-live="polite">Connect to the selected SNF device to change AGC and DSP controls. This build uses one INMP441 microphone.</span>
+          <span id="audioSettingsStatus" role="status" aria-live="polite">Connect to the selected SNF device to change AGC and DSP controls. This build uses one mic.</span>
         </section>
         <section class="setting-group"><div class="setting-heading-row"><h2>SESSION TIMEOUT</h2><span id="sessionTimeoutTimer" class="session-countdown" aria-label="Time until automatic sign out">Checking…</span></div>
           <label class="gain-heading" for="sessionTimeout"><span>Sign out after inactivity</span></label>
@@ -665,7 +665,7 @@
         </div></section>
         <section class="setting-group information-section"><h2>WEBRTC</h2><div class="diagnostic-grid">
           <div class="metric"><span>Peer connection</span><strong id="infoPeer">—</strong></div><div class="metric"><span>WebRTC sessions started / ended</span><strong id="infoWebrtcSessions">—</strong></div>
-          <div class="metric wide"><span>Active audio profile / PCM</span><strong id="infoAudioProfile">—</strong></div><div class="metric wide"><span>INMP441 / I²S format</span><strong id="infoI2sFormat">—</strong></div>
+          <div class="metric wide"><span>Active audio profile / PCM</span><strong id="infoAudioProfile">—</strong></div><div class="metric wide"><span>Mic / I²S format</span><strong id="infoI2sFormat">—</strong></div>
           <div class="metric"><span>Input mode / channel</span><strong id="infoInputMode">—</strong></div><div class="metric"><span>Capture state / samples</span><strong id="infoCapture">—</strong></div>
           <div class="metric"><span>Capture errors / overflows</span><strong id="infoCaptureErrors">—</strong></div><div class="metric"><span>DSP state / errors</span><strong id="infoDsp">—</strong></div>
           <div class="metric"><span>Opus frames / bytes</span><strong id="infoOpus">—</strong></div><div class="metric"><span>Audio sent / dropped</span><strong id="infoAudioTransport">—</strong></div>
@@ -696,9 +696,9 @@
       <div class="section-heading"><h2>SYSTEM ACTIONS</h2></div>
       <section class="setting-group system-actions">
         <button class="system-action" id="rebootDevice" type="button" disabled>Restart selected SNF <span>›</span></button>
-        <a class="system-action link" href="http://192.168.4.1/" target="_blank" rel="noopener noreferrer">Connect to setup hotspot <span>ESP32-AUDIO-V2-SETUP</span></a>
+        <a class="system-action link" href="http://192.168.4.1/" target="_blank" rel="noopener noreferrer">Open SNF setup page <span>192.168.4.1</span></a>
         <a class="system-action link" href="http://192.168.4.1/" target="_blank" rel="noopener noreferrer">Change Wi-Fi or hotspot password <span>192.168.4.1</span></a>
-        <p class="helper">Join the setup Wi-Fi first, then open http://192.168.4.1/. The hotspot is off while station Wi-Fi is healthy and starts after five failed Wi-Fi attempts (or immediately if Wi-Fi is not configured).</p>
+        <p class="helper">Connect to the setup Wi-Fi, then open http://192.168.4.1/. The hotspot starts after five failed Wi-Fi attempts, or immediately when Wi-Fi is not configured.</p>
         <div id="systemActionStatus" class="notice" role="status" aria-live="polite" hidden></div>
       </section>
       <div class="section-heading"><h2>SECURITY</h2></div>
@@ -709,7 +709,8 @@
       <div class="section-heading"><h2>HOTSPOT RECOVERY</h2></div>
       <section class="setting-group">
         <div class="setting-row"><span>Setup hotspot</span><strong class="readonly-tag" id="systemHotspotStatus">Waiting for device</strong></div>
-        <p class="helper">Hotspot recovery is automatic after five failed station Wi-Fi attempts. Remote shutdown stays unavailable so recovery remains reachable. Change its password locally at http://192.168.4.1/ after joining ESP32-AUDIO-V2-SETUP.</p>
+        <div class="setting-row"><span>Manual hotspot control</span><label class="toggle" aria-label="Turn the SNF setup hotspot on or off"><input id="systemHotspotToggle" type="checkbox" disabled><span></span></label></div>
+        <p class="helper">Use the switch to start or stop the setup hotspot. Turning it off is blocked unless station Wi-Fi is connected; current setup Wi-Fi clients will disconnect. Automatic recovery can start the hotspot again after Wi-Fi failures. Change its password locally at http://192.168.4.1/.</p>
       </section>
       <div class="section-heading"><h2>FACTORY RESET</h2></div>
       <section class="setting-group">
@@ -771,6 +772,7 @@ const playVolumeValueEl = document.getElementById("playVolumeValue");
 const listenerVolumeEl = document.getElementById("listenerVolume");
 const listenerVolumeValueEl = document.getElementById("listenerVolumeValue");
 const levelSourceEl = document.getElementById("levelSource");
+const systemHotspotToggleEl = document.getElementById("systemHotspotToggle");
 
 const MAX_LOG_ENTRIES = 200;
 let logEntries = [];
@@ -790,6 +792,10 @@ let pendingAudioProfileHz = null;
 let pendingAudioProfileTimer = null;
 let availableDevices = [];
 let selectedDeviceId = "";
+let knownHotspotRunning = null;
+let hotspotControlPending = false;
+let hotspotControlRequested = null;
+let hotspotControlTimer = null;
 let appStatusTimer = null;
 let sessionIdleExpiresAtMs = null;
 let sessionCountdownTimer = null;
@@ -1123,7 +1129,7 @@ function buildHealthCategories() {
         "I²S initialization, capture task, or sample progress is missing.", "Critical"),
       makeHealthItem("Sample rate and PCM bit depth", !rateBitsKnown ? "Not Tested" :
         [16000, 48000].includes(sampleRate) && slotBits === 32 && pcmBits === 16 ? "Healthy" : "Warning",
-        rateBitsKnown ? `${sampleRate} Hz configured · ${Number.isFinite(d.i2s_estimated_sample_rate_hz) ? `${d.i2s_estimated_sample_rate_hz} Hz driver clock estimate` : "driver clock estimate unavailable"} · INMP441 ${d.i2s_valid_bits ?? 24}-bit source in ${slotBits}-bit I²S slots · DSP/Opus ${pcmBits}-bit PCM${d.pcm_signed === true ? " signed" : ""}${d.pcm_channels === 1 ? " mono" : ""}.` : "Firmware has not reported the configured I²S and PCM formats."),
+        rateBitsKnown ? `${sampleRate} Hz configured · ${Number.isFinite(d.i2s_estimated_sample_rate_hz) ? `${d.i2s_estimated_sample_rate_hz} Hz driver clock estimate` : "driver clock estimate unavailable"} · Mic ${d.i2s_valid_bits ?? 24}-bit source in ${slotBits}-bit I²S slots · DSP/Opus ${pcmBits}-bit PCM${d.pcm_signed === true ? " signed" : ""}${d.pcm_channels === 1 ? " mono" : ""}.` : "Firmware has not reported the configured I²S and PCM formats."),
       makeHealthItem("Left/right channel status", "Not Tested",
         micMode ? `Selected input mode: ${micMode}; independent left/right signal levels are not exposed, so channel integrity is not verified.` : "Input mode and independent left/right channel measurements are unavailable.", false),
       makeHealthItem("Actual input audio level (RMS/peak)", !Number.isFinite(rmsDb) || !Number.isFinite(inputPeak) ? "Not Tested" :
@@ -1637,6 +1643,7 @@ function setMetric(id, value) {
 
 function brandText(value) {
   return String(value ?? "")
+    .replace(/INMP441/gi, "Mic")
     .replace(/ESP32/gi, "SNF")
     .replace(/ESP-IDF/gi, "SNF-IDF")
     .replace(/\bESP\b/gi, "SNF");
@@ -1715,6 +1722,43 @@ function syncDeviceActionAvailability() {
   if (restartButton) {
     restartButton.disabled = !(selectedDeviceId && sessionId && socket && socket.readyState === WebSocket.OPEN);
   }
+  if (systemHotspotToggleEl) {
+    systemHotspotToggleEl.disabled = !(selectedDeviceId && sessionId && socket &&
+      socket.readyState === WebSocket.OPEN && knownHotspotRunning !== null && !hotspotControlPending);
+  }
+}
+
+function finishHotspotControlPending() {
+  if (hotspotControlTimer) clearTimeout(hotspotControlTimer);
+  hotspotControlTimer = null;
+  hotspotControlPending = false;
+  hotspotControlRequested = null;
+  syncDeviceActionAvailability();
+}
+
+function handleHotspotControlAck(message) {
+  if (message.command !== "hotspot" || message.session_id !== sessionId ||
+      typeof message.ok !== "boolean" || typeof message.enabled !== "boolean") return;
+  const requested = hotspotControlRequested;
+  const hadPendingCommand = hotspotControlPending;
+  finishHotspotControlPending();
+  knownHotspotRunning = message.enabled;
+  systemHotspotToggleEl.checked = message.enabled;
+  if (message.ok && (!hadPendingCommand || requested === message.enabled)) {
+    setMetric("systemHotspotStatus", message.enabled
+      ? "Running · waiting for refreshed telemetry" : "Off · waiting for refreshed telemetry");
+    showSystemAction(`Device confirmed the setup hotspot is ${message.enabled ? "on" : "off"}.`);
+    addLog(`Setup hotspot ${message.enabled ? "enabled" : "disabled"} by listener control`, "success", "listener", "SNF");
+    return;
+  }
+  if (message.reason === "station_wifi_required") {
+    showSystemAction("Station Wi-Fi is disconnected; the setup hotspot was kept on for recovery.", true);
+  } else {
+    showSystemAction("The device did not apply the hotspot change. Its current state is shown.", true);
+  }
+  setMetric("systemHotspotStatus", message.enabled
+    ? "Running · awaiting refreshed telemetry" : "Off · awaiting refreshed telemetry");
+  addLog(`Setup hotspot control was not applied${message.reason ? ` (${message.reason})` : ""}`, "warning", "listener", "SNF");
 }
 
 function updateAudioLevelMeter() {
@@ -1937,7 +1981,7 @@ function updateInformationDashboard(device, telemetry, fresh) {
   setMetric("infoFlashPartition", formatBytes(d.app_partition_bytes));
   setMetric("infoAudioProfile", d.audio_profile || (rate ? `${rate / 1000} kHz / ${pcmBits || "?"}-bit PCM` : "Not reported"));
   setMetric("infoI2sFormat", `${validBits || "?"}-bit source · ${slotBits || "?"}-bit slots · ${rate || "?"} Hz`);
-  setMetric("infoInputMode", "Single INMP441 · LEFT slot · mono output");
+  setMetric("infoInputMode", "Single mic · LEFT slot · mono output");
   setMetric("infoCapture", `${d.audio_capture_running === true ? "Running" : d.audio_capture_running === false ? "Stopped" : "Not reported"} · ${Number.isFinite(d.audio_samples_captured) ? d.audio_samples_captured.toLocaleString() : "samples not reported"}`);
   setMetric("infoCaptureErrors", `${d.audio_capture_errors ?? "Not reported"} errors · ${d.audio_buffer_overflows ?? "Not reported"} capture overflows`);
   setMetric("infoDsp", `${d.dsp_running === true ? "Running" : d.dsp_running === false ? "Stopped" : "Not reported"} · ${d.dsp_errors ?? "—"} errors · ${d.dsp_input_underflows ?? "—"} input underflows / ${d.dsp_output_overflows ?? "—"} output overflows`);
@@ -2053,11 +2097,12 @@ function updateTelemetryViews(device) {
       setMetric("audioProfileStatus", `Waiting for the SNF to return with ${pendingAudioProfileHz / 1000} kHz / 16-bit PCM telemetry…`);
     }
     setMetric("systemHotspotStatus", "No fresh telemetry");
-    const hotspotToggle = document.getElementById("hotspotToggle");
-    if (hotspotToggle) hotspotToggle.checked = false;
+    if (!hotspotControlPending) knownHotspotRunning = null;
+    if (systemHotspotToggleEl && !hotspotControlPending) systemHotspotToggleEl.checked = false;
     setMetric("systemFirmware", "SNF_Audio_V1.0");
     updateInformationDashboard(device, telemetry, false);
     refreshAudioProfileAvailability();
+    syncDeviceActionAvailability();
     return;
   }
 
@@ -2073,14 +2118,14 @@ function updateTelemetryViews(device) {
     : "Unknown";
   const pcmLabel = Number.isFinite(pcmBits) && pcmBits > 0
     ? `${pcmBits}-bit PCM` : "Unknown";
-  const inputLabel = "Single INMP441 · LEFT";
+  const inputLabel = "Single mic · LEFT";
   setMetric("formatRate", sampleRateLabel);
   setMetric("formatPcm", pcmLabel);
   setMetric("formatChannel", "Mono");
   setMetric("formatInput", inputLabel);
   setMetric("formatSourceDetails", Number.isFinite(slotBits) && slotBits > 0
-    ? `INMP441 source: ${sourceBits}-bit audio in ${slotBits}-bit I²S slots; DSP/Opus input: ${pcmLabel}.`
-    : `INMP441 source: ${sourceBits}-bit audio; DSP/Opus input: ${pcmLabel}.`);
+    ? `Mic source: ${sourceBits}-bit audio in ${slotBits}-bit I²S slots; DSP/Opus input: ${pcmLabel}.`
+    : `Mic source: ${sourceBits}-bit audio; DSP/Opus input: ${pcmLabel}.`);
   setMetric("audioProfileBadge", `${sampleRateLabel} · ${pcmLabel}`);
   const profileConfirmed = pcmBits === 16 && (sampleRateHz === 16000 || sampleRateHz === 48000);
   if (pendingAudioProfileHz !== null && sampleRateHz === pendingAudioProfileHz && profileConfirmed) {
@@ -2100,19 +2145,25 @@ function updateTelemetryViews(device) {
   const profileKey = `${sampleRateHz}/${pcmBits}/${slotBits}/${sourceBits}`;
   if (lastLoggedAudioProfile !== profileKey && profileConfirmed) {
     lastLoggedAudioProfile = profileKey;
-    addLog(`Active profile ${sampleRateHz / 1000} kHz / ${pcmBits}-bit PCM · INMP441 ${sourceBits}-bit source / ${slotBits}-bit slots`, "info", "listener", "SNF");
+    addLog(`Active profile ${sampleRateHz / 1000} kHz / ${pcmBits}-bit PCM · mic ${sourceBits}-bit source / ${slotBits}-bit slots`, "info", "listener", "SNF");
   }
   updateInformationDashboard(device, telemetry, true);
   updateDeviceHealthScore(device, telemetry, true);
   refreshAudioProfileAvailability();
 
-  setMetric("systemHotspotStatus", telemetry.hotspot_running === true
-    ? `Running · ${Math.floor(telemetry.hotspot_clients || 0)} client(s)`
-    : telemetry.wifi_connected === true
-      ? "Off · automatic fallback after five failed Wi-Fi attempts"
-      : "Off · Wi-Fi recovery is monitoring connection attempts");
-  const hotspotToggle = document.getElementById("hotspotToggle");
-  if (hotspotToggle) hotspotToggle.checked = telemetry.hotspot_running === true;
+  if (!hotspotControlPending) {
+    setMetric("systemHotspotStatus", telemetry.hotspot_running === true
+      ? `Running · ${Math.floor(telemetry.hotspot_clients || 0)} client(s)`
+      : telemetry.wifi_connected === true
+        ? "Off · automatic fallback after five failed Wi-Fi attempts"
+        : "Off · Wi-Fi recovery is monitoring connection attempts");
+  }
+  knownHotspotRunning = typeof telemetry.hotspot_running === "boolean"
+    ? telemetry.hotspot_running : null;
+  if (systemHotspotToggleEl && !hotspotControlPending) {
+    systemHotspotToggleEl.checked = knownHotspotRunning === true;
+  }
+  syncDeviceActionAvailability();
   setMetric("systemFirmware", telemetry.firmware_version || "SNF_Audio_V1.0");
 }
 
@@ -2557,7 +2608,7 @@ function refreshAudioSettingsAvailability() {
   gtcrnBlendEl.disabled = !gtcrnEnabledEl.checked;
   refreshMicGainAvailability();
   if (!available) {
-    audioSettingsStatusEl.textContent = "Connect to the selected SNF to change AGC, filter preset, or DSP controls. This build uses one INMP441 microphone.";
+    audioSettingsStatusEl.textContent = "Connect to the selected SNF to change AGC, filter preset, or DSP controls. This build uses one mic.";
   }
   refreshAudioProfileAvailability();
 }
@@ -2602,7 +2653,7 @@ function handleAudioSettingsAck(message) {
   appliedAudioSettings = accepted;
   applyAudioSettings(accepted);
   const hpfLabel = accepted.hpf_preset.replaceAll("_", " ");
-  audioSettingsStatusEl.textContent = `Single INMP441 · AGC ${accepted.auto_gain_enabled ? "on" : "off"} · ${hpfLabel} · gate ${accepted.noise_suppression_level} · VAD ${accepted.vad_level} · limiter ${accepted.limiter_level}.`;
+  audioSettingsStatusEl.textContent = `Single mic · AGC ${accepted.auto_gain_enabled ? "on" : "off"} · ${hpfLabel} · gate ${accepted.noise_suppression_level} · VAD ${accepted.vad_level} · limiter ${accepted.limiter_level}.`;
   const desiredGain = effectiveMicGainPercent();
   if (micGainAppliedSessionId !== sessionId || micGainAppliedPercent !== desiredGain) {
     sendMicGainPercent(desiredGain);
@@ -3345,6 +3396,10 @@ function connectSocket() {
     }
     if (message.type === "webrtc_session_end") {
       closePeer();
+      if (hotspotControlPending) {
+        finishHotspotControlPending();
+        showSystemAction("Hotspot command result is unknown; waiting for refreshed device status.", true);
+      }
       sessionId = null;
       audioSettingsRequestedSessionId = null;
       syncDeviceActionAvailability();
@@ -3363,6 +3418,10 @@ function connectSocket() {
       handleAudioSettingsAck(message);
       return;
     }
+    if (message.type === "webrtc_device_control_ack") {
+      handleHotspotControlAck(message);
+      return;
+    }
     if (message.type === "webrtc_signal" && message.session_id === sessionId) {
       await handleSignal(message);
     }
@@ -3371,6 +3430,10 @@ function connectSocket() {
   current.onclose = () => {
     if (socket !== current) return;
     socket = null;
+    if (hotspotControlPending) {
+      finishHotspotControlPending();
+      showSystemAction("Hotspot command result is unknown; check the next device status update.", true);
+    }
     sessionId = null;
     closePeer();
     refreshAudioSettingsAvailability();
@@ -3780,6 +3843,7 @@ function stopListening() {
     send({ type: "webrtc_listener_stop" });
     socket.close(1000, "Listener stopped");
   }
+  if (hotspotControlPending) finishHotspotControlPending();
   socket = null;
   sessionId = null;
   closePeer();
@@ -3958,6 +4022,50 @@ document.getElementById("rebootDevice").addEventListener("click", (event) => {
     addLog(`Restart command failed for ${selectedDeviceId}`, "error", "listener", "SNF");
     syncDeviceActionAvailability();
   }
+});
+
+systemHotspotToggleEl.addEventListener("change", (event) => {
+  const enabled = event.currentTarget.checked;
+  if (!selectedDeviceId || !sessionId || !socket || socket.readyState !== WebSocket.OPEN ||
+      knownHotspotRunning === null || hotspotControlPending) {
+    event.currentTarget.checked = knownHotspotRunning === true;
+    showSystemAction("Connect to the selected SNF and wait for hotspot status before changing it.", true);
+    return;
+  }
+  if (!enabled && !window.confirm(
+    "Turn off the setup hotspot? Phones or computers connected to its Wi-Fi will disconnect. The device will refuse if station Wi-Fi is not connected."
+  )) {
+    event.currentTarget.checked = knownHotspotRunning;
+    return;
+  }
+  hotspotControlPending = true;
+  hotspotControlRequested = enabled;
+  syncDeviceActionAvailability();
+  setMetric("systemHotspotStatus", enabled ? "Starting…" : "Stopping…");
+  showSystemAction(enabled ? "Enabling setup hotspot…" : "Disabling setup hotspot…");
+  const sent = send({
+    type: "webrtc_device_control",
+    device_id: selectedDeviceId,
+    session_id: sessionId,
+    command: "hotspot",
+    enabled,
+  });
+  if (!sent) {
+    finishHotspotControlPending();
+    event.currentTarget.checked = knownHotspotRunning === true;
+    setMetric("systemHotspotStatus", knownHotspotRunning ? "Running" : "Off");
+    showSystemAction("Could not send the hotspot command.", true);
+    return;
+  }
+  addLog(`Requested setup hotspot ${enabled ? "on" : "off"}`, "info", "listener", "SNF");
+  hotspotControlTimer = setTimeout(() => {
+    if (!hotspotControlPending) return;
+    finishHotspotControlPending();
+    systemHotspotToggleEl.checked = knownHotspotRunning === true;
+    setMetric("systemHotspotStatus", "No acknowledgement · check refreshed telemetry");
+    showSystemAction("The device did not confirm the hotspot change. The switch was restored to its last reported state.", true);
+    addLog("Setup hotspot command timed out without acknowledgement", "warning", "listener", "SNF");
+  }, 8000);
 });
 
 document.getElementById("logout").addEventListener("click", async () => {

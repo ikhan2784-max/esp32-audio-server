@@ -685,15 +685,68 @@ function createWebRtcSignaling({
             fail(ws, "control_rate_limited");
             return true;
         }
-        if (message.command !== "restart") {
+        if (message.command === "restart") {
+            if (!send(state.device, {
+                type: "webrtc_device_control",
+                session_id: state.sessionId,
+                command: "restart",
+            })) {
+                endSession(state, "peer_unavailable");
+            }
+            return true;
+        }
+        if (message.command !== "hotspot" || typeof message.enabled !== "boolean") {
             fail(ws, "invalid_device_control");
             return true;
         }
         if (!send(state.device, {
             type: "webrtc_device_control",
             session_id: state.sessionId,
-            command: "restart",
+            command: "hotspot",
+            enabled: message.enabled,
         })) {
+            endSession(state, "peer_unavailable");
+        }
+        return true;
+    }
+
+    function handleDeviceControlAck(ws, message) {
+        if (message.type !== "webrtc_device_control_ack") return false;
+        const state = stateFor(ws);
+        const senderIsDevice = !!state && ws === state.device &&
+            ws.role === "webrtc_device" && ws.authenticated;
+        if (!senderIsDevice) {
+            fail(ws, "invalid_signaling_session");
+            return true;
+        }
+        if (state.sessionId === null || message.session_id !== state.sessionId) {
+            if (isRecentlyEndedSession(state, message.session_id)) return true;
+            fail(ws, "invalid_signaling_session");
+            return true;
+        }
+        if (!controlRateAllowed(ws)) {
+            fail(ws, "control_rate_limited");
+            return true;
+        }
+        const allowedReasons = new Set([
+            "station_wifi_required", "status_unavailable", "operation_failed",
+        ]);
+        if (message.command !== "hotspot" || typeof message.ok !== "boolean" ||
+            typeof message.enabled !== "boolean" ||
+            (message.reason !== undefined &&
+                (typeof message.reason !== "string" || !allowedReasons.has(message.reason)))) {
+            fail(ws, "invalid_device_control_ack");
+            return true;
+        }
+        const forwarded = {
+            type: "webrtc_device_control_ack",
+            session_id: state.sessionId,
+            command: "hotspot",
+            enabled: message.enabled,
+            ok: message.ok,
+        };
+        if (message.reason) forwarded.reason = message.reason;
+        if (!send(state.listener, forwarded)) {
             endSession(state, "peer_unavailable");
         }
         return true;
@@ -706,7 +759,8 @@ function createWebRtcSignaling({
             handleAudioSettings(ws, message) || handleAudioSettingsAck(ws, message) ||
             handleDeviceHealthResponse(ws, message) ||
             handleDeviceTelemetry(ws, message) ||
-            handleDeviceControl(ws, message);
+            handleDeviceControl(ws, message) ||
+            handleDeviceControlAck(ws, message);
     }
 
     function handleBinary(ws) {
