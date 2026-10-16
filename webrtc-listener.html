@@ -168,6 +168,16 @@
     .health-summary-count.healthy { color:#65e7ae; border-color:#176447; background:#08251d; }
     .health-summary-count.warning { color:#f7c85d; border-color:#705c26; background:#2a2411; }
     .health-summary-count.critical { color:#ff938d; border-color:#784247; background:#2a1619; }
+    .health-score-card { display:grid; gap:6px; margin:10px 0; padding:11px; border:1px solid #1b3a50; border-radius:10px; background:#081a27; }
+    .health-score-card.healthy { border-color:#176447; }
+    .health-score-card.warning { border-color:#705c26; }
+    .health-score-card.critical { border-color:#784247; }
+    .health-score-heading { display:flex; align-items:center; justify-content:space-between; gap:10px; color:#dceefa; font-weight:750; }
+    #healthScoreValue { font-variant-numeric:tabular-nums; }
+    .health-score-card.healthy #healthScoreValue { color:#65e7ae; }
+    .health-score-card.warning #healthScoreValue { color:#f7c85d; }
+    .health-score-card.critical #healthScoreValue { color:#ff938d; }
+    .health-score-reasons { margin:0; color:#a9c0cf; font-size:.68rem; line-height:1.45; }
     .health-card-grid { display:grid; grid-template-columns:1fr; gap:7px; }
     .health-card { min-width:0; padding:0; overflow:hidden; border:1px solid #1a374b; border-radius:12px; background:linear-gradient(145deg,#0b1d2b,#081723); }
     .health-card-summary { display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:56px; padding:10px 12px; cursor:pointer; list-style:none; }
@@ -550,12 +560,6 @@
     <section class="tab-panel" id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
       <div class="section-heading"><h2> AUDIO SETTINGS</h2><span class="status-chip" id="audioProfileBadge">Checking firmware profile</span></div>
       <div class="settings-stack">
-        <section class="setting-group"><h2>MICROPHONE MODE</h2><div class="choice-list">
-          <label class="choice-row"><input type="radio" name="micMode" value="mic1" checked disabled><span>Mic 1</span><small>Left slot</small></label>
-          <label class="choice-row"><input type="radio" name="micMode" value="mic2" disabled><span>Mic 2</span><small>Right slot</small></label>
-          <label class="choice-row"><input type="radio" name="micMode" value="both_mono" disabled><span>Both (Mono)</span><small>Mix to mono</small></label>
-          <label class="choice-row disabled"><input type="radio" name="micMode" value="both_stereo" disabled><span>Both (Stereo)</span><small>Unavailable</small></label>
-        </div></section>
         <section class="setting-group"><h2>AUDIO QUALITY</h2><div class="choice-list">
           <label class="choice-row"><input id="quality16k" type="radio" name="audioQuality" disabled><span>16 kHz / 16-bit PCM</span><small>Voice profile</small></label>
           <label class="choice-row"><input id="quality48k" type="radio" name="audioQuality" disabled><span>48 kHz / 16-bit PCM</span><small>High-rate profile</small></label>
@@ -610,7 +614,7 @@
             <option value="off">Off</option><option value="low" selected>Low</option>
             <option value="medium">Medium</option><option value="high">High</option>
           </select></div>
-          <span id="audioSettingsStatus" role="status" aria-live="polite">Connect to the selected SNF device to change microphone mode and DSP controls.</span>
+          <span id="audioSettingsStatus" role="status" aria-live="polite">Connect to the selected SNF device to change AGC and DSP controls. This build uses one INMP441 microphone.</span>
         </section>
         <section class="setting-group"><div class="setting-heading-row"><h2>SESSION TIMEOUT</h2><span id="sessionTimeoutTimer" class="session-countdown" aria-label="Time until automatic sign out">Checking…</span></div>
           <label class="gain-heading" for="sessionTimeout"><span>Sign out after inactivity</span></label>
@@ -633,6 +637,7 @@
       <div class="diagnostics-view" id="diagnostics-health-view" role="tabpanel" aria-labelledby="diagnostics-tab-health">
         <div class="health-toolbar"><div><h3>DEVICE HEALTH</h3><p>Live checks use current SNF telemetry, Render responses and browser WebRTC statistics.</p></div><button class="small-button health-check-button" id="runHealthCheck" type="button">Run Full Health Check</button></div>
         <p class="helper" id="healthCheckStatus" role="status" aria-live="polite">Read-only checks for current SNF, Render, WebRTC and browser data.</p>
+        <section class="health-score-card" id="healthScoreCard" aria-live="polite"><div class="health-score-heading"><span>Device Health Score</span><strong id="healthScoreValue">Waiting</strong></div><p class="health-score-reasons" id="healthScoreReasons">A score appears when current device telemetry is available.</p><p class="helper">Calculated from observed connectivity, retries, watchdog/reset reason, audio errors, uptime and free-heap trend. It is a diagnostic indicator, not a guarantee of hardware health.</p></section>
         <div class="health-summary" id="healthSummary" role="group" aria-label="Health check summary">Waiting for device telemetry.</div>
         <div class="health-card-grid" id="healthCards" aria-live="off"></div>
         <p class="helper">Only checks backed by current telemetry or browser APIs are shown; unsupported hardware checks are omitted.</p>
@@ -686,37 +691,33 @@
     </section>
 
     <section class="tab-panel" id="panel-system" role="tabpanel" aria-labelledby="tab-system" hidden>
-      <div class="section-heading"><h2>FIRMWARE UPDATE (OTA)</h2><span class="readonly-tag">Not configured</span></div>
-      <section class="setting-group"><div class="metric"><span>Current version</span><strong id="systemFirmware">—</strong></div><div class="metric" style="margin-top:7px"><span>Update status</span><strong>OTA endpoint is not available in this build.</strong></div><button class="system-action" type="button" disabled style="margin-top:8px">Check for update <span>Unavailable</span></button><button class="system-action" type="button" disabled style="margin-top:7px">Update now <span>Unavailable</span></button></section>
+      <div class="section-heading"><h2>FIRMWARE UPDATE</h2></div>
+      <section class="setting-group"><div class="metric"><span>Current version</span><strong id="systemFirmware">SNF_Audio_V1.0</strong></div><button class="system-action" id="checkFirmwareUpdate" type="button" disabled style="margin-top:8px">Check for update <span>OTA service not configured</span></button><p class="helper">Firmware update delivery is not configured on Render or the device yet. No update is offered until a signed OTA source is available.</p></section>
       <div class="section-heading"><h2>SYSTEM ACTIONS</h2></div>
       <section class="setting-group system-actions">
         <button class="system-action" id="rebootDevice" type="button" disabled>Restart selected SNF <span>›</span></button>
-        <a class="system-action link" href="http://192.168.4.1/" target="_blank" rel="noopener noreferrer">Change Wi-Fi or hotspot password <span>Open device setup</span></a>
-        <p class="helper">Connect to the SNF setup hotspot first. Wi-Fi and hotspot credentials are changed only through its authenticated local setup page; the setup hotspot stays available for recovery.</p>
+        <a class="system-action link" href="http://192.168.4.1/" target="_blank" rel="noopener noreferrer">Connect to setup hotspot <span>ESP32-AUDIO-V2-SETUP</span></a>
+        <a class="system-action link" href="http://192.168.4.1/" target="_blank" rel="noopener noreferrer">Change Wi-Fi or hotspot password <span>192.168.4.1</span></a>
+        <p class="helper">Join the setup Wi-Fi first, then open http://192.168.4.1/. The hotspot is off while station Wi-Fi is healthy and starts after five failed Wi-Fi attempts (or immediately if Wi-Fi is not configured).</p>
         <div id="systemActionStatus" class="notice" role="status" aria-live="polite" hidden></div>
       </section>
       <div class="section-heading"><h2>SECURITY</h2></div>
       <section class="setting-group">
-        <div class="setting-row"><span>Listener PIN</span><span class="readonly-tag">•••••• · Required</span></div>
-        <button class="system-action" type="button" disabled>Change listener PIN <span>Managed in Render environment</span></button>
-        <div class="setting-row"><span>Require PIN on connection</span><label class="toggle" aria-label="PIN is required"><input type="checkbox" checked disabled><span></span></label></div>
-        <div class="setting-row"><span>Device authentication</span><label class="toggle" aria-label="Device authentication is required"><input type="checkbox" checked disabled><span></span></label></div>
-        <div class="setting-row"><span>Session timeout</span><span class="readonly-tag" id="sessionTimeoutSummary">30 min idle</span></div>
-        <p class="helper">PIN and device authentication stay required. The Render service currently has no persistent in-app credential manager, so PIN rotation is managed through its environment settings.</p>
+        <div class="setting-row"><span>Listener PIN sign-in</span><span class="readonly-tag">Required</span></div>
+        <p class="helper">Listener sign-in and authenticated device identity are enforced by Render. Change the listener PIN in the Render service configuration; this page never displays the PIN.</p>
       </section>
       <div class="section-heading"><h2>HOTSPOT RECOVERY</h2></div>
       <section class="setting-group">
         <div class="setting-row"><span>Setup hotspot</span><strong class="readonly-tag" id="systemHotspotStatus">Waiting for device</strong></div>
-        <div class="setting-row"><span>Turn hotspot on/off</span><label class="toggle" aria-label="Hotspot state is managed for recovery"><input id="hotspotToggle" type="checkbox" checked disabled><span></span></label></div>
-        <p class="helper">Remote shutdown stays unavailable so Wi-Fi recovery remains reachable when the station network fails. Change its password from the local setup page.</p>
+        <p class="helper">Hotspot recovery is automatic after five failed station Wi-Fi attempts. Remote shutdown stays unavailable so recovery remains reachable. Change its password locally at http://192.168.4.1/ after joining ESP32-AUDIO-V2-SETUP.</p>
       </section>
       <div class="section-heading"><h2>FACTORY RESET</h2></div>
       <section class="setting-group">
         <button class="system-action danger" id="factoryReset" type="button" disabled>Factory reset <span>Deferred until final phase</span></button>
-        <p class="helper">The complete factory reset remains deferred until the rest of the project is reliable. Ordinary debugging never clears NVS or credentials.</p>
+        <p class="helper">Remote factory reset is not exposed. Use the local setup/recovery flow; ordinary debugging never clears NVS or Wi-Fi credentials.</p>
       </section>
       <div class="section-heading"><h2>LED SETTINGS</h2></div>
-      <section class="setting-group"><div class="setting-row"><span>Status light across tabs</span><label class="toggle" aria-label="Status LED control is not configured"><input id="statusLedToggle" type="checkbox" disabled><span></span></label></div><p class="helper">This firmware has no configured status-LED pin or runtime LED-control API, so an on/off switch here would not affect the board.</p></section>
+      <section class="setting-group"><div class="setting-row"><span>Status light across tabs</span><label class="toggle" aria-label="Status LED control is not configured"><input id="statusLedToggle" type="checkbox" disabled><span></span></label></div><p class="helper">Blue blinking means Wi-Fi scanning; green means connected and ready. The current board firmware does not expose a configured LED pin or control API, so the switch remains unavailable until its LED hardware is identified.</p></section>
       <button class="small-button" id="logout" type="button" style="width:100%;margin-top:8px">Sign out</button>
     </section>
 
@@ -740,7 +741,6 @@ const gtcrnBlendValueEl = document.getElementById("gtcrnBlendValue");
 const gtcrnBlendSummaryEl = document.getElementById("gtcrnBlendSummary");
 const gtcrnEnabledStateEl = document.getElementById("gtcrnEnabledState");
 const processingStatusEl = document.getElementById("processingStatus");
-const micModeEls = Array.from(document.querySelectorAll('input[name="micMode"]'));
 const firmwareNoiseSuppressionEl = document.getElementById("firmwareNoiseSuppression");
 const firmwareVadEl = document.getElementById("firmwareVad");
 const firmwareLimiterEl = document.getElementById("firmwareLimiter");
@@ -783,6 +783,8 @@ let lastDeviceApiReachable = null;
 let lastSignalingState = null;
 let lastLoggedDeviceOnline = null;
 let lastLoggedFirmwareHealth = null;
+let lastHealthScoreLogKey = null;
+const previousHealthHeapByDevice = new Map();
 let lastLoggedAudioProfile = null;
 let pendingAudioProfileHz = null;
 let pendingAudioProfileTimer = null;
@@ -796,7 +798,7 @@ let backendHealthBusy = false;
 let playbackVolumePercent = 0;
 let listenerVolumePercent = 100;
 let appliedAudioSettings = {
-  mic_mode: "mic1", auto_gain_enabled: true,
+  auto_gain_enabled: true,
   hpf_preset: "voice_clarity", noise_suppression_level: "off",
   vad_level: "medium", limiter_level: "low"
 };
@@ -850,6 +852,7 @@ let gtcrnNode = null;
 let gtcrnGraphConnected = false;
 let gtcrnInitializationPromise = null;
 let gtcrnDisableTimer = null;
+let gtcrnBackgroundBypass = false;
 let noiseSuppressionActive = false;
 let silentInputSinceMs = null;
 let audioProcessingStatus = "GTCRN blend 15% will activate when listening starts.";
@@ -1917,7 +1920,6 @@ function updateInformationDashboard(device, telemetry, fresh) {
   const pcmBits = Number.isFinite(d.pcm_bits) ? d.pcm_bits : 0;
   const slotBits = Number.isFinite(d.i2s_slot_bits) ? d.i2s_slot_bits : 0;
   const validBits = Number.isFinite(d.i2s_valid_bits) ? d.i2s_valid_bits : 0;
-  const inputMode = d.i2s_input_mode || "Unknown input";
   setMetric("infoFirmware", `${d.firmware_version || d.firmware || "Not reported"}${d.build_id ? ` · ${String(d.build_id).slice(0, 12)}` : ""}`);
   setMetric("infoUptime", Number.isFinite(d.uptime_ms) ? formatDuration(d.uptime_ms / 1000) : "Not reported");
   setMetric("infoBoot", d.reset_reason_name || (Number.isFinite(d.reset_reason) ? String(d.reset_reason) : "Not reported"));
@@ -1935,7 +1937,7 @@ function updateInformationDashboard(device, telemetry, fresh) {
   setMetric("infoFlashPartition", formatBytes(d.app_partition_bytes));
   setMetric("infoAudioProfile", d.audio_profile || (rate ? `${rate / 1000} kHz / ${pcmBits || "?"}-bit PCM` : "Not reported"));
   setMetric("infoI2sFormat", `${validBits || "?"}-bit source · ${slotBits || "?"}-bit slots · ${rate || "?"} Hz`);
-  setMetric("infoInputMode", `${inputMode} · mono output`);
+  setMetric("infoInputMode", "Single INMP441 · LEFT slot · mono output");
   setMetric("infoCapture", `${d.audio_capture_running === true ? "Running" : d.audio_capture_running === false ? "Stopped" : "Not reported"} · ${Number.isFinite(d.audio_samples_captured) ? d.audio_samples_captured.toLocaleString() : "samples not reported"}`);
   setMetric("infoCaptureErrors", `${d.audio_capture_errors ?? "Not reported"} errors · ${d.audio_buffer_overflows ?? "Not reported"} capture overflows`);
   setMetric("infoDsp", `${d.dsp_running === true ? "Running" : d.dsp_running === false ? "Stopped" : "Not reported"} · ${d.dsp_errors ?? "—"} errors · ${d.dsp_input_underflows ?? "—"} input underflows / ${d.dsp_output_overflows ?? "—"} output overflows`);
@@ -1956,12 +1958,90 @@ function updateRenderInformation() {
   setMetric("infoRenderHealth", `${health} · ${api}`);
 }
 
+function updateDeviceHealthScore(device, telemetry, fresh) {
+  const card = document.getElementById("healthScoreCard");
+  const valueEl = document.getElementById("healthScoreValue");
+  const reasonsEl = document.getElementById("healthScoreReasons");
+  if (!card || !valueEl || !reasonsEl) return;
+  if (!fresh || !telemetry) {
+    card.classList.remove("healthy", "warning", "critical");
+    valueEl.textContent = "Waiting";
+    reasonsEl.textContent = "A score appears when current device telemetry is available.";
+    return;
+  }
+
+  let score = 100;
+  const reasons = [];
+  const penalize = (points, reason) => {
+    score -= points;
+    reasons.push(reason);
+  };
+  if (device?.device_connected === false) penalize(25, "device is offline from Render");
+
+  const retries = Number(telemetry.wifi_retry_count);
+  if (Number.isFinite(retries) && retries > 0) {
+    penalize(Math.min(16, retries * 3), `${Math.floor(retries)} Wi-Fi reconnect attempt(s)`);
+  }
+
+  const watchdogCount = Number(telemetry.watchdog_reset_count);
+  if (Number.isFinite(watchdogCount) && watchdogCount > 0) {
+    penalize(Math.min(24, Math.floor(watchdogCount) * 8), `${Math.floor(watchdogCount)} watchdog reset(s)`);
+  } else if (/watchdog|wdt|panic/i.test(String(telemetry.reset_reason_name || ""))) {
+    penalize(15, `last reset reason: ${telemetry.reset_reason_name}`);
+  }
+
+  const faultFields = ["audio_capture_errors", "audio_buffer_overflows", "dsp_errors",
+    "dsp_output_overflows", "audio_frames_dropped", "opus_dropped_frames"];
+  const audioFaults = faultFields.reduce((sum, field) => {
+    const count = Number(telemetry[field]);
+    return sum + (Number.isFinite(count) && count > 0 ? count : 0);
+  }, 0);
+  if (audioFaults > 0) penalize(Math.min(24, Math.ceil(audioFaults * 2)), `${Math.floor(audioFaults)} reported audio/DSP/transport fault(s)`);
+  if (telemetry.health_fault_latched === true || telemetry.health_ok === false) {
+    penalize(15, "firmware health reports a latched fault");
+  }
+
+  const uptimeMs = Number(telemetry.uptime_ms);
+  if (Number.isFinite(uptimeMs) && uptimeMs >= 0 && uptimeMs < 300000) {
+    penalize(5, "device restarted within the last five minutes");
+  }
+
+  const freeHeap = Number(telemetry.free_internal_heap ?? telemetry.free_heap);
+  const previousHeap = previousHealthHeapByDevice.get(selectedDeviceId);
+  if (Number.isFinite(freeHeap) && freeHeap >= 0) {
+    if (Number.isFinite(previousHeap) && previousHeap > 0 &&
+        previousHeap - freeHeap >= 8192 && freeHeap / previousHeap <= 0.9) {
+      penalize(10, `internal free heap fell ${formatBytes(previousHeap - freeHeap)} since the previous sample`);
+    }
+    previousHealthHeapByDevice.set(selectedDeviceId, freeHeap);
+  }
+
+  score = Math.max(0, Math.min(100, Math.round(score)));
+  const state = score >= 85 ? "healthy" : score >= 65 ? "warning" : "critical";
+  card.classList.remove("healthy", "warning", "critical");
+  card.classList.add(state);
+  valueEl.textContent = `${score}/100 · ${state}`;
+  const reasonText = reasons.length
+    ? reasons.join("; ")
+    : "No measured reliability warnings in this telemetry sample. This score is not a guarantee of hardware health.";
+  reasonsEl.textContent = reasonText;
+
+  const scoreBand = Math.floor(score / 5) * 5;
+  const logKey = `${selectedDeviceId}:${scoreBand}:${reasons.join("|")}`;
+  if (logKey !== lastHealthScoreLogKey) {
+    const level = state === "critical" ? "error" : state === "warning" ? "warning" : "success";
+    addLog(`Device Health Score ${score}/100 · ${reasonText}`, level, "health", "SNF");
+    lastHealthScoreLogKey = logKey;
+  }
+}
+
 function updateTelemetryViews(device) {
   const telemetry = device?.telemetry || null;
   const telemetryAgeMs = telemetry?.telemetry_age_ms;
   const isFresh = telemetry && Number.isFinite(telemetryAgeMs) &&
     telemetryAgeMs >= 0 && telemetryAgeMs <= 15000;
   if (!isFresh) {
+    updateDeviceHealthScore(device, telemetry, false);
     setMetric("formatRate", "Waiting");
     setMetric("formatPcm", "Waiting");
     setMetric("formatInput", "Waiting");
@@ -1975,7 +2055,7 @@ function updateTelemetryViews(device) {
     setMetric("systemHotspotStatus", "No fresh telemetry");
     const hotspotToggle = document.getElementById("hotspotToggle");
     if (hotspotToggle) hotspotToggle.checked = false;
-    setMetric("systemFirmware", "—");
+    setMetric("systemFirmware", "SNF_Audio_V1.0");
     updateInformationDashboard(device, telemetry, false);
     refreshAudioProfileAvailability();
     return;
@@ -1993,10 +2073,7 @@ function updateTelemetryViews(device) {
     : "Unknown";
   const pcmLabel = Number.isFinite(pcmBits) && pcmBits > 0
     ? `${pcmBits}-bit PCM` : "Unknown";
-  const inputMode = telemetry.i2s_input_mode;
-  const inputLabel = inputMode === "mic1" ? "Mic 1" :
-    inputMode === "mic2" ? "Mic 2" :
-      inputMode === "both_mono" ? "Mic 1+2" : "Unknown";
+  const inputLabel = "Single INMP441 · LEFT";
   setMetric("formatRate", sampleRateLabel);
   setMetric("formatPcm", pcmLabel);
   setMetric("formatChannel", "Mono");
@@ -2026,13 +2103,17 @@ function updateTelemetryViews(device) {
     addLog(`Active profile ${sampleRateHz / 1000} kHz / ${pcmBits}-bit PCM · INMP441 ${sourceBits}-bit source / ${slotBits}-bit slots`, "info", "listener", "SNF");
   }
   updateInformationDashboard(device, telemetry, true);
+  updateDeviceHealthScore(device, telemetry, true);
   refreshAudioProfileAvailability();
 
   setMetric("systemHotspotStatus", telemetry.hotspot_running === true
-    ? `Running · ${Math.floor(telemetry.hotspot_clients || 0)} client(s)` : "Not running");
+    ? `Running · ${Math.floor(telemetry.hotspot_clients || 0)} client(s)`
+    : telemetry.wifi_connected === true
+      ? "Off · automatic fallback after five failed Wi-Fi attempts"
+      : "Off · Wi-Fi recovery is monitoring connection attempts");
   const hotspotToggle = document.getElementById("hotspotToggle");
   if (hotspotToggle) hotspotToggle.checked = telemetry.hotspot_running === true;
-  setMetric("systemFirmware", telemetry.firmware || "—");
+  setMetric("systemFirmware", telemetry.firmware_version || "SNF_Audio_V1.0");
 }
 
 async function refreshBackendHealth() {
@@ -2447,7 +2528,7 @@ function handleMicGainAck(message) {
 
 function currentAudioSettings() {
   return {
-    mic_mode: micModeEls.find((input) => input.checked)?.value || "mic1",
+    mic_mode: "mic1",
     auto_gain_enabled: autoGainEl.checked,
     hpf_preset: hpfPresetEl.value,
     noise_suppression_level: firmwareNoiseSuppressionEl.value,
@@ -2457,8 +2538,6 @@ function currentAudioSettings() {
 }
 
 function applyAudioSettings(settings) {
-  const mode = micModeEls.find((input) => input.value === settings.mic_mode);
-  if (mode) mode.checked = true;
   firmwareNoiseSuppressionEl.value = settings.noise_suppression_level;
   firmwareVadEl.value = settings.vad_level;
   firmwareLimiterEl.value = settings.limiter_level;
@@ -2470,7 +2549,6 @@ function applyAudioSettings(settings) {
 
 function refreshAudioSettingsAvailability() {
   const available = !!sessionId && !!socket && socket.readyState === WebSocket.OPEN;
-  for (const input of micModeEls) input.disabled = !available || input.value === "both_stereo";
   firmwareNoiseSuppressionEl.disabled = !available;
   firmwareVadEl.disabled = !available;
   firmwareLimiterEl.disabled = !available;
@@ -2479,7 +2557,7 @@ function refreshAudioSettingsAvailability() {
   gtcrnBlendEl.disabled = !gtcrnEnabledEl.checked;
   refreshMicGainAvailability();
   if (!available) {
-    audioSettingsStatusEl.textContent = "Connect to the selected SNF to change microphone mode, AGC, filter preset, or DSP controls.";
+    audioSettingsStatusEl.textContent = "Connect to the selected SNF to change AGC, filter preset, or DSP controls. This build uses one INMP441 microphone.";
   }
   refreshAudioProfileAvailability();
 }
@@ -2504,26 +2582,27 @@ function handleAudioSettingsAck(message) {
     addLog("SNF rejected an audio settings change", "warning");
     return;
   }
+  if (message.mic_mode !== "mic1") {
+    audioSettingsStatusEl.textContent = "The device did not confirm the fixed single-microphone input.";
+    addLog("Unexpected microphone input mode in settings acknowledgement", "error", "listener", "SNF");
+    return;
+  }
   const accepted = {
-    mic_mode: message.mic_mode,
     auto_gain_enabled: message.auto_gain_enabled,
     hpf_preset: message.hpf_preset,
     noise_suppression_level: message.noise_suppression_level,
     vad_level: message.vad_level,
     limiter_level: message.limiter_level
   };
-  if (!micModeEls.some((input) => input.value === accepted.mic_mode) ||
-      typeof accepted.auto_gain_enabled !== "boolean" ||
+  if (typeof accepted.auto_gain_enabled !== "boolean" ||
       !["voice_clarity", "quiet_room", "noisy_room"].includes(accepted.hpf_preset) ||
       !["off", "low", "medium", "high"].includes(accepted.noise_suppression_level) ||
       !["off", "low", "medium", "high"].includes(accepted.vad_level) ||
       !["off", "low", "medium", "high"].includes(accepted.limiter_level)) return;
   appliedAudioSettings = accepted;
   applyAudioSettings(accepted);
-  const modeLabel = accepted.mic_mode === "mic1" ? "Mic 1" :
-    accepted.mic_mode === "mic2" ? "Mic 2" : "Both (Mono)";
   const hpfLabel = accepted.hpf_preset.replaceAll("_", " ");
-  audioSettingsStatusEl.textContent = `${modeLabel} · AGC ${accepted.auto_gain_enabled ? "on" : "off"} · ${hpfLabel} · gate ${accepted.noise_suppression_level} · VAD ${accepted.vad_level} · limiter ${accepted.limiter_level}.`;
+  audioSettingsStatusEl.textContent = `Single INMP441 · AGC ${accepted.auto_gain_enabled ? "on" : "off"} · ${hpfLabel} · gate ${accepted.noise_suppression_level} · VAD ${accepted.vad_level} · limiter ${accepted.limiter_level}.`;
   const desiredGain = effectiveMicGainPercent();
   if (micGainAppliedSessionId !== sessionId || micGainAppliedPercent !== desiredGain) {
     sendMicGainPercent(desiredGain);
@@ -2672,6 +2751,55 @@ function setGtcrnBlendMix(processedPercent) {
   apply(gtcrnWetGain?.gain, processed);
 }
 
+function pauseGtcrnForBackground() {
+  if (!listenerActive || !gtcrnEnabledEl.checked ||
+      Number(gtcrnBlendEl.value) <= 0 || !audioContext) return;
+  if (gtcrnNode && gtcrnGraphConnected) {
+    try { inputAnalyser?.disconnect(gtcrnNode); } catch {}
+    try { gtcrnNode.disconnect(gtcrnWetGain); } catch {
+      try { gtcrnNode.disconnect(); } catch {}
+    }
+  }
+  gtcrnGraphConnected = false;
+  gtcrnBackgroundBypass = true;
+  noiseSuppressionActive = false;
+  silentInputSinceMs = null;
+  setGtcrnBlendMix(0);
+  syncPlaybackGain();
+  refreshAudioProcessingStatus();
+}
+
+async function handleAudioPageVisibility() {
+  if (document.hidden) {
+    pauseGtcrnForBackground();
+    return;
+  }
+
+  if (audioContext?.state === "suspended" && listenerActive) {
+    try {
+      await audioContext.resume();
+    } catch {
+      // syncPlaybackGain keeps the native media element as a direct fallback.
+    }
+    syncPlaybackGain();
+  }
+
+  if (listenerActive && gtcrnEnabledEl.checked &&
+      Number(gtcrnBlendEl.value) > 0 && hasLiveAudioTrack()) {
+    try {
+      await enableNoiseSuppression();
+      gtcrnBackgroundBypass = false;
+    } catch (error) {
+      addLog(`Could not resume foreground GTCRN: ${error.message}`, "warning", "audio", "Listener");
+      refreshAudioProcessingStatus();
+    }
+  } else {
+    gtcrnBackgroundBypass = false;
+    syncPlaybackGain();
+    refreshAudioProcessingStatus();
+  }
+}
+
 audioEl.addEventListener("play", () => {
   if (audioContext && audioContext.state === "suspended") {
     void audioContext.resume().then(syncPlaybackGain).catch(() => {});
@@ -2705,6 +2833,10 @@ function refreshAudioProcessingStatus() {
   const sampleRate = audioContext ? `${audioContext.sampleRate / 1000} kHz` : "";
   const processedPercent = gtcrnEnabledEl.checked ? Number(gtcrnBlendEl.value) : 0;
   const blendDescription = `${100 - processedPercent}% original · ${processedPercent}% processed`;
+  if (gtcrnBackgroundBypass && document.hidden) {
+    setAudioProcessingStatus("Background playback mode · original audio active; GTCRN resumes when this tab is visible");
+    return;
+  }
   if (processedPercent === 0) {
     setAudioProcessingStatus(hasLiveTrack
       ? "GTCRN off · direct original WebRTC audio"
@@ -2809,6 +2941,10 @@ function enableNoiseSuppression() {
       disableNoiseSuppression();
       return;
     }
+    if (document.hidden) {
+      pauseGtcrnForBackground();
+      return;
+    }
     if (!gtcrnApi) gtcrnApi = await import("/audio-suppressor/index.js");
     if (!gtcrnWasmBinary) {
       gtcrnWasmBinary = await gtcrnApi.loadGtcrn({ url: "/audio-suppressor/gtcrn.wasm" });
@@ -2816,6 +2952,10 @@ function enableNoiseSuppression() {
     if (!gtcrnWorkletLoaded) {
       await audioContext.audioWorklet.addModule("/audio-suppressor/gtcrn/workletProcessor.js");
       gtcrnWorkletLoaded = true;
+    }
+    if (document.hidden) {
+      pauseGtcrnForBackground();
+      return;
     }
     if (!listenerActive || !gtcrnEnabledEl.checked || Number(gtcrnBlendEl.value) <= 0) {
       disableNoiseSuppression();
@@ -2891,6 +3031,7 @@ function disableNoiseSuppression() {
     gtcrnNode = null;
   }
   gtcrnGraphConnected = false;
+  gtcrnBackgroundBypass = false;
   noiseSuppressionActive = false;
   silentInputSinceMs = null;
   if (remoteStream) {
@@ -3759,7 +3900,6 @@ autoGainEl.addEventListener("change", () => {
   refreshMicGainAvailability();
   sendAudioSettings();
 });
-micModeEls.forEach((input) => input.addEventListener("change", sendAudioSettings));
 document.getElementById("quality16k").addEventListener("change", (event) => {
   if (event.currentTarget.checked) sendAudioProfile(16000);
 });
@@ -3838,6 +3978,7 @@ renderHealthDashboard();
 void loadSessionTimeout();
 appStatusTimer = setInterval(() => { void refreshAppStatus(); }, 3000);
 document.addEventListener("visibilitychange", () => {
+  void handleAudioPageVisibility();
   if (!document.hidden) void refreshAppStatus();
 });
 
