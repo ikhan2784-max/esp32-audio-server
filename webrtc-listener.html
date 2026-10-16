@@ -112,11 +112,6 @@
     .volume-row input { margin:0; }
     .volume-row output { width:76px; color:#d8ecfa; text-align:right; font-size:.7rem; white-space:nowrap; }
     .volume-scale { display:flex; justify-content:space-between; margin:3px 47px 0 26px; color:#819bae; font-size:.57rem; font-variant-numeric:tabular-nums; }
-    .quick-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; }
-    .quick-tile { min-width:0; padding:8px 4px; text-align:center; border:1px solid #173649; border-radius:10px; background:#091b28; }
-    .quick-tile strong { display:block; overflow:hidden; color:#e2f4ff; font-size:.64rem; text-overflow:ellipsis; white-space:nowrap; }
-    .quick-tile span { display:block; margin-top:4px; color:#62dea9; font-size:.55rem; font-weight:800; letter-spacing:.04em; }
-    .quick-tile .bad { color:#ff8b85; }
     .settings-stack { display:grid; gap:9px; }
     .setting-group { padding:12px; border:1px solid var(--border); border-radius:14px; background:linear-gradient(150deg,#0c1e2c,#091723); }
     .setting-group h2 { margin:0 0 10px; color:#cce7f6; font-size:.75rem; letter-spacing:.05em; }
@@ -184,7 +179,9 @@
     .health-more-checks > summary { cursor:pointer; color:#9db5c4; font-size:.68rem; font-weight:700; }
     .health-empty-note { margin:9px 0 0; color:#9db5c4; font-size:.7rem; line-height:1.4; }
     .health-check-actions { display:flex; flex-wrap:wrap; gap:7px; margin-top:8px; }
-    .diag-tabs { display:grid; grid-template-columns:1fr 1fr; gap:5px; margin:0 0 10px; padding:4px; border:1px solid #17364b; border-radius:11px; background:#06121d; }
+    .diagnostic-switch { display:grid; grid-template-columns:1fr 1fr; gap:5px; margin:0 0 10px; padding:4px; border:1px solid #17364b; border-radius:11px; background:#06121d; }
+    .diagnostic-switch .small-button { min-height:36px; color:#a8bfce; border-color:transparent; background:transparent; }
+    .diagnostic-switch .small-button[aria-selected="true"] { color:#fff; border-color:#087cf0; background:#087cf0; box-shadow:0 4px 12px #087cf033; }
     .diag-tab { min-height:36px; padding:7px 8px; color:#a8bfce; border:1px solid transparent; border-radius:8px; background:transparent; font-size:.68rem; font-weight:750; }
     .diag-tab[aria-selected="true"] { color:#fff; border-color:#087cf0; background:#087cf0; box-shadow:0 4px 12px #087cf033; }
     .diag-panel[hidden] { display:none; }
@@ -220,6 +217,7 @@
     .log-time { color:#7793a8; }
     .log-level { font-weight:800; }
     .log-level.info { color:#50caff; }
+    .log-level.success { color:#69e5b1; }
     .log-level.warning { color:#f7c654; }
     .log-level.error { color:#ff706c; }
     .log-source { font-weight:800; }
@@ -360,7 +358,7 @@
     .action-button:not(:disabled):hover,.small-button:not(:disabled):hover,.system-action:not(:disabled):hover { filter:brightness(1.1); transform:translateY(-1px); }
     .action-button.stop,.action-button.record[aria-pressed="true"] { border-color:#335064; background:#142b3a; }
     .spec-grid { gap:9px; margin:11px 0; }
-    .spec-card,.quick-tile,.metric {
+    .spec-card,.metric {
       border-color:#1c3d53;
       border-radius:12px;
       background:linear-gradient(145deg,#0b1e2b,#081722);
@@ -370,10 +368,6 @@
     .spec-card span { font-size:.61rem; }
     .card-title { margin-bottom:12px; font-size:.8rem; }
     .level-track { height:13px; border-color:#1b4055; border-radius:7px; }
-    .quick-grid { gap:8px; }
-    .quick-tile { padding:10px 5px; }
-    .quick-tile strong { font-size:.69rem; }
-    .quick-tile span { font-size:.59rem; }
     .settings-stack { gap:11px; }
     .setting-group { padding:15px; }
     .setting-group h2 { margin-bottom:12px; font-size:.78rem; letter-spacing:.075em; }
@@ -436,8 +430,7 @@
       .mic-orb { width:96px; height:96px; }
       .listen-actions { gap:7px; }
       .action-button { min-height:44px; gap:5px; padding:9px 6px; font-size:.72rem; }
-      .quick-grid,.spec-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; }
-      .quick-tile { padding:9px 5px; }
+      .spec-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; }
       .spec-card { padding:10px 6px; }
       .volume-scale { margin-right:38px; font-size:.55rem; }
       .diagnostic-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
@@ -526,12 +519,6 @@
         </div>
       </section>
 
-      <section class="panel-card">
-        <div class="card-title"><span class="eyebrow">QUICK STATUS</span><span class="muted">Live</span></div>
-        <div class="quick-grid">
-          <div class="quick-tile"><strong>ESP32</strong><span id="quickDevice">CHECKING</span></div><div class="quick-tile"><strong>WebRTC</strong><span id="quickWebRtc">IDLE</span></div><div class="quick-tile"><strong>Render</strong><span id="quickRender">CHECKING</span></div><div class="quick-tile"><strong>Wi-Fi</strong><span id="quickWifi">—</span></div>
-        </div>
-      </section>
       <p id="error" role="status" aria-live="polite"></p>
       <details class="panel-card"><summary class="card-title">Connection details</summary><p id="mediaStatus" role="status" aria-live="polite">Audio: waiting for a remote track.</p></details>
     </section>
@@ -548,15 +535,14 @@
         <section class="setting-group"><h2>AUDIO QUALITY</h2><div class="choice-list">
           <label class="choice-row"><input id="quality16k" type="radio" name="audioQuality" disabled><span>16 kHz / 16-bit PCM</span><small>Voice profile</small></label>
           <label class="choice-row"><input id="quality48k" type="radio" name="audioQuality" disabled><span>48 kHz / 16-bit PCM</span><small>High-rate profile</small></label>
-          <label class="choice-row disabled"><input type="radio" name="audioQuality" disabled><span>44.1 kHz / 24-bit</span><small>Unavailable</small></label>
         </div><span id="audioProfileStatus" class="helper" role="status" aria-live="polite">Connect to the ESP32 to change its saved audio profile.</span><p class="helper">Both supported profiles use signed mono 16-bit PCM in DSP and Opus. The INMP441 provides 24 valid source bits in 32-bit I²S slots. A profile change is saved on the ESP32 and restarts it; the displayed selection changes after new telemetry confirms it.</p></section>
         <section class="setting-group"><h2>DEVICE GAIN</h2>
           <div class="setting-row"><span>Automatic gain control (AGC)</span><label class="toggle" aria-label="Enable microphone automatic gain control"><input id="autoGain" type="checkbox" checked disabled><span></span></label></div>
           <p class="helper">AGC is enabled by default. Turn it off to adjust the microphone gain slider manually.</p>
           <div class="gain-control">
-          <label class="gain-heading" id="gainHeading" for="micGain"><span>Microphone gain</span><output id="micGainValue" for="micGain">25%</output></label>
-          <input id="micGain" type="range" min="25" max="200" step="5" value="25" disabled>
-          <span id="micGainStatus" role="status" aria-live="polite">Automatic gain is on; disable it for manual microphone gain.</span>
+          <label class="gain-heading" id="gainHeading" for="micGain"><span>Microphone gain</span><output id="micGainValue" for="micGain">50%</output></label>
+          <input id="micGain" type="range" min="25" max="200" step="5" value="50" disabled>
+          <span id="micGainStatus" role="status" aria-live="polite">AGC is on by default; post-DSP output gain starts at 50%. Disable AGC to adjust fixed gain manually.</span>
           <p class="helper">Session-only gain after the ESP32 DSP, before Opus. 100% is 1.0×. Higher settings may clip.</p>
         </div><div class="gain-control volume-control">
           <label class="gain-heading" for="playVolume"><span>Listener playback boost</span><output id="playVolumeValue">0% · 1.0×</output></label>
@@ -611,38 +597,52 @@
     <section class="tab-panel" id="panel-diagnostics" role="tabpanel" aria-labelledby="tab-diagnostics" hidden>
       <div class="section-heading"><h2>DIAGNOSTICS</h2><button class="small-button" id="refreshDiagnostics" type="button">Refresh</button></div>
       <div class="diagnostic-switch" role="tablist" aria-label="Diagnostics views">
-        <button class="small-button" type="button" role="tab" data-diagnostics-view="health" aria-selected="true">Device Health</button>
-        <button class="small-button" type="button" role="tab" data-diagnostics-view="information" aria-selected="false">Information</button>
+        <button class="small-button" id="diagnostics-tab-health" type="button" role="tab" aria-controls="diagnostics-health-view" data-diagnostics-view="health" aria-selected="true">Device Health</button>
+        <button class="small-button" id="diagnostics-tab-information" type="button" role="tab" aria-controls="diagnostics-information-view" data-diagnostics-view="information" aria-selected="false">Information</button>
       </div>
-      <div class="diagnostics-view" id="diagnostics-health-view" role="tabpanel">
-        <section class="setting-group" id="deviceHealthDashboard">
-          <div class="section-heading health-heading"><h2>DEVICE HEALTH</h2><button class="small-button health-check-button" id="runHealthCheck" type="button">Run Full Health Check</button></div>
-          <p class="helper" id="healthCheckStatus" role="status" aria-live="polite">Read-only checks for current ESP32, Render, WebRTC and browser data.</p>
-          <div class="health-summary" id="healthSummary" role="group" aria-label="Health check summary">Waiting for device telemetry.</div>
-          <div class="health-card-grid" id="healthCards" aria-live="off"></div>
-        </section>
-        <p class="helper">Only checks with supported, measurable data are shown. Missing readings remain Not Tested.</p>
+      <div class="diagnostics-view" id="diagnostics-health-view" role="tabpanel" aria-labelledby="diagnostics-tab-health">
+        <div class="health-toolbar"><div><h3>DEVICE HEALTH</h3><p>Live checks use current ESP32 telemetry, Render responses and browser WebRTC statistics.</p></div><button class="small-button health-check-button" id="runHealthCheck" type="button">Run Full Health Check</button></div>
+        <p class="helper" id="healthCheckStatus" role="status" aria-live="polite">Read-only checks for current ESP32, Render, WebRTC and browser data.</p>
+        <div class="health-summary" id="healthSummary" role="group" aria-label="Health check summary">Waiting for device telemetry.</div>
+        <div class="health-card-grid" id="healthCards" aria-live="off"></div>
+        <p class="helper">Only checks backed by current telemetry or browser APIs are shown; unsupported hardware checks are omitted.</p>
       </div>
-      <div class="diagnostics-view" id="diagnostics-information-view" role="tabpanel" hidden>
+      <div class="diagnostics-view" id="diagnostics-information-view" role="tabpanel" aria-labelledby="diagnostics-tab-information" hidden>
         <p class="helper" id="informationUpdated">Waiting for current ESP32 telemetry.</p>
-        <section class="setting-group information-section"><h2>AUDIO FORMAT & FLOW</h2><div class="diagnostic-grid">
-          <div class="metric"><span>Active profile</span><strong id="infoAudioProfile">—</strong></div><div class="metric"><span>PCM representation</span><strong id="infoPcmFormat">—</strong></div>
-          <div class="metric"><span>INMP441 / I²S</span><strong id="infoI2sFormat">—</strong></div><div class="metric"><span>Input and channel</span><strong id="infoInputMode">—</strong></div>
-          <div class="metric"><span>Capture state / samples</span><strong id="infoCapture">—</strong></div><div class="metric"><span>Capture errors / overflows</span><strong id="infoCaptureErrors">—</strong></div>
-          <div class="metric"><span>DSP state / errors</span><strong id="infoDsp">—</strong></div><div class="metric"><span>Opus frames / bytes</span><strong id="infoOpus">—</strong></div>
-          <div class="metric"><span>Audio sent / dropped</span><strong id="infoAudioTransport">—</strong></div><div class="metric"><span>TX max / slow sends</span><strong id="infoTx">—</strong></div>
-        </div></section>
-        <section class="setting-group information-section"><h2>SYSTEM & MEMORY</h2><div class="diagnostic-grid">
-          <div class="metric"><span>Firmware / build</span><strong id="infoFirmware">—</strong></div><div class="metric"><span>Uptime / last seen</span><strong id="infoUptime">—</strong></div>
-          <div class="metric"><span>Boot reason / boots / brownouts</span><strong id="infoBoot">—</strong></div><div class="metric"><span>CPU / temperature</span><strong id="infoCpu">—</strong></div>
-          <div class="metric"><span>Internal heap free / minimum</span><strong id="infoInternalMemory">—</strong></div><div class="metric"><span>PSRAM free / total</span><strong id="infoPsram">—</strong></div>
-          <div class="metric"><span>Largest block / app free flash</span><strong id="infoBlocksFlash">—</strong></div><div class="metric"><span>Task stack watermarks</span><strong id="infoStacks">—</strong></div>
+        <section class="setting-group information-section"><h2>SYSTEM</h2><div class="diagnostic-grid">
+          <div class="metric"><span>Device</span><strong id="infoDevice">—</strong></div><div class="metric"><span>Firmware</span><strong id="infoFirmware">—</strong></div>
+          <div class="metric"><span>Uptime</span><strong id="infoUptime">—</strong></div><div class="metric"><span>Boot reason</span><strong id="infoBoot">—</strong></div>
+          <div class="metric"><span>Last rebooted</span><strong id="infoLastReboot">—</strong></div><div class="metric"><span>Total reboots</span><strong id="infoBootCount">—</strong></div>
+          <div class="metric"><span>Brownouts</span><strong id="infoBrownouts">—</strong></div><div class="metric"><span>CPU / temperature</span><strong id="infoCpu">—</strong></div>
           <div class="metric wide"><span>Last saved firmware error</span><strong id="infoLastError">—</strong></div>
         </div></section>
-        <section class="setting-group information-section"><h2>NETWORK & RENDER</h2><div class="diagnostic-grid">
+        <section class="setting-group information-section"><h2>MEMORY</h2><div class="diagnostic-grid">
+          <div class="metric"><span>Internal heap free / minimum</span><strong id="infoInternalMemory">—</strong></div><div class="metric"><span>PSRAM free / total</span><strong id="infoPsram">—</strong></div>
+          <div class="metric"><span>Largest internal block</span><strong id="infoLargestBlock">—</strong></div><div class="metric"><span>Task stack watermarks</span><strong id="infoStacks">—</strong></div>
+        </div></section>
+        <section class="setting-group information-section"><h2>FLASH</h2><div class="diagnostic-grid">
+          <div class="metric"><span>Flash chip capacity</span><strong id="infoFlashTotal">—</strong></div><div class="metric"><span>Running app image used</span><strong id="infoFlashUsed">—</strong></div>
+          <div class="metric"><span>Running app partition free</span><strong id="infoFlashFree">—</strong></div><div class="metric"><span>Running app partition size</span><strong id="infoFlashPartition">—</strong></div>
+        </div><p class="helper">The active app partition’s free space is separate from flash reserved for other partitions.</p></section>
+        <section class="setting-group information-section"><h2>DEVICE CONNECTION</h2><div class="diagnostic-grid">
+          <div class="metric"><span>Listeners</span><strong id="infoListeners">—</strong></div><div class="metric"><span>Connection since</span><strong id="infoConnectionSince">—</strong></div>
+          <div class="metric"><span>Last seen</span><strong id="infoLastSeen">—</strong></div><div class="metric"><span>Last played</span><strong id="infoLastPlayed">—</strong></div>
+          <div class="metric wide"><span>Last played duration</span><strong id="infoLastPlayedDuration">—</strong></div>
+        </div></section>
+        <section class="setting-group information-section"><h2>WEBRTC</h2><div class="diagnostic-grid">
+          <div class="metric"><span>Peer connection</span><strong id="infoPeer">—</strong></div><div class="metric"><span>WebRTC sessions started / ended</span><strong id="infoWebrtcSessions">—</strong></div>
+          <div class="metric wide"><span>Active audio profile / PCM</span><strong id="infoAudioProfile">—</strong></div><div class="metric wide"><span>INMP441 / I²S format</span><strong id="infoI2sFormat">—</strong></div>
+          <div class="metric"><span>Input mode / channel</span><strong id="infoInputMode">—</strong></div><div class="metric"><span>Capture state / samples</span><strong id="infoCapture">—</strong></div>
+          <div class="metric"><span>Capture errors / overflows</span><strong id="infoCaptureErrors">—</strong></div><div class="metric"><span>DSP state / errors</span><strong id="infoDsp">—</strong></div>
+          <div class="metric"><span>Opus frames / bytes</span><strong id="infoOpus">—</strong></div><div class="metric"><span>Audio sent / dropped</span><strong id="infoAudioTransport">—</strong></div>
+          <div class="metric wide"><span>Listener received packets / bytes</span><strong id="infoRtp">Waiting for browser RTP stats</strong></div><div class="metric wide"><span>TX maximum / slow sends</span><strong id="infoTx">—</strong></div>
+        </div></section>
+        <section class="setting-group information-section"><h2>NETWORK</h2><div class="diagnostic-grid">
           <div class="metric"><span>Wi-Fi / signal</span><strong id="infoWifi">—</strong></div><div class="metric"><span>IP / gateway</span><strong id="infoIp">—</strong></div>
           <div class="metric"><span>Wi-Fi retries / drops</span><strong id="infoWifiCounts">—</strong></div><div class="metric"><span>Hotspot / clients</span><strong id="infoHotspot">—</strong></div>
-          <div class="metric"><span>Render signaling</span><strong id="infoRender">—</strong></div><div class="metric"><span>WebRTC peer</span><strong id="infoPeer">—</strong></div>
+        </div></section>
+        <section class="setting-group information-section"><h2>RENDER BACKEND</h2><div class="diagnostic-grid">
+          <div class="metric"><span>Device signaling</span><strong id="infoRender">—</strong></div><div class="metric"><span>Render health</span><strong id="infoRenderHealth">—</strong></div>
         </div></section>
       </div>
     </section>
@@ -651,7 +651,7 @@
       <div class="section-heading"><h2>EVENT LOG</h2><span class="status-chip"><span id="logCount">0</span> events</span></div>
       <section class="setting-group">
         <div class="log-toolbar"><div class="filter-list" role="group" aria-label="Filter event log"><button class="filter-button" data-log-filter="all" aria-pressed="true" type="button">All</button><button class="filter-button" data-log-filter="info" aria-pressed="false" type="button">Info</button><button class="filter-button" data-log-filter="warning" aria-pressed="false" type="button">Warning</button><button class="filter-button" data-log-filter="error" aria-pressed="false" type="button">Error</button><button class="filter-button" data-log-filter="backend" aria-pressed="false" type="button">Backend</button><button class="filter-button" data-log-filter="health" aria-pressed="false" type="button">Health Check</button></div><label class="autoscroll-option"><input type="checkbox" id="autoScrollLogs" checked> Auto-scroll</label><div><button class="small-button danger" id="clearLogs" type="button">Clear</button> <button class="small-button" id="exportLogs" type="button">Export</button></div></div>
-        <div class="log-list" id="logList" aria-live="polite"><div class="log-entry"><span class="log-time">—</span><span class="log-level info">INFO</span><span>Listener ready</span></div></div>
+        <div class="log-list" id="logList" aria-live="polite"><div class="log-entry"><span class="log-time">—</span><span class="log-level info">INFO</span><span class="log-source listener">LISTENER:</span><span>listener page ready</span></div></div>
       </section>
       <p class="helper">Each entry identifies its source: Listener, Audio, Settings, ESP32, Render or Health. Health Check entries show measured evidence. This page does not expose private Render host logs or audio payloads.</p>
     </section>
@@ -803,6 +803,7 @@ let inputAnalyser = null;
 let outputAnalyser = null;
 let latestInputDbfs = null;
 let latestOutputDbfs = null;
+let latestInboundAudioStats = null;
 let playbackGain = null;
 let gtcrnApi = null;
 let gtcrnWasmBinary = null;
@@ -899,6 +900,8 @@ function renderLogs() {
       ? logEntries.filter((entry) => entry.category === "backend")
       : activeLogFilter === "health"
         ? logEntries.filter((entry) => entry.category === "health")
+    : activeLogFilter === "info"
+      ? logEntries.filter((entry) => entry.level === "info" || entry.level === "success")
       : logEntries.filter((entry) => entry.level === activeLogFilter);
   logCountEl.textContent = String(logEntries.length);
   logListEl.replaceChildren();
@@ -917,7 +920,7 @@ function renderLogs() {
     time.textContent = entry.at.toLocaleTimeString();
     const level = document.createElement("span");
     level.className = `log-level ${entry.level}`;
-    level.textContent = entry.level.toUpperCase();
+    level.textContent = entry.level === "success" ? "PASS" : entry.level.toUpperCase();
     const source = document.createElement("span");
     source.className = `log-source ${entry.source.toLowerCase()}`;
     source.textContent = entry.source;
@@ -930,7 +933,7 @@ function renderLogs() {
 }
 
 function addLog(message, level = "info", category = "listener", source = "") {
-  const safeLevel = ["info", "warning", "error"].includes(level) ? level : "info";
+  const safeLevel = ["info", "success", "warning", "error"].includes(level) ? level : "info";
   const safeCategory = ["backend", "health"].includes(category) ? category : "listener";
   const defaultSource = safeCategory === "backend" ? "Render" : safeCategory === "health" ? "Health" : "Listener";
   const safeSource = ["Listener", "Audio", "Settings", "ESP32", "Render", "Health"].includes(source)
@@ -949,7 +952,7 @@ function selectLogFilter(filter) {
 }
 
 function logHealthResult(results, label, passed, detail, warning = false) {
-  const level = passed ? "info" : warning ? "warning" : "error";
+  const level = passed ? "success" : warning ? "warning" : "error";
   const marker = passed ? "PASS" : warning ? "WARN" : "FAIL";
   results.push({ passed, warning: !passed && warning });
   addLog(`${marker} · ${label}: ${detail}`, level, "health");
@@ -1142,6 +1145,8 @@ function buildHealthCategories() {
       healthCounter(hasData ? d.signaling_errors : undefined, "Backend/signaling error count", "Reported signaling errors"),
       makeHealthItem("Server session state", !device ? "Not Tested" : device.session_active ? "Healthy" : "Not Tested",
         device?.session_active ? "An authenticated listener/device session is active." : "No listener session is active; this is normal when audio is not being listened to.", false),
+      makeHealthItem("Unauthorized API request rejection", healthEvidence.unauthorizedApiRejected === true ? "Healthy" : healthEvidence.unauthorizedApiRejected === false ? "Warning" : "Not Tested",
+        healthEvidence.unauthorizedApiRejected === true ? "An unauthenticated API request was rejected with HTTP 401." : healthEvidence.unauthorizedApiRejected === false ? "The unauthenticated API request was not rejected with HTTP 401." : "Run Full Health Check to verify the protected API rejects requests without session credentials.", false),
     ] },
     { name: "WebRTC & Opus", items: [
       makeHealthItem("Peer connection state", !listenerActive || !peer ? "Not Tested" :
@@ -1194,32 +1199,9 @@ function buildHealthCategories() {
       makeHealthItem("Task health and deadlock detection", !hasData ? "Not Tested" :
         healthBooleanGroupStatus(taskStates),
         hasData ? `Capture ${taskStateText(d.audio_capture_running)} · DSP ${taskStateText(d.dsp_running)} · WebRTC ${taskStateText(d.webrtc_running)}.` : "Task health telemetry is unavailable."),
-    ] },
-    { name: "Battery & Power", items: [
-      makeHealthItem("Supply voltage", "Unsupported", "No voltage sensor is reported by this hardware configuration.", false),
-      makeHealthItem("Battery percentage", "Unsupported", "No battery gauge is reported.", false),
-      makeHealthItem("Battery voltage and current", "Unsupported", "No battery voltage/current sensor is reported.", false),
-      makeHealthItem("Charging state", "Unsupported", "No charging-state sensor is reported.", false),
-      makeHealthItem("Low-voltage detection", "Unsupported", "No low-voltage monitor is reported.", false),
       healthCounter(d.brownout_count, "Brownout reset count", "Persistent brownout reset counter reported by firmware."),
-      makeHealthItem("Battery runtime estimate", "Unsupported", "No battery capacity or current-consumption gauge is reported.", false),
-      makeHealthItem("Power source USB/battery", "Unsupported", "The current hardware does not report its power source.", false),
-      makeHealthItem("Temperature sensor", Number.isFinite(d.temperature_c) ? "Healthy" : "Unsupported",
-        Number.isFinite(d.temperature_c) ? `ESP32 internal temperature ${d.temperature_c.toFixed(1)} °C; this is not a battery temperature reading.` : "No temperature reading is available.", false),
-    ] },
-    { name: "Security & Reliability", items: [
-      makeHealthItem("Setup authentication status", "Not Tested", "Setup-auth runtime state is not exposed to the listener dashboard.", false),
-      makeHealthItem("Failed login counter and lockout", "Not Tested", "Authentication attempt counters are intentionally not exposed by this health snapshot.", false),
-      makeHealthItem("Session expiry operation", "Not Tested", "The active session timeout setting is visible, but expiry is not triggered because it would interrupt this session.", false),
-      makeHealthItem("Unauthorized API request rejection", healthEvidence.unauthorizedApiRejected === true ? "Healthy" : healthEvidence.unauthorizedApiRejected === false ? "Warning" : "Not Tested",
-        healthEvidence.unauthorizedApiRejected === true ? "A same-origin API request without session credentials was rejected with HTTP 401." : healthEvidence.unauthorizedApiRejected === false ? "The unauthenticated API request was not rejected with HTTP 401." : "Run Full Health Check to verify the protected API rejects a request without session credentials.", false),
-      makeHealthItem("Recovery-mode verification", "Not Tested", "Physical BOOT recovery is not triggered remotely; verify it only as a separate manual test.", false),
-      makeHealthItem("Saved credential persistence", "Not Tested", "The health check does not read, print, or rewrite saved credentials.", false),
-      makeHealthItem("Firmware integrity check", "Unsupported", "Secure-boot/image-integrity result is not exposed by this firmware build.", false),
-      makeHealthItem("Reconnect after router restart", "Not Tested", "Requires a controlled router restart and is not performed by this button.", false),
-      makeHealthItem("Wi-Fi failure rollback", "Not Tested", "Would change network configuration; not run by the read-only check.", false),
-      makeHealthItem("Long-duration soak test", "Not Tested", "Requires an extended observation period; a single snapshot cannot validate it.", false),
-      makeHealthItem("Log retention and cleanup test", "Not Tested", "The check does not delete or rewrite logs.", false),
+      makeHealthItem("Temperature", Number.isFinite(d.temperature_c) ? "Healthy" : "Not Tested",
+        Number.isFinite(d.temperature_c) ? `ESP32 internal temperature ${d.temperature_c.toFixed(1)} °C.` : "Temperature telemetry is unavailable.", false),
     ] },
   ];
 
@@ -1347,7 +1329,7 @@ function renderHealthDashboard(categories = buildHealthCategories()) {
 function logHealthDashboard(categories) {
   for (const category of categories) {
     for (const item of category.items) {
-      const level = item.status === "Critical" ? "error" : item.status === "Warning" ? "warning" : "info";
+      const level = item.status === "Critical" ? "error" : item.status === "Warning" ? "warning" : item.status === "Healthy" ? "success" : "info";
       addLog(`${item.status.toUpperCase()} · ${category.name} / ${item.label}: ${item.detail}`, level, "health");
     }
   }
@@ -1564,7 +1546,7 @@ async function runHealthCheck() {
     for (const item of allItems) totals[item.status] = (totals[item.status] || 0) + 1;
     const summary = `${allItems.length} checks · ${totals.Healthy} healthy · ${totals.Warning} warning · ${totals.Critical} critical · ${totals["Not Tested"]} not tested`;
     healthCheckStatusEl.textContent = `Health check complete · ${totals.Critical ? "critical issues found" : totals.Warning ? "review warnings" : "no measured failures"}. Detailed results are in the Health Check log.`;
-    addLog(`Full Health Check complete · ${summary}`, totals.Critical ? "error" : totals.Warning ? "warning" : "info", "health");
+    addLog(`Full Health Check complete · ${summary}`, totals.Critical ? "error" : totals.Warning ? "warning" : totals.Healthy ? "success" : "info", "health");
   } catch {
     healthCheckStatusEl.textContent = "Health check stopped unexpectedly; see the Health Check log for completed checks.";
     addLog("Health check stopped unexpectedly", "error", "health");
@@ -1594,12 +1576,6 @@ function setListenButtonActive(active) {
   startButton.setAttribute("aria-pressed", String(Boolean(active)));
   startButton.classList.toggle("stop", Boolean(active));
   listenButtonLabelEl.textContent = active ? "Stop listening" : "Start listening";
-}
-
-function setQuickStatus(id, value, bad = false) {
-  const element = document.getElementById(id);
-  element.textContent = value;
-  element.classList.toggle("bad", bad);
 }
 
 function setMetric(id, value) {
@@ -1699,6 +1675,8 @@ function updateAudioLevelMeter() {
 function resetAudioLevelMeter() {
   latestInputDbfs = null;
   latestOutputDbfs = null;
+  latestInboundAudioStats = null;
+  setMetric("infoRtp", "Waiting for browser RTP stats");
   audioLevelFill.style.width = "0%";
   audioLevelMeter.setAttribute("aria-valuenow", "0");
   document.getElementById("listenerDb").textContent = "Waiting for audio";
@@ -1820,14 +1798,19 @@ function setDiagnosticsView(view) {
 }
 
 function updateInformationDashboard(device, telemetry, fresh) {
-  const fields = ["infoAudioProfile", "infoPcmFormat", "infoI2sFormat", "infoInputMode",
-    "infoCapture", "infoCaptureErrors", "infoDsp", "infoOpus", "infoAudioTransport", "infoTx",
-    "infoFirmware", "infoUptime", "infoBoot", "infoCpu", "infoInternalMemory", "infoPsram",
-    "infoBlocksFlash", "infoStacks", "infoLastError", "infoWifi", "infoIp", "infoWifiCounts",
-    "infoHotspot", "infoRender", "infoPeer"];
+  const fields = ["infoDevice", "infoFirmware", "infoUptime", "infoBoot", "infoLastReboot", "infoBootCount",
+    "infoBrownouts", "infoCpu", "infoLastError", "infoInternalMemory", "infoPsram", "infoLargestBlock",
+    "infoStacks", "infoFlashTotal", "infoFlashUsed", "infoFlashFree", "infoFlashPartition", "infoListeners",
+    "infoConnectionSince", "infoLastSeen", "infoLastPlayed", "infoLastPlayedDuration", "infoPeer",
+    "infoWebrtcSessions", "infoAudioProfile", "infoI2sFormat", "infoInputMode", "infoCapture",
+    "infoCaptureErrors", "infoDsp", "infoOpus", "infoAudioTransport", "infoRtp", "infoTx",
+    "infoWifi", "infoIp", "infoWifiCounts", "infoHotspot", "infoRender", "infoRenderHealth"];
   if (!fresh) {
     for (const id of fields) setMetric(id, "Waiting for fresh device telemetry");
     setMetric("informationUpdated", "Device information appears when authenticated firmware telemetry is current.");
+    setMetric("infoRtp", latestInboundAudioStats
+      ? `${latestInboundAudioStats.packetsReceived.toLocaleString()} packets · ${formatBytes(latestInboundAudioStats.bytesReceived)}`
+      : "Waiting for browser RTP stats");
     return;
   }
   const d = telemetry;
@@ -1836,37 +1819,72 @@ function updateInformationDashboard(device, telemetry, fresh) {
   const slotBits = Number.isFinite(d.i2s_slot_bits) ? d.i2s_slot_bits : 0;
   const validBits = Number.isFinite(d.i2s_valid_bits) ? d.i2s_valid_bits : 0;
   const inputMode = d.i2s_input_mode || "unknown input";
-  const telemetryAt = device?.telemetry_updated_at ? new Date(device.telemetry_updated_at) : null;
-  const lastSeen = telemetryAt && Number.isFinite(telemetryAt.getTime())
-    ? telemetryAt.toLocaleTimeString() : "unknown";
-  setMetric("infoAudioProfile", d.audio_profile || (rate ? `${rate / 1000} kHz PCM${pcmBits}` : "Unknown"));
-  setMetric("infoPcmFormat", d.pcm_format || `${d.pcm_signed === true ? "Signed " : ""}${pcmBits || "?"}-bit · ${d.pcm_channels === 1 ? "Mono" : "channel count unknown"}`);
-  setMetric("infoI2sFormat", `${validBits || "?"}-bit valid data · ${slotBits || "?"}-bit slots · ${rate || "?"} Hz`);
+  const receivedAtMs = Number.isFinite(d.received_at_ms) ? d.received_at_ms
+    : Number.isFinite(d.telemetry_age_ms) ? Date.now() - d.telemetry_age_ms
+      : Date.parse(device?.telemetry_updated_at || d.received_at || "");
+  const telemetryAt = Number.isFinite(receivedAtMs) ? new Date(receivedAtMs) : null;
+  const formatTimestamp = (value) => {
+    if (!value) return "Not reported";
+    const date = new Date(value);
+    return Number.isFinite(date.getTime()) ? date.toLocaleString() : "Not reported";
+  };
+  const lastSeen = device?.last_seen ? formatTimestamp(device.last_seen)
+    : telemetryAt ? telemetryAt.toLocaleString() : "Not reported";
+  setMetric("infoDevice", `${selectedDeviceId || "ESP32"} · ${device?.device_connected ? "online" : "offline"}`);
+  setMetric("infoFirmware", `${d.firmware_version || d.firmware || "Unknown"}${d.build_id ? ` · ${String(d.build_id).slice(0, 12)}` : ""}`);
+  setMetric("infoUptime", Number.isFinite(d.uptime_ms) ? formatDuration(d.uptime_ms / 1000) : "Not reported");
+  setMetric("infoBoot", d.reset_reason_name || d.reset_reason || "Not reported");
+  setMetric("infoLastReboot", telemetryAt && Number.isFinite(d.uptime_ms)
+    ? `${new Date(telemetryAt.getTime() - d.uptime_ms).toLocaleString()} · estimated` : "Not reported");
+  setMetric("infoBootCount", Number.isFinite(d.boot_count) ? String(Math.max(0, Math.floor(d.boot_count) - 1)) : "Not reported");
+  setMetric("infoBrownouts", Number.isFinite(d.brownout_count) ? String(Math.floor(d.brownout_count)) : "Not reported");
+  setMetric("infoCpu", `${d.cpu_frequency_mhz ?? "—"} MHz · ${Number.isFinite(d.temperature_c) ? `${d.temperature_c.toFixed(1)} °C` : "temperature unavailable"}`);
+  setMetric("infoLastError", d.last_error ? `${d.last_error_module || "Firmware"}: ${d.last_error}` : "No saved firmware error");
+  setMetric("infoInternalMemory", `${formatBytes(d.free_internal_heap ?? d.free_heap)} free · ${formatBytes(d.min_free_internal_heap ?? d.min_free_heap)} minimum`);
+  setMetric("infoPsram", `${formatBytes(d.free_psram)} free · ${formatBytes(d.total_psram)} total`);
+  setMetric("infoLargestBlock", formatBytes(d.largest_internal_block));
+  setMetric("infoStacks", `Opus ${formatBytes(d.opus_task_stack_high_water_bytes)} · WebRTC ${formatBytes(d.webrtc_task_stack_high_water_bytes)}`);
+  setMetric("infoFlashTotal", formatBytes(d.flash_total_bytes));
+  setMetric("infoFlashUsed", formatBytes(d.app_image_bytes));
+  setMetric("infoFlashFree", formatBytes(d.app_partition_free_bytes));
+  setMetric("infoFlashPartition", formatBytes(d.app_partition_bytes));
+  setMetric("infoListeners", Number.isFinite(device?.listener_count) ? String(Math.floor(device.listener_count)) : device?.listener_connected ? "1" : "0");
+  setMetric("infoConnectionSince", device?.connected_at ? formatTimestamp(device.connected_at)
+    : device?.device_connected ? "Online · start time not reported" : "Offline");
+  setMetric("infoLastSeen", lastSeen);
+  setMetric("infoLastPlayed", device?.last_played_at ? formatTimestamp(device.last_played_at) : "Never reported");
+  const playedMs = Number(device?.last_played_duration_ms);
+  setMetric("infoLastPlayedDuration", Number.isFinite(playedMs) && playedMs > 0
+    ? `${(playedMs / 60000).toFixed(1)} minutes` : "No completed playback reported");
+  setMetric("infoPeer", d.peer_connected === true ? "Connected" : d.peer_connected === false ? "Not connected" : "Not reported");
+  const connects = Number.isFinite(device?.webrtc_connects) ? Math.floor(device.webrtc_connects) : null;
+  const disconnects = Number.isFinite(device?.webrtc_disconnects) ? Math.floor(device.webrtc_disconnects) : null;
+  setMetric("infoWebrtcSessions", connects === null && disconnects === null ? "Not reported" : `${connects ?? "—"} started · ${disconnects ?? "—"} ended`);
+  setMetric("infoAudioProfile", d.audio_profile || (rate ? `${rate / 1000} kHz / ${pcmBits || "?"}-bit PCM` : "Unknown"));
+  setMetric("infoI2sFormat", `${validBits || "?"}-bit source · ${slotBits || "?"}-bit slots · ${rate || "?"} Hz`);
   setMetric("infoInputMode", `${inputMode} · mono output`);
   setMetric("infoCapture", `${d.audio_capture_running ? "Running" : "Stopped"} · ${Number(d.audio_samples_captured || 0).toLocaleString()} samples`);
   setMetric("infoCaptureErrors", `${d.audio_capture_errors ?? "—"} errors · ${d.audio_buffer_overflows ?? "—"} capture overflows`);
   setMetric("infoDsp", `${d.dsp_running ? "Running" : "Stopped"} · ${d.dsp_errors ?? "—"} errors · ${d.dsp_input_underflows ?? "—"} input underflows / ${d.dsp_output_overflows ?? "—"} output overflows`);
   setMetric("infoOpus", `${Number(d.opus_encoded_frames || 0).toLocaleString()} frames · ${formatBytes(d.opus_encoded_bytes)}`);
   setMetric("infoAudioTransport", `${Number(d.audio_frames_sent || 0).toLocaleString()} sent · ${d.audio_frames_dropped ?? "—"} dropped · ${d.opus_dropped_frames ?? "—"} Opus drops`);
+  setMetric("infoRtp", latestInboundAudioStats
+    ? `${latestInboundAudioStats.packetsReceived.toLocaleString()} packets · ${formatBytes(latestInboundAudioStats.bytesReceived)}`
+    : "Waiting for browser RTP stats");
   setMetric("infoTx", `${d.audio_tx_max_us ?? "—"} μs max · ${d.audio_tx_slow_count ?? "—"} slow sends`);
-  setMetric("infoFirmware", `${d.firmware_version || d.firmware || "Unknown"}${d.build_id ? ` · ${String(d.build_id).slice(0, 12)}` : ""}`);
-  setMetric("infoUptime", `${formatDuration(Number(d.uptime_ms || 0) / 1000)} · telemetry ${lastSeen}`);
-  const lastBoot = Number.isFinite(Number(d.uptime_ms)) && telemetryAt
-    ? new Date(telemetryAt.getTime() - Number(d.uptime_ms)).toLocaleString() : "not available";
-  setMetric("infoBoot", `${d.reset_reason_name || d.reset_reason || "unknown"} · ${d.boot_count ?? "—"} boots · ${d.brownout_count ?? "—"} brownouts · ${lastBoot}`);
-  setMetric("infoCpu", `${d.cpu_frequency_mhz ?? "—"} MHz · ${Number.isFinite(d.temperature_c) ? `${d.temperature_c.toFixed(1)} °C` : "temperature unavailable"}`);
-  setMetric("infoInternalMemory", `${formatBytes(d.free_internal_heap ?? d.free_heap)} free · ${formatBytes(d.min_free_internal_heap ?? d.min_free_heap)} minimum`);
-  setMetric("infoPsram", `${formatBytes(d.free_psram)} free · ${formatBytes(d.total_psram)} total`);
-  setMetric("infoBlocksFlash", `${formatBytes(d.largest_internal_block)} largest block · ${formatBytes(d.app_partition_free_bytes)} app partition free / ${formatBytes(d.flash_total_bytes)} flash total`);
-  setMetric("infoStacks", `Opus ${formatBytes(d.opus_task_stack_high_water_bytes)} · WebRTC ${formatBytes(d.webrtc_task_stack_high_water_bytes)}`);
-  setMetric("infoLastError", d.last_error ? `${d.last_error_module || "Firmware"}: ${d.last_error}` : "No saved firmware error");
   setMetric("infoWifi", `${d.wifi_connected ? "Connected" : "Disconnected"} · ${d.wifi_ssid || "SSID unavailable"} · ${d.wifi_rssi ?? "—"} dBm`);
   setMetric("infoIp", `${d.ip || "IP unavailable"} · gateway ${d.wifi_gateway_ip || "unavailable"}`);
   setMetric("infoWifiCounts", `${d.wifi_retry_count ?? "—"} retries · ${d.wifi_disconnect_count ?? "—"} drops`);
   setMetric("infoHotspot", `${d.hotspot_running ? "Running" : "Off"} · ${d.hotspot_clients ?? "—"} client(s)`);
   setMetric("infoRender", d.signaling_connected ? "Connected · authenticated WSS" : "Not connected");
-  setMetric("infoPeer", d.peer_connected ? "Connected" : "Not connected");
-  setMetric("informationUpdated", `Live ESP32 telemetry · last received ${lastSeen} · ${Number.isFinite(telemetry.telemetry_age_ms) ? `${Math.floor(telemetry.telemetry_age_ms / 1000)} seconds old` : "age unknown"}.`);
+  updateRenderInformation();
+  setMetric("informationUpdated", `Live ESP32 telemetry · last received ${lastSeen} · ${Number.isFinite(d.telemetry_age_ms) ? `${Math.floor(d.telemetry_age_ms / 1000)} seconds old` : "age unknown"}.`);
+}
+
+function updateRenderInformation() {
+  const health = lastBackendHealth === true ? "health OK" : lastBackendHealth === false ? "health unavailable" : "health checking";
+  const api = lastRenderReachable === true ? "device API OK" : lastRenderReachable === false ? "device API unavailable" : "device API checking";
+  setMetric("infoRenderHealth", `${health} · ${api}`);
 }
 
 function updateTelemetryViews(device) {
@@ -1889,7 +1907,6 @@ function updateTelemetryViews(device) {
     const hotspotToggle = document.getElementById("hotspotToggle");
     if (hotspotToggle) hotspotToggle.checked = false;
     setMetric("systemFirmware", "—");
-    setQuickStatus("quickWifi", "N/A", true);
     updateInformationDashboard(device, telemetry, false);
     refreshAudioProfileAvailability();
     return;
@@ -1942,13 +1959,11 @@ function updateTelemetryViews(device) {
   updateInformationDashboard(device, telemetry, true);
   refreshAudioProfileAvailability();
 
-  const wifiConnected = telemetry.wifi_connected === true;
   setMetric("systemHotspotStatus", telemetry.hotspot_running === true
     ? `Running · ${Math.floor(telemetry.hotspot_clients || 0)} client(s)` : "Not running");
   const hotspotToggle = document.getElementById("hotspotToggle");
   if (hotspotToggle) hotspotToggle.checked = telemetry.hotspot_running === true;
   setMetric("systemFirmware", telemetry.firmware || "—");
-  setQuickStatus("quickWifi", wifiConnected ? "CONNECTED" : "DISCONNECTED", !wifiConnected);
 }
 
 async function refreshBackendHealth() {
@@ -1958,12 +1973,14 @@ async function refreshBackendHealth() {
     const response = await fetch("/health", { cache: "no-store", credentials: "same-origin" });
     const healthy = response.ok;
     if (lastBackendHealth !== healthy) {
-      addLog(healthy ? "Render /health check passed" : `Render /health check failed (HTTP ${response.status})`, healthy ? "info" : "error", "backend");
+      addLog(healthy ? "Render /health check passed" : `Render /health check failed (HTTP ${response.status})`, healthy ? "success" : "error", "backend");
     }
     lastBackendHealth = healthy;
+    updateRenderInformation();
   } catch (error) {
     if (lastBackendHealth !== false) addLog(`Render /health check failed: ${error.message}`, "error", "backend");
     lastBackendHealth = false;
+    updateRenderInformation();
   } finally {
     backendHealthBusy = false;
   }
@@ -1973,11 +1990,11 @@ async function refreshAppStatus() {
   const devicesResult = await Promise.allSettled([getJson("/api/devices")]);
   const renderReachable = devicesResult[0].status === "fulfilled";
   if (lastRenderReachable !== renderReachable) {
-    addLog(renderReachable ? "Authenticated device API check passed" : "Authenticated device API check failed", renderReachable ? "info" : "error", "backend");
+    addLog(renderReachable ? "Authenticated device API check passed" : "Authenticated device API check failed", renderReachable ? "success" : "error", "backend");
   }
   lastRenderReachable = renderReachable;
   lastDeviceApiReachable = renderReachable;
-  setQuickStatus("quickRender", renderReachable ? "CONNECTED" : "UNAVAILABLE", !renderReachable);
+  updateRenderInformation();
 
   if (renderReachable) {
     const response = devicesResult[0].value;
@@ -1985,20 +2002,19 @@ async function refreshAppStatus() {
     const selected = selectedDeviceStatus();
     const online = Boolean(selected && selected.device_connected);
     if (selected && lastLoggedDeviceOnline !== online) {
-      addLog(`${selectedDeviceId} device ${online ? "online" : "offline"} on Render`, online ? "info" : "warning", "backend", "ESP32");
+      addLog(`${selectedDeviceId} device ${online ? "online" : "offline"} on Render`, online ? "success" : "warning", "backend", "ESP32");
       lastLoggedDeviceOnline = online;
     }
     deviceOnlinePill.classList.toggle("online", online);
     deviceOnlinePill.classList.toggle("offline", Boolean(selected) && !online);
     deviceStatusLabel.textContent = selected ? (online ? "ONLINE" : "OFFLINE") : "NO DEVICE";
-    setQuickStatus("quickDevice", selected ? (online ? "ONLINE" : "OFFLINE") : "NOT CONFIGURED", !online);
     updateTelemetryViews(selected);
     const liveTelemetry = selected?.telemetry;
     if (liveTelemetry && Number.isFinite(liveTelemetry.telemetry_age_ms) && liveTelemetry.telemetry_age_ms <= 15000) {
       const healthKey = `${liveTelemetry.health_ok === true}/${liveTelemetry.health_fault_latched === true}`;
       if (lastLoggedFirmwareHealth !== healthKey) {
         const healthy = liveTelemetry.health_ok === true && liveTelemetry.health_fault_latched !== true;
-        addLog(`Firmware health ${healthy ? "checks passed" : "warning"} · capture, DSP and transport snapshot received`, healthy ? "info" : "warning", "backend", "ESP32");
+        addLog(`Firmware health ${healthy ? "checks passed" : "warning"} · capture, DSP and transport snapshot received`, healthy ? "success" : "warning", "backend", "ESP32");
         lastLoggedFirmwareHealth = healthKey;
       }
     }
@@ -2006,17 +2022,9 @@ async function refreshAppStatus() {
     deviceSelectStatusEl.textContent = selected
       ? `${selectedDeviceId} is ${online ? "connected to Render signaling" : "offline"}.`
       : "Configure device credentials on the Render service to add ESP32 boards.";
-    const peerState = peer?.connectionState;
-    const label = peerState === "connected" ? "CONNECTED"
-      : selected?.session_active || sessionId ? "CONNECTING"
-        : "IDLE";
-    setQuickStatus("quickWebRtc", label, peerState === "failed");
   } else {
     deviceOnlinePill.classList.remove("online", "offline");
     deviceStatusLabel.textContent = "UNKNOWN";
-    setQuickStatus("quickDevice", "UNKNOWN", true);
-    setQuickStatus("quickWifi", "N/A", true);
-    setQuickStatus("quickWebRtc", "UNKNOWN", true);
   }
   const selected = selectedDeviceStatus();
   if (selected) {
@@ -2215,14 +2223,14 @@ function refreshMicGainAvailability() {
   micGainEl.disabled = !sessionAvailable || autoGainEl.checked;
   if (autoGainEl.checked) {
     micGainStatusEl.textContent = connected
-      ? "AGC is on; the fixed session gain is 100% (1.0×). Turn AGC off for manual gain."
-      : "AGC is on by default; manual microphone gain is disabled.";
+      ? "AGC is on; post-DSP output gain starts at 50%."
+      : "AGC will start with 50% post-DSP output gain; manual gain is disabled while AGC is on.";
   } else if (!connected && sessionAvailable) micGainStatusEl.textContent = "Manual gain is enabled; it will apply when the WebRTC audio connection is up.";
   else if (!sessionAvailable) micGainStatusEl.textContent = "Start listening to enable manual microphone gain.";
 }
 
 function effectiveMicGainPercent() {
-  return autoGainEl.checked ? 100 : Number(micGainEl.value);
+  return Number(micGainEl.value);
 }
 
 function sendMicGainPercent(gainPercent) {
@@ -2241,7 +2249,7 @@ function sendMicGainPercent(gainPercent) {
     return false;
   }
   micGainStatusEl.textContent = autoGainEl.checked
-    ? "AGC is on; setting fixed post-DSP gain to 100% (1.0×)…"
+    ? `AGC is on; setting post-DSP output gain to ${gainPercent}%.`
     : `Sending manual microphone gain ${gainPercent}% to the ESP32…`;
   return true;
 }
@@ -2271,7 +2279,7 @@ function handleMicGainAck(message) {
   micGainAppliedSessionId = sessionId;
   micGainAppliedPercent = gainPercent;
   micGainStatusEl.textContent = autoGainEl.checked
-    ? "AGC is on · post-DSP gain fixed at 100% (1.0×)."
+    ? `AGC is on · post-DSP output gain set to ${gainPercent}%.`
     : `Manual ESP32 microphone gain set to ${gainPercent}%.`;
 }
 
@@ -2718,6 +2726,11 @@ async function updateMediaStatus(targetPeer) {
   const trackState = track ? `${track.readyState}${track.muted ? ", muted" : ", unmuted"}` : "not received";
   const packets = inboundAudio?.packetsReceived ?? 0;
   const bytes = inboundAudio?.bytesReceived ?? 0;
+  latestInboundAudioStats = inboundAudio && Number.isFinite(packets) && Number.isFinite(bytes)
+    ? { packetsReceived: packets, bytesReceived: bytes } : null;
+  setMetric("infoRtp", latestInboundAudioStats
+    ? `${Math.floor(packets).toLocaleString()} packets · ${formatBytes(bytes)}`
+    : "Waiting for browser RTP stats");
   const jitterMs = Number.isFinite(inboundAudio?.jitter) ? Math.round(inboundAudio.jitter * 1000) : null;
   const level = Number.isFinite(inboundAudio?.audioLevel) ? inboundAudio.audioLevel.toFixed(3) : null;
   const codec = inboundAudio?.codecId ? codecsById.get(inboundAudio.codecId) : null;
@@ -2939,7 +2952,7 @@ function connectSocket() {
       applyAudioSettings(appliedAudioSettings);
       refreshAudioSettingsAvailability();
       audioSettingsStatusEl.textContent = `Connected to ${selectedDeviceId}; audio controls will be applied when WebRTC connects.`;
-      micGainEl.value = micGainEl.min;
+      micGainEl.value = "50";
       micGainValueEl.value = `${effectiveMicGainPercent()}%`;
       micGainAppliedSessionId = null;
       micGainAppliedPercent = null;
@@ -3433,6 +3446,8 @@ micGainEl.addEventListener("input", () => {
 micGainEl.addEventListener("change", sendMicGain);
 autoGainEl.addEventListener("change", () => {
   micGainValueEl.value = `${effectiveMicGainPercent()}%`;
+  micGainAppliedSessionId = null;
+  micGainAppliedPercent = null;
   refreshMicGainAvailability();
   sendAudioSettings();
 });
