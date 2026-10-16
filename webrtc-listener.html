@@ -238,7 +238,9 @@
     .notice.error { color:#ff9c98; border-color:#66363a; background:#211518; }
     .notice[hidden] { display:none; }
     .setting-footnote { margin-top:8px; color:#7c95a7; font-size:.63rem; line-height:1.4; }
-    .audio-control { display:block; width:100%; height:34px; margin-top:10px; }
+    /* The element is an audio engine/fallback, not the visible player. Its
+       native controls show a mute icon while Web Audio is the audible path. */
+    .audio-control { display:none; }
     #error { min-height:1.25em; margin:7px 2px; color:#ff9691; font-size:.7rem; line-height:1.4; }
     #mediaStatus { overflow-wrap:anywhere; color:#9bb0bf; font-size:.68rem; line-height:1.4; }
     .footer { margin-top:14px; padding:10px 1px 1px; color:#71899b; border-top:1px solid #173044; font-size:.63rem; line-height:1.4; text-align:center; }
@@ -499,7 +501,7 @@
           <button class="action-button record" id="record" type="button" disabled aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle class="record-start-icon" cx="12" cy="12" r="5"/><rect class="record-stop-icon" x="6" y="6" width="12" height="12" rx="1"/></svg><span id="recordButtonLabel">Start recording</span></button>
         </div>
         <div class="record-status-row"><p id="recordStatus" role="status" aria-live="polite">Connect to audio to record a WAV file.</p><span id="recordingTimer" class="activity-timer recording-timer" aria-label="WAV recording elapsed time" title="WAV recording time" hidden>REC 00:00</span></div>
-        <audio id="audio" class="audio-control" controls autoplay playsinline aria-label="Audio playback controls"></audio>
+        <audio id="audio" class="audio-control" autoplay playsinline aria-hidden="true" tabindex="-1"></audio>
       </section>
 
       <div class="spec-grid" aria-label="Current audio format">
