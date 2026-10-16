@@ -57,13 +57,28 @@ app.use("/audio-suppressor", requireHttps, express.static(
 const dtlnDistPath = path.join(__dirname, "node_modules", "@workadventure", "noise-suppression", "dist");
 const dtlnEntrySource = fs.readFileSync(path.join(dtlnDistPath, "index.js"), "utf8");
 const dtlnFftSource = fs.readFileSync(require.resolve("fft.js"), "utf8");
+const dtlnWorkletUrlFileName = fs.readdirSync(dtlnDistPath).find((file) =>
+    /^audio-worklet-dev-module-url-[\w-]+\.js$/.test(file));
+if (!dtlnWorkletUrlFileName) {
+    throw new Error("Could not locate the DTLN browser worklet URL module.");
+}
+const dtlnWorkletUrlSource = fs.readFileSync(path.join(dtlnDistPath, dtlnWorkletUrlFileName), "utf8");
 const dtlnBrowserEntry = dtlnEntrySource.replace('from "fft.js";', 'from "/audio-enhancement/dtln-fft.js";');
 const dtlnBrowserFft = dtlnFftSource.replace("module.exports = FFT;", "export default FFT;");
-if (dtlnBrowserEntry === dtlnEntrySource || dtlnBrowserFft === dtlnFftSource) {
+const dtlnBrowserWorkletUrlSource = dtlnWorkletUrlSource.replace(
+    // The package's development URL is rooted at /node_modules, which this app does not expose.
+    '"/node_modules/@workadventure/noise-suppression/dist/assets/audio-worklet-processor.js"',
+    '"/audio-enhancement/dtln/assets/audio-worklet-processor.js"'
+);
+if (dtlnBrowserEntry === dtlnEntrySource || dtlnBrowserFft === dtlnFftSource
+    || dtlnBrowserWorkletUrlSource === dtlnWorkletUrlSource) {
     throw new Error("Could not prepare the DTLN browser ESM modules for the pinned package versions.");
 }
 app.get("/audio-enhancement/dtln/index.js", requireHttps, (_req, res) => {
     res.type("application/javascript").set("Cache-Control", "public, max-age=3600").send(dtlnBrowserEntry);
+});
+app.get(`/audio-enhancement/dtln/${dtlnWorkletUrlFileName}`, requireHttps, (_req, res) => {
+    res.type("application/javascript").set("Cache-Control", "no-cache").send(dtlnBrowserWorkletUrlSource);
 });
 app.get("/audio-enhancement/dtln-fft.js", requireHttps, (_req, res) => {
     res.type("application/javascript").set("Cache-Control", "public, max-age=3600").send(dtlnBrowserFft);

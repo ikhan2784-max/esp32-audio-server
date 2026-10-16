@@ -909,6 +909,8 @@ let alternativeEnhancerConnected = false;
 let alternativeEnhancerInitializationPromise = null;
 let noiseSuppressionActive = false;
 let silentInputSinceMs = null;
+let aiEnhancerFallbackId = null;
+let aiEnhancerFallbackReason = "";
 let audioProcessingStatus = "Browser AI enhancement off · direct audio active.";
 try {
   const savedGtcrnBlend = Number(localStorage.getItem("snf-gtcrn-blend-percent"));
@@ -2932,9 +2934,14 @@ function updateGtcrnBlendDisplay() {
   for (const [id, control] of Object.entries(aiEnhancers)) {
     const selectedPercent = Math.max(0, Math.min(100, Number(control.blend.value) || 0));
     const processedPercent = control.enabled.checked ? selectedPercent : 0;
+    const isActive = id === "gtcrn"
+      ? Boolean(gtcrnNode && gtcrnGraphConnected)
+      : alternativeEnhancerId === id && alternativeEnhancerConnected;
     control.value.value = `${selectedPercent}%`;
     control.summary.textContent = `Original audio: ${100 - processedPercent}% · ${control.label} processed audio: ${processedPercent}%`;
-    control.state.textContent = control.enabled.checked ? "On" : "Off";
+    control.state.textContent = !control.enabled.checked ? "Off"
+      : aiEnhancerFallbackId === id ? "Fallback"
+        : isActive ? "Active" : "Selected";
     control.blend.disabled = !control.enabled.checked;
     control.blend.setAttribute("aria-valuetext", `${selectedPercent}% suppression blend`);
     if (id !== "gtcrn") {
@@ -3036,9 +3043,14 @@ async function destroyAlternativeEnhancer() {
     }
   }
   setAlternativeEnhancerBlendMix(0);
+  updateGtcrnBlendDisplay();
 }
 
 async function enableAlternativeEnhancer(id) {
+  if (aiEnhancerFallbackId === id) {
+    refreshAudioProcessingStatus();
+    return;
+  }
   if (alternativeEnhancerInitializationPromise) {
     const pending = alternativeEnhancerInitializationPromise;
     try {
@@ -3161,16 +3173,23 @@ async function createAlternativeEnhancer(id) {
   if (!alternativeEnhancerSource && !alternativeEnhancerNode) throw new Error(`${control.label} processor did not initialize`);
   alternativeEnhancerId = id;
   alternativeEnhancerConnected = true;
+  aiEnhancerFallbackId = null;
+  aiEnhancerFallbackReason = "";
   setAlternativeEnhancerBlendMix(processedPercent);
   noiseSuppressionActive = true;
   silentInputSinceMs = null;
   syncPlaybackGain();
+  updateGtcrnBlendDisplay();
   refreshAudioProcessingStatus();
 }
 
 async function applySelectedAiEnhancer() {
   const id = selectedAiEnhancerId();
   const blend = selectedAiEnhancerBlend();
+  if (id && blend > 0 && aiEnhancerFallbackId === id) {
+    refreshAudioProcessingStatus();
+    return;
+  }
   if (!listenerActive || !id || blend <= 0 || document.hidden) {
     setGtcrnBlendMix(0);
     await destroyAlternativeEnhancer();
@@ -3206,6 +3225,10 @@ function persistSelectedAiEnhancer() {
 
 async function onAiEnhancerToggleChanged(id) {
   const enabled = aiEnhancers[id].enabled.checked;
+  if (enabled || aiEnhancerFallbackId === id) {
+    aiEnhancerFallbackId = null;
+    aiEnhancerFallbackReason = "";
+  }
   if (enabled) {
     for (const [otherId, control] of Object.entries(aiEnhancers)) {
       if (otherId !== id) control.enabled.checked = false;
@@ -3254,6 +3277,7 @@ function pauseGtcrnForBackground() {
   setGtcrnBlendMix(0);
   setAlternativeEnhancerBlendMix(0);
   syncPlaybackGain();
+  updateGtcrnBlendDisplay();
   refreshAudioProcessingStatus();
 }
 
@@ -3339,6 +3363,10 @@ function refreshAudioProcessingStatus() {
     setAudioProcessingStatus(noiseSuppressionActive
       ? `${label} blend ${processedPercent}% ready · ${blendDescription} · ${sampleRate}; waiting for audio`
       : `${label} blend ${processedPercent}% selected; waiting for audio.`);
+    return;
+  }
+  if (id === aiEnhancerFallbackId) {
+    setAudioProcessingStatus(`${label} remains selected · direct audio fallback. ${aiEnhancerFallbackReason}`);
     return;
   }
   setAudioProcessingStatus(noiseSuppressionActive
@@ -3503,6 +3531,7 @@ function enableNoiseSuppression() {
     }
     noiseSuppressionActive = true;
     silentInputSinceMs = null;
+    updateGtcrnBlendDisplay();
     refreshAudioProcessingStatus();
   })();
   gtcrnInitializationPromise = initialization;
@@ -3527,6 +3556,7 @@ function disableNoiseSuppression() {
   gtcrnBackgroundBypass = false;
   noiseSuppressionActive = false;
   silentInputSinceMs = null;
+  updateGtcrnBlendDisplay();
   if (remoteStream) {
     if (audioContext && playbackGain) {
       connectRemoteAudioStream(remoteStream);
@@ -3541,7 +3571,11 @@ function disableNoiseSuppression() {
 }
 
 function restoreDirectAudio(message) {
-  for (const control of Object.values(aiEnhancers)) control.enabled.checked = false;
+  const selectedEnhancer = selectedAiEnhancerId();
+  if (selectedEnhancer && selectedAiEnhancerBlend() > 0) {
+    aiEnhancerFallbackId = selectedEnhancer;
+    aiEnhancerFallbackReason = message;
+  }
   persistSelectedAiEnhancer();
   updateGtcrnBlendDisplay();
   void destroyAlternativeEnhancer();
@@ -3556,7 +3590,11 @@ function restoreDirectAudio(message) {
     }
     void audioEl.play().catch(() => setState("Audio ready — press play"));
   }
-  setAudioProcessingStatus("Direct audio restored; browser AI enhancement is off.");
+  if (selectedEnhancer && selectedAiEnhancerBlend() > 0) {
+    refreshAudioProcessingStatus();
+  } else {
+    setAudioProcessingStatus("Direct audio restored; browser AI enhancement is off.");
+  }
   errorEl.textContent = message;
 }
 
@@ -3669,7 +3707,7 @@ async function updateMediaStatus(targetPeer) {
       || activeInputSignalPresent && webAudioOutputSilent);
   silentInputSinceMs = graphHasSignalMismatch ? (silentInputSinceMs ?? Date.now()) : null;
   if (silentInputSinceMs !== null && Date.now() - silentInputSinceMs >= 5000) {
-  restoreDirectAudio(`${selectedAiEnhancerLabel()} output stayed silent during active incoming audio. Direct playback is restored; browser AI enhancement is off.`);
+    restoreDirectAudio(`${selectedAiEnhancerLabel()} output stayed silent during active incoming audio. Direct playback is active; enhancement is bypassed until you retry it.`);
   }
   const receiveState = packets > 0
     ? `${codecLabel}; RTP ${packets} packets / ${bytes} bytes${packetLoss}${packetDiscard}${jitterMs === null ? "" : `, jitter ${jitterMs} ms`}; ${decodedSamples}${concealment}${silentConcealment}${concealmentEvents}${level === null ? "" : `, level ${level}`}`
@@ -4351,6 +4389,11 @@ for (const [id, control] of Object.entries(aiEnhancers)) {
 
   control.blend.addEventListener("change", async () => {
     if (selectedAiEnhancerId() !== id || !listenerActive) return;
+    if (aiEnhancerFallbackId === id) {
+      aiEnhancerFallbackId = null;
+      aiEnhancerFallbackReason = "";
+      updateGtcrnBlendDisplay();
+    }
     try {
       await applySelectedAiEnhancer();
     } catch (error) {
