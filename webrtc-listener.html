@@ -144,6 +144,10 @@
     .processing-subsection { margin-top:10px; padding-top:10px; border-top:1px solid #173044; }
     .processing-subheading { margin:0 0 10px; color:#91b4c8; font-size:.63rem; letter-spacing:.08em; }
     .browser-ai-subsection { margin-top:0; padding-top:0; border-top:0; }
+    .ai-enhancer-card { display:grid; gap:8px; margin-top:9px; padding:10px; border:1px solid #1a374b; border-radius:11px; background:#091a27; }
+    .ai-enhancer-card .setting-row { margin:0; }
+    .ai-enhancer-card input[type="range"] { width:100%; margin:12px 0 5px; }
+    .ai-enhancer-card .gtcrn-blend-summary { margin-top:8px; }
     .gain-control { padding:0; margin:0; border:0; background:transparent; }
     .gain-heading { display:flex; justify-content:space-between; gap:10px; color:#e0edf4; font-size:.75rem; font-weight:700; }
     #micGain { width:100%; margin:12px 0 5px; }
@@ -565,13 +569,13 @@
           <label class="choice-row"><input id="quality48k" type="radio" name="audioQuality" disabled><span>48 kHz / 16-bit PCM</span><small>High-rate profile</small></label>
         </div><span id="audioProfileStatus" class="helper" role="status" aria-live="polite">Connect to the SNF device to change its saved audio profile.</span></section>
         <section class="setting-group"><h2>DEVICE GAIN</h2>
-          <div class="setting-row"><span>Automatic gain control (AGC)</span><label class="toggle" aria-label="Enable microphone automatic gain control"><input id="autoGain" type="checkbox" checked disabled><span></span></label></div>
-          <p class="helper">AGC is enabled by default. Turn it off to adjust the microphone gain slider manually.</p>
+          <div class="setting-row"><span>Automatic gain control (AGC)</span><label class="toggle" aria-label="Enable microphone automatic gain control"><input id="autoGain" type="checkbox" disabled><span></span></label></div>
+          <p class="helper">AGC is off by default. Turn it on to let the SNF adjust microphone level automatically.</p>
           <div class="gain-control">
-          <label class="gain-heading" id="gainHeading" for="micGain"><span>Microphone gain</span><output id="micGainValue" for="micGain">50%</output></label>
-          <input id="micGain" type="range" min="0" max="200" step="1" value="50" disabled>
+          <label class="gain-heading" id="gainHeading" for="micGain"><span>Microphone gain</span><output id="micGainValue" for="micGain">100%</output></label>
+          <input id="micGain" type="range" min="0" max="200" step="1" value="100" disabled>
           <div class="range-ticks range-ticks-9" aria-hidden="true"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span><span>125%</span><span>150%</span><span>175%</span><span>200%</span></div>
-          <span id="micGainStatus" role="status" aria-live="polite">AGC is on by default; post-DSP output gain starts at 50%. Disable AGC to adjust fixed gain manually.</span>
+          <span id="micGainStatus" role="status" aria-live="polite">Manual microphone gain starts at 100%. Enable AGC to disable the manual slider.</span>
           <p class="helper">Session-only gain after the SNF DSP, before Opus. 100% is 1.0×. Higher settings may clip.</p>
         </div><div class="gain-control volume-control">
           <label class="gain-heading" for="playVolume"><span>Listener playback boost</span><output id="playVolumeValue">0% · 1.0×</output></label>
@@ -582,16 +586,33 @@
         </div></section>
         <section class="setting-group"><h2>AUDIO PROCESSING</h2>
           <div class="processing-subsection browser-ai-subsection">
-          <div class="setting-row gtcrn-control-row"><span>Browser AI noise suppression (GTCRN)</span><span class="gtcrn-toggle-group"><strong id="gtcrnEnabledState" role="status" aria-live="polite">On</strong><label class="toggle" aria-label="Enable Browser AI noise suppression"><input id="gtcrnEnabled" type="checkbox" checked><span></span></label></span></div>
-          <div class="gain-control">
-            <label class="gain-heading" for="gtcrnBlend"><span>Suppression blend</span><output id="gtcrnBlendValue" for="gtcrnBlend">15%</output></label>
-            <input id="gtcrnBlend" type="range" min="0" max="100" step="1" value="15" aria-label="GTCRN suppression blend, from original audio to processed audio">
-            <div class="range-ticks range-ticks-11" aria-hidden="true"><span>0%</span><span>10%</span><span>20%</span><span>30%</span><span>40%</span><span>50%</span><span>60%</span><span>70%</span><span>80%</span><span>90%</span><span>100%</span></div>
-            <div class="volume-scale gtcrn-scale" aria-hidden="true"><span>Natural voice</span><span>Maximum cleanup</span></div>
-            <div class="gtcrn-blend-summary"><strong>Selected configuration</strong><span id="gtcrnBlendSummary" aria-live="polite">Original audio: 85% · GTCRN processed audio: 15%</span></div>
-            <span id="processingStatus" role="status" aria-live="polite">GTCRN blend 15% will activate when listening starts.</span>
-            <p class="helper">0% plays the original audio directly. Higher values mix in more GTCRN output; 100% uses only the processed signal.</p>
-          </div></div>
+            <h3 class="processing-subheading">AI SPEECH ENHANCEMENT</h3>
+            <p class="helper">All enhancement models start off. Enable one model at a time; the blend controls how much processed audio is mixed in. If a model fails, playback falls back to direct audio.</p>
+            <div class="ai-enhancer-card">
+              <div class="setting-row gtcrn-control-row"><span>Browser AI noise suppression (GTCRN)</span><span class="gtcrn-toggle-group"><strong id="gtcrnEnabledState" role="status" aria-live="polite">Off</strong><label class="toggle" aria-label="Enable Browser AI noise suppression"><input id="gtcrnEnabled" type="checkbox"><span></span></label></span></div>
+              <div class="gain-control">
+                <label class="gain-heading" for="gtcrnBlend"><span>Suppression blend</span><output id="gtcrnBlendValue" for="gtcrnBlend">15%</output></label>
+                <input id="gtcrnBlend" type="range" min="0" max="100" step="1" value="15" disabled aria-label="GTCRN suppression blend, from original audio to processed audio">
+                <div class="range-ticks range-ticks-11" aria-hidden="true"><span>0%</span><span>10%</span><span>20%</span><span>30%</span><span>40%</span><span>50%</span><span>60%</span><span>70%</span><span>80%</span><span>90%</span><span>100%</span></div>
+                <div class="volume-scale gtcrn-scale" aria-hidden="true"><span>Natural voice</span><span>Maximum cleanup</span></div>
+                <div class="gtcrn-blend-summary"><strong>Selected configuration</strong><span id="gtcrnBlendSummary" aria-live="polite">Original audio: 100% · GTCRN processed audio: 0%</span></div>
+              </div>
+            </div>
+            <div class="ai-enhancer-card">
+              <div class="setting-row gtcrn-control-row"><span>DeepFilterNet 3</span><span class="gtcrn-toggle-group"><strong id="deepFilterEnabledState" role="status" aria-live="polite">Off</strong><label class="toggle" aria-label="Enable DeepFilterNet 3 speech enhancement"><input id="deepFilterEnabled" type="checkbox"><span></span></label></span></div>
+              <div class="gain-control"><label class="gain-heading" for="deepFilterBlend"><span>Suppression blend</span><output id="deepFilterBlendValue" for="deepFilterBlend">15%</output></label><input id="deepFilterBlend" type="range" min="0" max="100" step="1" value="15" disabled aria-label="DeepFilterNet 3 suppression blend"><div class="range-ticks range-ticks-11" aria-hidden="true"><span>0%</span><span>10%</span><span>20%</span><span>30%</span><span>40%</span><span>50%</span><span>60%</span><span>70%</span><span>80%</span><span>90%</span><span>100%</span></div><div class="volume-scale gtcrn-scale" aria-hidden="true"><span>Natural voice</span><span>Maximum cleanup</span></div><div class="gtcrn-blend-summary"><strong>Selected configuration</strong><span id="deepFilterBlendSummary" aria-live="polite">Original audio: 100% · DeepFilterNet 3 processed audio: 0%</span></div></div>
+            </div>
+            <div class="ai-enhancer-card">
+              <div class="setting-row gtcrn-control-row"><span>DTLN speech enhancement</span><span class="gtcrn-toggle-group"><strong id="dtlnEnabledState" role="status" aria-live="polite">Off</strong><label class="toggle" aria-label="Enable DTLN speech enhancement"><input id="dtlnEnabled" type="checkbox"><span></span></label></span></div>
+              <div class="gain-control"><label class="gain-heading" for="dtlnBlend"><span>Suppression blend</span><output id="dtlnBlendValue" for="dtlnBlend">15%</output></label><input id="dtlnBlend" type="range" min="0" max="100" step="1" value="15" disabled aria-label="DTLN suppression blend"><div class="range-ticks range-ticks-11" aria-hidden="true"><span>0%</span><span>10%</span><span>20%</span><span>30%</span><span>40%</span><span>50%</span><span>60%</span><span>70%</span><span>80%</span><span>90%</span><span>100%</span></div><div class="volume-scale gtcrn-scale" aria-hidden="true"><span>Natural voice</span><span>Maximum cleanup</span></div><div class="gtcrn-blend-summary"><strong>Selected configuration</strong><span id="dtlnBlendSummary" aria-live="polite">Original audio: 100% · DTLN processed audio: 0%</span></div></div>
+            </div>
+            <div class="ai-enhancer-card">
+              <div class="setting-row gtcrn-control-row"><span>RNNoise</span><span class="gtcrn-toggle-group"><strong id="rnnoiseEnabledState" role="status" aria-live="polite">Off</strong><label class="toggle" aria-label="Enable RNNoise speech enhancement"><input id="rnnoiseEnabled" type="checkbox"><span></span></label></span></div>
+              <div class="gain-control"><label class="gain-heading" for="rnnoiseBlend"><span>Suppression blend</span><output id="rnnoiseBlendValue" for="rnnoiseBlend">15%</output></label><input id="rnnoiseBlend" type="range" min="0" max="100" step="1" value="15" disabled aria-label="RNNoise suppression blend"><div class="range-ticks range-ticks-11" aria-hidden="true"><span>0%</span><span>10%</span><span>20%</span><span>30%</span><span>40%</span><span>50%</span><span>60%</span><span>70%</span><span>80%</span><span>90%</span><span>100%</span></div><div class="volume-scale gtcrn-scale" aria-hidden="true"><span>Natural voice</span><span>Maximum cleanup</span></div><div class="gtcrn-blend-summary"><strong>Selected configuration</strong><span id="rnnoiseBlendSummary" aria-live="polite">Original audio: 100% · RNNoise processed audio: 0%</span></div></div>
+            </div>
+            <span id="processingStatus" role="status" aria-live="polite">Browser AI enhancement off · direct audio active.</span>
+            <p class="helper">DTLN runs in a separate 16 kHz context; DeepFilterNet 3 and RNNoise require 48 kHz. Only the enabled model is loaded, and any load or processing failure returns to direct playback.</p>
+          </div>
           <div class="processing-subsection"><h3 class="processing-subheading">ON-DEVICE PROCESSING</h3>
           <label class="gain-heading" for="hpfPreset"><span>High-pass filter preset</span></label>
           <select class="settings-select" id="hpfPreset" disabled>
@@ -741,6 +762,13 @@ const gtcrnBlendEl = document.getElementById("gtcrnBlend");
 const gtcrnBlendValueEl = document.getElementById("gtcrnBlendValue");
 const gtcrnBlendSummaryEl = document.getElementById("gtcrnBlendSummary");
 const gtcrnEnabledStateEl = document.getElementById("gtcrnEnabledState");
+const aiEnhancers = {
+  gtcrn: { label: "GTCRN", enabled: gtcrnEnabledEl, blend: gtcrnBlendEl, value: gtcrnBlendValueEl, summary: gtcrnBlendSummaryEl, state: gtcrnEnabledStateEl },
+  deepfilternet3: { label: "DeepFilterNet 3", enabled: document.getElementById("deepFilterEnabled"), blend: document.getElementById("deepFilterBlend"), value: document.getElementById("deepFilterBlendValue"), summary: document.getElementById("deepFilterBlendSummary"), state: document.getElementById("deepFilterEnabledState") },
+  dtln: { label: "DTLN", enabled: document.getElementById("dtlnEnabled"), blend: document.getElementById("dtlnBlend"), value: document.getElementById("dtlnBlendValue"), summary: document.getElementById("dtlnBlendSummary"), state: document.getElementById("dtlnEnabledState") },
+  rnnoise: { label: "RNNoise", enabled: document.getElementById("rnnoiseEnabled"), blend: document.getElementById("rnnoiseBlend"), value: document.getElementById("rnnoiseBlendValue"), summary: document.getElementById("rnnoiseBlendSummary"), state: document.getElementById("rnnoiseEnabledState") }
+};
+const AI_ENHANCER_STORAGE_KEY = "snf-ai-enhancer-selected";
 const processingStatusEl = document.getElementById("processingStatus");
 const firmwareNoiseSuppressionEl = document.getElementById("firmwareNoiseSuppression");
 const firmwareVadEl = document.getElementById("firmwareVad");
@@ -804,7 +832,7 @@ let backendHealthBusy = false;
 let playbackVolumePercent = 0;
 let listenerVolumePercent = 100;
 let appliedAudioSettings = {
-  auto_gain_enabled: true,
+  auto_gain_enabled: false,
   hpf_preset: "voice_clarity", noise_suppression_level: "off",
   vad_level: "medium", limiter_level: "low"
 };
@@ -845,6 +873,8 @@ let audioContext = null;
 let mediaStreamSource = null;
 let inputAnalyser = null;
 let outputAnalyser = null;
+let gtcrnDryDelay = null;
+let directDryDelaySeconds = 0;
 let gtcrnDryGain = null;
 let gtcrnWetGain = null;
 let latestInputDbfs = null;
@@ -854,29 +884,48 @@ let playbackGain = null;
 let gtcrnApi = null;
 let gtcrnWasmBinary = null;
 let gtcrnWorkletLoaded = false;
+let rnnoiseWorkletLoaded = false;
 let gtcrnNode = null;
 let gtcrnGraphConnected = false;
 let gtcrnInitializationPromise = null;
 let gtcrnDisableTimer = null;
 let gtcrnBackgroundBypass = false;
+let deepFilterApi = null;
+let deepFilterProcessor = null;
+let dtlnApi = null;
+let dtlnWorklet = null;
+let dtlnContext = null;
+let dtlnInputSource = null;
+let dtlnOutputSource = null;
+let dtlnDestination = null;
+let rnnoiseBinary = null;
+let alternativeEnhancerNode = null;
+let alternativeEnhancerSource = null;
+let alternativeEnhancerId = null;
+let alternativeEnhancerConnected = false;
+let alternativeEnhancerInitializationPromise = null;
 let noiseSuppressionActive = false;
 let silentInputSinceMs = null;
-let audioProcessingStatus = "GTCRN blend 15% will activate when listening starts.";
+let audioProcessingStatus = "Browser AI enhancement off · direct audio active.";
 try {
   const savedGtcrnBlend = Number(localStorage.getItem("snf-gtcrn-blend-percent"));
   if (localStorage.getItem("snf-gtcrn-blend-percent") !== null
       && Number.isInteger(savedGtcrnBlend) && savedGtcrnBlend >= 0 && savedGtcrnBlend <= 100) {
     gtcrnBlendEl.value = String(savedGtcrnBlend);
   }
-  const savedGtcrnEnabled = localStorage.getItem("snf-gtcrn-enabled");
-  if (savedGtcrnEnabled === "true" || savedGtcrnEnabled === "false") {
-    gtcrnEnabledEl.checked = savedGtcrnEnabled === "true";
+  for (const [id, control] of Object.entries(aiEnhancers)) {
+    const savedBlend = Number(localStorage.getItem(`snf-ai-blend-${id}`));
+    if (id !== "gtcrn" && localStorage.getItem(`snf-ai-blend-${id}`) !== null
+        && Number.isInteger(savedBlend) && savedBlend >= 0 && savedBlend <= 100) {
+      control.blend.value = String(savedBlend);
+    }
+    control.enabled.checked = false;
   }
+  const savedEnhancer = localStorage.getItem(AI_ENHANCER_STORAGE_KEY);
+  if (savedEnhancer && Object.prototype.hasOwnProperty.call(aiEnhancers, savedEnhancer)) aiEnhancers[savedEnhancer].enabled.checked = true;
 } catch {}
 updateGtcrnBlendDisplay();
-audioProcessingStatus = !gtcrnEnabledEl.checked || Number(gtcrnBlendEl.value) === 0
-  ? "GTCRN off · original audio"
-  : `GTCRN blend ${gtcrnBlendEl.value}% will activate when listening starts.`;
+audioProcessingStatus = "Browser AI enhancement off · direct audio active.";
 processingStatusEl.textContent = audioProcessingStatus;
 let listeningElapsedMs = 0;
 let listeningStartedAtMs = 0;
@@ -1505,10 +1554,11 @@ async function runHealthCheck() {
       logHealthSkipped("Browser playback", "playback is idle; this is not an error");
       logHealthSkipped("Browser audio level", "level checks run while live audio is playing");
     }
-    const blendPercent = gtcrnEnabledEl.checked ? Number(gtcrnBlendEl.value) : 0;
-    logHealthResult(results, "Noise suppression", true,
-      noiseSuppressionActive ? `GTCRN blend ${blendPercent}% active` : blendPercent > 0
-        ? `GTCRN blend ${blendPercent}% selected; direct audio is currently active`
+    const blendPercent = selectedAiEnhancerBlend();
+    const enhancerName = selectedAiEnhancerLabel();
+    logHealthResult(results, "Browser AI enhancement", true,
+      noiseSuppressionActive ? `${enhancerName} blend ${blendPercent}% active` : blendPercent > 0
+        ? `${enhancerName} blend ${blendPercent}% selected; direct audio is currently active`
         : "off; direct audio path selected");
     latestBrowserHealthStats = await getBrowserHealthStats();
 
@@ -1794,7 +1844,7 @@ function handleHotspotControlAck(message) {
 function updateAudioLevelMeter() {
   const filtered = noiseSuppressionActive && outputAnalyser;
   const dbfs = filtered ? latestOutputDbfs : latestInputDbfs;
-  levelSourceEl.textContent = filtered ? "GTCRN processed output" : "Incoming audio";
+  levelSourceEl.textContent = filtered ? `${selectedAiEnhancerLabel()} processed output` : "Incoming audio";
   document.getElementById("listenerDb").textContent = formatAudioLevelDbfs(dbfs);
   const percent = Number.isFinite(dbfs) ? Math.max(0, Math.min(100, Math.round((dbfs + 60) * (100 / 60)))) : 0;
   audioLevelFill.style.width = `${percent}%`;
@@ -2550,10 +2600,11 @@ function refreshMicGainAvailability() {
   micGainEl.disabled = !sessionAvailable || autoGainEl.checked;
   if (autoGainEl.checked) {
     micGainStatusEl.textContent = connected
-      ? "AGC is on; post-DSP output gain starts at 50%."
-      : "AGC will start with 50% post-DSP output gain; manual gain is disabled while AGC is on.";
+      ? "AGC is on; the SNF adjusts microphone gain automatically."
+      : "AGC is on; the SNF will adjust microphone gain automatically when connected.";
   } else if (!connected && sessionAvailable) micGainStatusEl.textContent = "Manual gain is enabled; it will apply when the online audio connection is up.";
-  else if (!sessionAvailable) micGainStatusEl.textContent = "Start listening to enable manual microphone gain.";
+  else if (!sessionAvailable) micGainStatusEl.textContent = "Manual microphone gain is set to 100% (1.0×) by default; start listening to adjust it.";
+  else micGainStatusEl.textContent = "Manual microphone gain is active at the selected percentage.";
 }
 
 function effectiveMicGainPercent() {
@@ -2638,7 +2689,7 @@ function refreshAudioSettingsAvailability() {
   firmwareLimiterEl.disabled = !available;
   autoGainEl.disabled = !available;
   hpfPresetEl.disabled = !available;
-  gtcrnBlendEl.disabled = !gtcrnEnabledEl.checked;
+  updateGtcrnBlendDisplay();
   refreshMicGainAvailability();
   if (!available) {
     audioSettingsStatusEl.textContent = "Connect to the selected SNF to change AGC, filter preset, or DSP controls. This build uses one mic.";
@@ -2808,14 +2859,32 @@ function syncPlaybackGain() {
 }
 
 function updateGtcrnBlendDisplay() {
-  if (!gtcrnBlendEl) return;
-  const selectedPercent = Math.max(0, Math.min(100, Number(gtcrnBlendEl.value) || 0));
-  const processedPercent = gtcrnEnabledEl.checked ? selectedPercent : 0;
-  const originalPercent = 100 - processedPercent;
-  gtcrnBlendValueEl.value = `${selectedPercent}%`;
-  gtcrnBlendSummaryEl.textContent = `Original audio: ${originalPercent}% · GTCRN processed audio: ${processedPercent}%`;
-  gtcrnEnabledStateEl.textContent = gtcrnEnabledEl.checked ? "On" : "Off";
-  gtcrnBlendEl.disabled = !gtcrnEnabledEl.checked;
+  for (const [id, control] of Object.entries(aiEnhancers)) {
+    const selectedPercent = Math.max(0, Math.min(100, Number(control.blend.value) || 0));
+    const processedPercent = control.enabled.checked ? selectedPercent : 0;
+    control.value.value = `${selectedPercent}%`;
+    control.summary.textContent = `Original audio: ${100 - processedPercent}% · ${control.label} processed audio: ${processedPercent}%`;
+    control.state.textContent = control.enabled.checked ? "On" : "Off";
+    control.blend.disabled = !control.enabled.checked;
+    control.blend.setAttribute("aria-valuetext", `${selectedPercent}% suppression blend`);
+    if (id !== "gtcrn") {
+      try { localStorage.setItem(`snf-ai-blend-${id}`, String(selectedPercent)); } catch {}
+    }
+  }
+}
+
+function selectedAiEnhancerId() {
+  return Object.entries(aiEnhancers).find(([, control]) => control.enabled.checked)?.[0] || null;
+}
+
+function selectedAiEnhancerBlend() {
+  const id = selectedAiEnhancerId();
+  return id ? Math.max(0, Math.min(100, Number(aiEnhancers[id].blend.value) || 0)) : 0;
+}
+
+function selectedAiEnhancerLabel() {
+  const id = selectedAiEnhancerId();
+  return id ? aiEnhancers[id].label : "Browser AI";
 }
 
 function setGtcrnBlendMix(processedPercent) {
@@ -2835,20 +2904,285 @@ function setGtcrnBlendMix(processedPercent) {
   apply(gtcrnWetGain?.gain, processed);
 }
 
-function pauseGtcrnForBackground() {
-  if (!listenerActive || !gtcrnEnabledEl.checked ||
-      Number(gtcrnBlendEl.value) <= 0 || !audioContext) return;
-  if (gtcrnNode && gtcrnGraphConnected) {
-    try { inputAnalyser?.disconnect(gtcrnNode); } catch {}
-    try { gtcrnNode.disconnect(gtcrnWetGain); } catch {
-      try { gtcrnNode.disconnect(); } catch {}
+function setAlternativeEnhancerBlendMix(processedPercent) {
+  const processed = Math.max(0, Math.min(100, Number(processedPercent) || 0)) / 100;
+  const original = 1 - processed;
+  if (!audioContext) return;
+  const now = audioContext.currentTime;
+  const apply = (parameter, value) => {
+    if (!parameter) return;
+    parameter.cancelScheduledValues(now);
+    if (audioContext.state === "running") parameter.setTargetAtTime(value, now, 0.025);
+    else parameter.value = value;
+  };
+  if (gtcrnDryDelay?.delayTime) {
+    gtcrnDryDelay.delayTime.cancelScheduledValues(now);
+    if (audioContext.state === "running") gtcrnDryDelay.delayTime.setTargetAtTime(processed > 0 ? 0.05 : directDryDelaySeconds, now, 0.025);
+    else gtcrnDryDelay.delayTime.value = processed > 0 ? 0.05 : directDryDelaySeconds;
+  }
+  apply(gtcrnDryGain?.gain, original);
+  apply(gtcrnWetGain?.gain, processed);
+}
+
+async function destroyAlternativeEnhancer() {
+  alternativeEnhancerConnected = false;
+  alternativeEnhancerId = null;
+  if (alternativeEnhancerSource) {
+    try { alternativeEnhancerSource.disconnect(); } catch {}
+    alternativeEnhancerSource = null;
+  }
+  if (alternativeEnhancerNode) {
+    try { alternativeEnhancerNode.disconnect(); } catch {}
+    try { alternativeEnhancerNode.destroy?.(); } catch {}
+    alternativeEnhancerNode = null;
+  }
+  if (deepFilterProcessor) {
+    for (const track of deepFilterProcessor.stream?.getTracks?.() || []) track.stop();
+    try { deepFilterProcessor.destroy(); } catch {}
+    deepFilterProcessor = null;
+  }
+  if (dtlnInputSource) {
+    try { dtlnInputSource.disconnect(); } catch {}
+    dtlnInputSource = null;
+  }
+  if (dtlnOutputSource) {
+    try { dtlnOutputSource.disconnect(); } catch {}
+    dtlnOutputSource = null;
+  }
+  if (dtlnDestination) {
+    for (const track of dtlnDestination.stream.getTracks()) track.stop();
+    try { dtlnDestination.disconnect(); } catch {}
+    dtlnDestination = null;
+  }
+  if (dtlnWorklet) {
+    try { dtlnWorklet.dispose(); } catch {}
+    dtlnWorklet = null;
+  }
+  if (dtlnContext) {
+    const context = dtlnContext;
+    dtlnContext = null;
+    if (context.state !== "closed") {
+      try { await context.close(); } catch {}
     }
   }
-  gtcrnGraphConnected = false;
+  setAlternativeEnhancerBlendMix(0);
+}
+
+async function enableAlternativeEnhancer(id) {
+  if (alternativeEnhancerInitializationPromise) {
+    const pending = alternativeEnhancerInitializationPromise;
+    try {
+      await pending;
+    } catch (error) {
+      if (selectedAiEnhancerId() === id) throw error;
+    }
+    if (selectedAiEnhancerId() !== id || !listenerActive) return;
+    return enableAlternativeEnhancer(id);
+  }
+  const initialization = createAlternativeEnhancer(id);
+  alternativeEnhancerInitializationPromise = initialization;
+  try {
+    return await initialization;
+  } finally {
+    if (alternativeEnhancerInitializationPromise === initialization) alternativeEnhancerInitializationPromise = null;
+    const selected = selectedAiEnhancerId();
+    if (selected && selected !== "gtcrn" && selected !== id && listenerActive && selectedAiEnhancerBlend() > 0 && !document.hidden) {
+      void enableAlternativeEnhancer(selected).catch((error) => {
+        restoreDirectAudio(`${aiEnhancers[selected].label} unavailable; continuing with direct audio. ${error.message}`);
+      });
+    }
+  }
+}
+
+async function createAlternativeEnhancer(id) {
+  const control = aiEnhancers[id];
+  if (!control || id === "gtcrn" || !listenerActive || !remoteStream || document.hidden) return;
+  const processedPercent = Math.max(0, Math.min(100, Number(control.blend.value) || 0));
+  if (!processedPercent) {
+    await destroyAlternativeEnhancer();
+    noiseSuppressionActive = false;
+    refreshAudioProcessingStatus();
+    return;
+  }
+  if (alternativeEnhancerId === id && alternativeEnhancerConnected) {
+    setAlternativeEnhancerBlendMix(processedPercent);
+    noiseSuppressionActive = true;
+    refreshAudioProcessingStatus();
+    return;
+  }
+
+  await destroyAlternativeEnhancer();
+  await prepareAudioOutput();
+  if (!remoteStream || !listenerActive || selectedAiEnhancerId() !== id || document.hidden) return;
+  if ((id === "deepfilternet3" || id === "rnnoise") && audioContext.sampleRate !== 48000) {
+    throw new Error(`${control.label} requires a 48 kHz browser audio context; this browser provided ${audioContext.sampleRate} Hz`);
+  }
+  setAudioProcessingStatus(`Loading ${control.label} model; direct audio remains active while it loads.`);
+
+  if (id === "deepfilternet3") {
+    if (!deepFilterApi) deepFilterApi = await import("/audio-enhancement/deepfilternet/index.js");
+    deepFilterProcessor = await deepFilterApi.denoiseStream(remoteStream, {
+      context: audioContext,
+      wasmUrl: "/audio-enhancement/deepfilternet/df_bg.wasm",
+      attenuationLimit: 100
+    });
+    alternativeEnhancerSource = audioContext.createMediaStreamSource(deepFilterProcessor.stream);
+    alternativeEnhancerSource.connect(gtcrnWetGain);
+  } else if (id === "dtln") {
+    if (!dtlnApi) dtlnApi = await import("/audio-enhancement/dtln/index.js");
+    const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextConstructor) throw new Error("Web Audio is not supported in this browser");
+    dtlnContext = new AudioContextConstructor({ latencyHint: 0.12, sampleRate: 16000 });
+    if (dtlnContext.sampleRate !== 16000) {
+      const actualRate = dtlnContext.sampleRate;
+      await dtlnContext.close();
+      dtlnContext = null;
+      throw new Error(`DTLN requires a 16 kHz audio context; this browser provided ${actualRate} Hz`);
+    }
+    await dtlnContext.resume();
+    dtlnInputSource = dtlnContext.createMediaStreamSource(remoteStream);
+    dtlnDestination = dtlnContext.createMediaStreamDestination();
+    dtlnWorklet = await dtlnApi.createNoiseSuppressionAudioWorklet(dtlnContext, {
+      bypassUntilReady: true,
+      threads: false,
+      numThreads: 1
+    });
+    await dtlnWorklet.ready;
+    if (!listenerActive || selectedAiEnhancerId() !== id || document.hidden) {
+      await destroyAlternativeEnhancer();
+      return;
+    }
+    dtlnInputSource.connect(dtlnWorklet.node);
+    dtlnWorklet.node.connect(dtlnDestination);
+    alternativeEnhancerSource = audioContext.createMediaStreamSource(dtlnDestination.stream);
+    alternativeEnhancerSource.connect(gtcrnWetGain);
+    dtlnWorklet.node.addEventListener("processorerror", () => {
+      if (alternativeEnhancerId === id) restoreDirectAudio("DTLN processing failed; direct audio has been restored.");
+    }, { once: true });
+  } else if (id === "rnnoise") {
+    if (!gtcrnApi) gtcrnApi = await import("/audio-suppressor/index.js");
+    if (!rnnoiseBinary) {
+      rnnoiseBinary = await gtcrnApi.loadRnnoise({
+        url: "/audio-suppressor/rnnoise.wasm",
+        simdUrl: "/audio-suppressor/rnnoise_simd.wasm"
+      });
+    }
+    if (!rnnoiseWorkletLoaded) {
+      await audioContext.audioWorklet.addModule("/audio-suppressor/rnnoise/workletProcessor.js");
+      rnnoiseWorkletLoaded = true;
+    }
+    alternativeEnhancerNode = new gtcrnApi.RnnoiseWorkletNode(audioContext, {
+      wasmBinary: rnnoiseBinary,
+      maxChannels: 1
+    });
+    alternativeEnhancerNode.channelCount = 1;
+    alternativeEnhancerNode.channelCountMode = "explicit";
+    inputAnalyser.connect(alternativeEnhancerNode);
+    alternativeEnhancerNode.connect(gtcrnWetGain);
+    alternativeEnhancerNode.addEventListener("processorerror", () => {
+      if (alternativeEnhancerId === id) restoreDirectAudio("RNNoise processing failed; direct audio has been restored.");
+    }, { once: true });
+  }
+
+  if (!listenerActive || selectedAiEnhancerId() !== id || document.hidden) {
+    await destroyAlternativeEnhancer();
+    return;
+  }
+  if (!alternativeEnhancerSource && !alternativeEnhancerNode) throw new Error(`${control.label} processor did not initialize`);
+  alternativeEnhancerId = id;
+  alternativeEnhancerConnected = true;
+  setAlternativeEnhancerBlendMix(processedPercent);
+  noiseSuppressionActive = true;
+  silentInputSinceMs = null;
+  syncPlaybackGain();
+  refreshAudioProcessingStatus();
+}
+
+async function applySelectedAiEnhancer() {
+  const id = selectedAiEnhancerId();
+  const blend = selectedAiEnhancerBlend();
+  if (!listenerActive || !id || blend <= 0 || document.hidden) {
+    setGtcrnBlendMix(0);
+    await destroyAlternativeEnhancer();
+    if (gtcrnNode || gtcrnGraphConnected) disableNoiseSuppression();
+    else {
+      noiseSuppressionActive = false;
+      refreshAudioProcessingStatus();
+    }
+    return;
+  }
+  if (id === "gtcrn") {
+    await destroyAlternativeEnhancer();
+    await enableNoiseSuppression();
+  } else {
+    if (alternativeEnhancerId === id && alternativeEnhancerConnected) {
+      setAlternativeEnhancerBlendMix(blend);
+      noiseSuppressionActive = true;
+      refreshAudioProcessingStatus();
+      return;
+    }
+    disableNoiseSuppression();
+    await enableAlternativeEnhancer(id);
+  }
+}
+
+function persistSelectedAiEnhancer() {
+  const id = selectedAiEnhancerId();
+  try {
+    localStorage.setItem(AI_ENHANCER_STORAGE_KEY, id || "off");
+    localStorage.setItem("snf-gtcrn-enabled", String(id === "gtcrn"));
+  } catch {}
+}
+
+async function onAiEnhancerToggleChanged(id) {
+  const enabled = aiEnhancers[id].enabled.checked;
+  if (enabled) {
+    for (const [otherId, control] of Object.entries(aiEnhancers)) {
+      if (otherId !== id) control.enabled.checked = false;
+    }
+  }
+  updateGtcrnBlendDisplay();
+  persistSelectedAiEnhancer();
+  const selected = selectedAiEnhancerId();
+  if (!selected) {
+    setAudioProcessingStatus("Browser AI enhancement off · direct audio active.");
+  } else {
+    const blend = selectedAiEnhancerBlend();
+    setAudioProcessingStatus(blend > 0
+      ? `${aiEnhancers[selected].label} blend ${blend}% selected${listenerActive ? "; applying" : " · starts when listening begins"}.`
+      : `${aiEnhancers[selected].label} selected at 0% · direct audio active.`);
+  }
+  if (listenerActive) {
+    try {
+      await applySelectedAiEnhancer();
+    } catch (error) {
+      restoreDirectAudio(`${aiEnhancers[id].label} unavailable; continuing with direct audio. ${error.message}`);
+    }
+  } else {
+    await destroyAlternativeEnhancer();
+    if (gtcrnNode || gtcrnGraphConnected) disableNoiseSuppression();
+  }
+}
+
+function pauseGtcrnForBackground() {
+  const selected = selectedAiEnhancerId();
+  if (!listenerActive || !selected || selectedAiEnhancerBlend() <= 0 || !audioContext) return;
+  if (selected === "gtcrn") {
+    if (gtcrnNode && gtcrnGraphConnected) {
+      try { inputAnalyser?.disconnect(gtcrnNode); } catch {}
+      try { gtcrnNode.disconnect(gtcrnWetGain); } catch {
+        try { gtcrnNode.disconnect(); } catch {}
+      }
+    }
+    gtcrnGraphConnected = false;
+  } else {
+    void destroyAlternativeEnhancer();
+  }
   gtcrnBackgroundBypass = true;
   noiseSuppressionActive = false;
   silentInputSinceMs = null;
   setGtcrnBlendMix(0);
+  setAlternativeEnhancerBlendMix(0);
   syncPlaybackGain();
   refreshAudioProcessingStatus();
 }
@@ -2868,13 +3202,15 @@ async function handleAudioPageVisibility() {
     syncPlaybackGain();
   }
 
-  if (listenerActive && gtcrnEnabledEl.checked &&
-      Number(gtcrnBlendEl.value) > 0 && hasLiveAudioTrack()) {
+  if (listenerActive && selectedAiEnhancerId() &&
+      selectedAiEnhancerBlend() > 0 && hasLiveAudioTrack()) {
     try {
-      await enableNoiseSuppression();
+      await applySelectedAiEnhancer();
       gtcrnBackgroundBypass = false;
     } catch (error) {
-      addLog(`Could not resume foreground GTCRN: ${error.message}`, "warning", "audio", "Listener");
+      const enhancer = selectedAiEnhancerLabel();
+      addLog(`Could not resume foreground ${enhancer}: ${error.message}`, "warning", "audio", "Listener");
+      restoreDirectAudio(`${enhancer} could not resume; direct audio has been restored.`);
       refreshAudioProcessingStatus();
     }
   } else {
@@ -2915,27 +3251,29 @@ audioEl.addEventListener("volumechange", syncPlaybackGain);
 function refreshAudioProcessingStatus() {
   const hasLiveTrack = remoteStream && remoteStream.getAudioTracks().some((track) => track.readyState === "live");
   const sampleRate = audioContext ? `${audioContext.sampleRate / 1000} kHz` : "";
-  const processedPercent = gtcrnEnabledEl.checked ? Number(gtcrnBlendEl.value) : 0;
+  const id = selectedAiEnhancerId();
+  const label = id ? aiEnhancers[id].label : "Browser AI";
+  const processedPercent = selectedAiEnhancerBlend();
   const blendDescription = `${100 - processedPercent}% original · ${processedPercent}% processed`;
   if (gtcrnBackgroundBypass && document.hidden) {
-    setAudioProcessingStatus("Background playback mode · original audio active; GTCRN resumes when this tab is visible");
+    setAudioProcessingStatus(`Background playback mode · original audio active; ${label} resumes when this tab is visible`);
     return;
   }
-  if (processedPercent === 0) {
+  if (!id || processedPercent === 0) {
     setAudioProcessingStatus(hasLiveTrack
-      ? "GTCRN off · direct original audio"
-      : "GTCRN off · waiting for audio");
+      ? "Browser AI enhancement off · direct audio active"
+      : "Browser AI enhancement off · waiting for audio");
     return;
   }
   if (!hasLiveTrack) {
     setAudioProcessingStatus(noiseSuppressionActive
-      ? `GTCRN blend ${processedPercent}% ready · ${blendDescription} · ${sampleRate}; waiting for audio`
-      : `GTCRN blend ${processedPercent}% will activate when listening starts.`);
+      ? `${label} blend ${processedPercent}% ready · ${blendDescription} · ${sampleRate}; waiting for audio`
+      : `${label} blend ${processedPercent}% selected; waiting for audio.`);
     return;
   }
   setAudioProcessingStatus(noiseSuppressionActive
-    ? `GTCRN blend ${processedPercent}% active · ${blendDescription} · ${sampleRate}; checking signal levels`
-    : `GTCRN blend ${processedPercent}% will activate when audio arrives.`);
+    ? `${label} blend ${processedPercent}% active · ${blendDescription} · ${sampleRate}; checking signal levels`
+    : `${label} blend ${processedPercent}% will activate when audio arrives.`);
 }
 
 async function prepareAudioOutput() {
@@ -2966,7 +3304,8 @@ async function prepareAudioOutput() {
       // original branch by the same frame-buffering offset before mixing it
       // with the model output, avoiding a dry/wet timing echo.
       const gtcrnFrameSamples = context.sampleRate === 48000 ? 768 : 256;
-      dryDelay.delayTime.value = Math.max(0, (gtcrnFrameSamples - 128) / context.sampleRate);
+      directDryDelaySeconds = Math.max(0, (gtcrnFrameSamples - 128) / context.sampleRate);
+      dryDelay.delayTime.value = directDryDelaySeconds;
       dryGain.gain.value = 1;
       wetGain.gain.value = 0;
       gain.gain.value = 1;
@@ -2981,6 +3320,7 @@ async function prepareAudioOutput() {
       audioContext = context;
       inputAnalyser = inputMeter;
       outputAnalyser = outputMeter;
+      gtcrnDryDelay = dryDelay;
       gtcrnDryGain = dryGain;
       gtcrnWetGain = wetGain;
       playbackGain = gain;
@@ -3005,9 +3345,8 @@ function connectRemoteAudioStream(stream) {
   if (mediaStreamSource) {
     try { mediaStreamSource.disconnect(); } catch {}
   }
-  // Feed the WebRTC track directly into Web Audio. The package's GTCRN worklet
-  // expects live AudioWorklet channel buffers; routing via the media element
-  // source can leave those buffers silent in this browser path.
+  // Feed the WebRTC track directly into Web Audio. Browser AI worklets need
+  // live channel buffers; routing through the media element can leave them silent.
   mediaStreamSource = audioContext.createMediaStreamSource(stream);
   mediaStreamSource.connect(inputAnalyser);
   syncPlaybackGain();
@@ -3132,11 +3471,10 @@ function disableNoiseSuppression() {
 }
 
 function restoreDirectAudio(message) {
-  gtcrnEnabledEl.checked = false;
-  gtcrnEnabledStateEl.textContent = "Off";
-  gtcrnBlendEl.disabled = true;
+  for (const control of Object.values(aiEnhancers)) control.enabled.checked = false;
+  persistSelectedAiEnhancer();
   updateGtcrnBlendDisplay();
-  try { localStorage.setItem("snf-gtcrn-enabled", "false"); } catch {}
+  void destroyAlternativeEnhancer();
   disableNoiseSuppression();
   if (remoteStream) {
     if (audioContext && playbackGain) {
@@ -3148,7 +3486,7 @@ function restoreDirectAudio(message) {
     }
     void audioEl.play().catch(() => setState("Audio ready — press play"));
   }
-  setAudioProcessingStatus("Direct audio restored; Browser AI noise suppression is off");
+  setAudioProcessingStatus("Direct audio restored; browser AI enhancement is off.");
   errorEl.textContent = message;
 }
 
@@ -3250,7 +3588,7 @@ async function updateMediaStatus(targetPeer) {
     || (Number.isFinite(latestOutputDbfs) && latestOutputDbfs < -85);
   const silentFilterWarning = noiseSuppressionActive && packets > 0
     && activeInputSignalPresent && webAudioOutputSilent
-    ? "; GTCRN output is near silence during active input"
+    ? `; ${selectedAiEnhancerLabel()} output is near silence during active input`
     : "";
   const silentInputWarning = noiseSuppressionActive && packets > 0
     && inboundSignalPresent && webAudioInputSilent
@@ -3261,15 +3599,17 @@ async function updateMediaStatus(targetPeer) {
       || activeInputSignalPresent && webAudioOutputSilent);
   silentInputSinceMs = graphHasSignalMismatch ? (silentInputSinceMs ?? Date.now()) : null;
   if (silentInputSinceMs !== null && Date.now() - silentInputSinceMs >= 5000) {
-  restoreDirectAudio("GTCRN output stayed silent during active incoming audio. Direct playback is restored; noise suppression is off.");
+  restoreDirectAudio(`${selectedAiEnhancerLabel()} output stayed silent during active incoming audio. Direct playback is restored; browser AI enhancement is off.`);
   }
   const receiveState = packets > 0
     ? `${codecLabel}; RTP ${packets} packets / ${bytes} bytes${packetLoss}${packetDiscard}${jitterMs === null ? "" : `, jitter ${jitterMs} ms`}; ${decodedSamples}${concealment}${silentConcealment}${concealmentEvents}${level === null ? "" : `, level ${level}`}`
     : "no inbound audio RTP packets";
+  const enhancerName = selectedAiEnhancerLabel();
+  const enhancerBlend = selectedAiEnhancerBlend();
   const processing = noiseSuppressionActive
-    ? (packets > 0 ? `GTCRN blend ${gtcrnBlendEl.value}% active` : `GTCRN blend ${gtcrnBlendEl.value}% ready; no audio packets received`)
-    : gtcrnEnabledEl.checked && Number(gtcrnBlendEl.value) > 0
-      ? `GTCRN blend ${gtcrnBlendEl.value}% selected; inactive` : "noise suppression off";
+    ? (packets > 0 ? `${enhancerName} blend ${enhancerBlend}% active` : `${enhancerName} blend ${enhancerBlend}% ready; no audio packets received`)
+    : enhancerBlend > 0
+      ? `${enhancerName} blend ${enhancerBlend}% selected; inactive` : "browser AI enhancement off";
   mediaStatusEl.textContent = `Audio: track ${trackState}; ${receiveState}; ${playbackState}; ${processing}${graphLevels}${silentFilterWarning}${silentInputWarning}${jitterBuffer}${decoderStatus}.`;
 }
 
@@ -3401,14 +3741,14 @@ function connectSocket() {
       sessionId = message.session_id;
       syncDeviceActionAvailability();
       appliedAudioSettings = {
-        mic_mode: "mic1", auto_gain_enabled: true,
+        mic_mode: "mic1", auto_gain_enabled: false,
         hpf_preset: "voice_clarity", noise_suppression_level: "off",
         vad_level: "medium", limiter_level: "low"
       };
       applyAudioSettings(appliedAudioSettings);
       refreshAudioSettingsAvailability();
       audioSettingsStatusEl.textContent = `Connected to ${brandText(selectedDeviceId)}; audio controls will be applied when the online audio link connects.`;
-      micGainEl.value = "50";
+      micGainEl.value = "100";
       micGainValueEl.value = `${effectiveMicGainPercent()}%`;
       micGainAppliedSessionId = null;
       micGainAppliedPercent = null;
@@ -3543,6 +3883,12 @@ async function createPeer() {
         audioEl.muted = false;
       }
       await audioEl.play();
+      const selectedEnhancer = selectedAiEnhancerId();
+      if (selectedEnhancer && selectedEnhancer !== "gtcrn" && selectedAiEnhancerBlend() > 0 && !document.hidden) {
+        void enableAlternativeEnhancer(selectedEnhancer).catch((error) => {
+          restoreDirectAudio(`${aiEnhancers[selectedEnhancer].label} unavailable; continuing with direct audio. ${error.message}`);
+        });
+      }
     } catch (error) {
       restoreDirectAudio(`Processed playback could not start (${error.message}); direct audio restored.`);
     }
@@ -3844,21 +4190,18 @@ async function startListening() {
   try {
     await prepareAudioOutput();
     if (startAttempt !== listenerStartAttempt || !listenerActive) return;
-    if (gtcrnEnabledEl.checked && Number(gtcrnBlendEl.value) > 0) await enableNoiseSuppression();
-    else disableNoiseSuppression();
+    await applySelectedAiEnhancer();
   } catch (error) {
     if (startAttempt !== listenerStartAttempt || !listenerActive) {
       disableNoiseSuppression();
+      void destroyAlternativeEnhancer();
       return;
     }
-    gtcrnBlendEl.value = "0";
-    updateGtcrnBlendDisplay();
-    try { localStorage.setItem("snf-gtcrn-blend-percent", "0"); } catch {}
-    disableNoiseSuppression();
-    errorEl.textContent = `AI noise suppression unavailable; continuing with direct audio. ${error.message}`;
+    restoreDirectAudio(`Browser AI enhancement unavailable; continuing with direct audio. ${error.message}`);
   }
   if (startAttempt !== listenerStartAttempt || !listenerActive) {
     disableNoiseSuppression();
+    void destroyAlternativeEnhancer();
     return;
   }
   connectSocket();
@@ -3881,6 +4224,7 @@ function stopListening() {
   sessionId = null;
   closePeer();
   disableNoiseSuppression();
+  void destroyAlternativeEnhancer();
   setListenButtonActive(false);
   startButton.disabled = !selectedDeviceId;
   syncDeviceActionAvailability();
@@ -3915,76 +4259,39 @@ recordButton.onclick = () => {
   else void startRecording();
 };
 
-gtcrnBlendEl.addEventListener("input", () => {
-  updateGtcrnBlendDisplay();
-  try { localStorage.setItem("snf-gtcrn-blend-percent", gtcrnBlendEl.value); } catch {}
-  const blendPercent = Number(gtcrnBlendEl.value);
-  if (blendPercent === 0) {
-    setGtcrnBlendMix(0);
-    noiseSuppressionActive = false;
-    silentInputSinceMs = null;
+for (const [id, control] of Object.entries(aiEnhancers)) {
+  control.blend.addEventListener("input", () => {
+    updateGtcrnBlendDisplay();
+    const blend = Math.max(0, Math.min(100, Number(control.blend.value) || 0));
+    try {
+      localStorage.setItem(id === "gtcrn" ? "snf-gtcrn-blend-percent" : `snf-ai-blend-${id}`, String(blend));
+    } catch {}
+    if (selectedAiEnhancerId() === id && listenerActive) {
+      if (id === "gtcrn" && gtcrnNode && gtcrnGraphConnected) setGtcrnBlendMix(blend);
+      else if (id !== "gtcrn" && alternativeEnhancerConnected) setAlternativeEnhancerBlendMix(blend);
+      if (blend === 0) {
+        noiseSuppressionActive = false;
+        silentInputSinceMs = null;
+      } else if ((id === "gtcrn" && gtcrnGraphConnected) || (id !== "gtcrn" && alternativeEnhancerConnected)) {
+        noiseSuppressionActive = true;
+      }
+    }
     refreshAudioProcessingStatus();
-    if (gtcrnDisableTimer) window.clearTimeout(gtcrnDisableTimer);
-    gtcrnDisableTimer = window.setTimeout(() => {
-      gtcrnDisableTimer = null;
-      if (gtcrnEnabledEl.checked && Number(gtcrnBlendEl.value) === 0) disableNoiseSuppression();
-    }, 90);
-    return;
-  }
-  if (gtcrnDisableTimer) {
-    window.clearTimeout(gtcrnDisableTimer);
-    gtcrnDisableTimer = null;
-  }
-  if (gtcrnNode && gtcrnGraphConnected) {
-    setGtcrnBlendMix(blendPercent);
-    noiseSuppressionActive = true;
-    refreshAudioProcessingStatus();
-  } else {
-    refreshAudioProcessingStatus();
-  }
-});
+  });
 
-gtcrnBlendEl.addEventListener("change", async () => {
-  if (!gtcrnEnabledEl.checked || Number(gtcrnBlendEl.value) === 0 || !listenerActive || !audioContext
-      || (noiseSuppressionActive && gtcrnNode && gtcrnGraphConnected)) return;
-  try {
-    await enableNoiseSuppression();
-  } catch (error) {
-    restoreDirectAudio(`AI noise suppression unavailable; continuing with direct audio. ${error.message}`);
-  }
-});
+  control.blend.addEventListener("change", async () => {
+    if (selectedAiEnhancerId() !== id || !listenerActive) return;
+    try {
+      await applySelectedAiEnhancer();
+    } catch (error) {
+      restoreDirectAudio(`${control.label} unavailable; continuing with direct audio. ${error.message}`);
+    }
+  });
 
-gtcrnEnabledEl.addEventListener("change", async () => {
-  const enabled = gtcrnEnabledEl.checked;
-  try { localStorage.setItem("snf-gtcrn-enabled", String(enabled)); } catch {}
-  updateGtcrnBlendDisplay();
-  if (gtcrnDisableTimer) {
-    window.clearTimeout(gtcrnDisableTimer);
-    gtcrnDisableTimer = null;
-  }
-  if (!enabled) {
-    setGtcrnBlendMix(0);
-    noiseSuppressionActive = false;
-    silentInputSinceMs = null;
-    refreshAudioProcessingStatus();
-    gtcrnDisableTimer = window.setTimeout(() => {
-      gtcrnDisableTimer = null;
-      if (!gtcrnEnabledEl.checked) disableNoiseSuppression();
-    }, 90);
-    return;
-  }
-  if (!listenerActive || Number(gtcrnBlendEl.value) === 0) {
-    setGtcrnBlendMix(0);
-    noiseSuppressionActive = false;
-    refreshAudioProcessingStatus();
-    return;
-  }
-  try {
-    await enableNoiseSuppression();
-  } catch (error) {
-    restoreDirectAudio(`AI noise suppression unavailable; continuing with direct audio. ${error.message}`);
-  }
-});
+  control.enabled.addEventListener("change", () => {
+    void onAiEnhancerToggleChanged(id);
+  });
+}
 
 micGainEl.addEventListener("input", () => {
   micGainValueEl.value = `${micGainEl.value}%`;
@@ -4134,6 +4441,7 @@ window.addEventListener("pagehide", () => {
     socket.close(1000, "Page closed");
   }
   if (appStatusTimer) clearInterval(appStatusTimer);
+  void destroyAlternativeEnhancer();
   closePeer();
   if (audioContext && audioContext.state !== "closed") void audioContext.close();
 });

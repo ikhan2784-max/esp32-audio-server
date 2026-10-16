@@ -12,7 +12,9 @@
     "node": ">=20 <25"
   },
   "dependencies": {
+    "@lofcz/deepfilternet-web": "0.1.0",
     "@sapphi-red/web-noise-suppressor": "0.4.1",
+    "@workadventure/noise-suppression": "0.1.1",
     "express": "^5.1.0",
     "ws": "^8.18.3"
   }

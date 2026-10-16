@@ -2,6 +2,7 @@ const express = require("express");
 const http = require("http");
 const WebSocket = require("ws");
 const crypto = require("crypto");
+const fs = require("fs");
 const path = require("path");
 const { createWebRtcSignaling } = require("./webrtc_signaling");
 const { createAuthState, constantTimeStringEqual } = require("./auth_state");
@@ -51,6 +52,28 @@ app.use("/audio-suppressor/custom", requireHttps, express.static(
 ));
 app.use("/audio-suppressor", requireHttps, express.static(
     path.join(__dirname, "node_modules", "@sapphi-red", "web-noise-suppressor", "dist"),
+    { fallthrough: false, index: false, maxAge: "1h" }
+));
+const dtlnDistPath = path.join(__dirname, "node_modules", "@workadventure", "noise-suppression", "dist");
+const dtlnEntrySource = fs.readFileSync(path.join(dtlnDistPath, "index.js"), "utf8");
+const dtlnFftSource = fs.readFileSync(require.resolve("fft.js"), "utf8");
+const dtlnBrowserEntry = dtlnEntrySource.replace('from "fft.js";', 'from "/audio-enhancement/dtln-fft.js";');
+const dtlnBrowserFft = dtlnFftSource.replace("module.exports = FFT;", "export default FFT;");
+if (dtlnBrowserEntry === dtlnEntrySource || dtlnBrowserFft === dtlnFftSource) {
+    throw new Error("Could not prepare the DTLN browser ESM modules for the pinned package versions.");
+}
+app.get("/audio-enhancement/dtln/index.js", requireHttps, (_req, res) => {
+    res.type("application/javascript").set("Cache-Control", "public, max-age=3600").send(dtlnBrowserEntry);
+});
+app.get("/audio-enhancement/dtln-fft.js", requireHttps, (_req, res) => {
+    res.type("application/javascript").set("Cache-Control", "public, max-age=3600").send(dtlnBrowserFft);
+});
+app.use("/audio-enhancement/deepfilternet", requireHttps, express.static(
+    path.join(__dirname, "node_modules", "@lofcz", "deepfilternet-web", "dist"),
+    { fallthrough: false, index: false, maxAge: "1h" }
+));
+app.use("/audio-enhancement/dtln", requireHttps, express.static(
+    dtlnDistPath,
     { fallthrough: false, index: false, maxAge: "1h" }
 ));
 
