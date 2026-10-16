@@ -101,8 +101,9 @@ test("play timer stays hidden while waiting and accumulates only actual playback
         listeningTimerInterval: null,
         listeningTimerEl: { hidden: true, textContent: "" },
         listenerActive: true,
-        audioEl: { paused: true },
-        hasLiveAudioTrack: () => false,
+        audioEl: { paused: true, readyState: 0 },
+        peer: { connectionState: "connecting" },
+        hasPlayableAudioTrack: () => false,
     });
     vm.runInContext([
         extract("formatElapsedClock"),
@@ -116,7 +117,12 @@ test("play timer stays hidden while waiting and accumulates only actual playback
     assert.equal(context.listeningTimerInterval, null);
 
     context.audioEl.paused = false;
-    context.hasLiveAudioTrack = () => true;
+    context.audioEl.readyState = 2;
+    context.hasPlayableAudioTrack = () => true;
+    vm.runInContext("startListeningTimer()", context);
+    assert.equal(context.listeningTimerEl.hidden, true, "a track must not count while the peer is still connecting");
+
+    context.peer.connectionState = "connected";
     now = 1000;
     vm.runInContext("startListeningTimer()", context);
     now = 6100;
@@ -130,7 +136,8 @@ test("play timer stays hidden while waiting and accumulates only actual playback
     assert.equal(context.listeningTimerEl.textContent, "PLAY 00:05");
     assert.match(html, /audioEl\.addEventListener\("playing", \(\) => \{[\s\S]{0,140}startListeningTimer\(\)/);
     const unmuteHandler = html.match(/track\.addEventListener\("unmute", \(\) => \{[\s\S]*?\n      \}\);/);
-    assert.ok(unmuteHandler && unmuteHandler[0].includes("audioEl.readyState >= 2") &&
+    assert.ok(unmuteHandler && unmuteHandler[0].includes('peer.connectionState === "connected"') &&
+        unmuteHandler[0].includes("audioEl.readyState >= 2") && unmuteHandler[0].includes("hasPlayableAudioTrack()") &&
         unmuteHandler[0].includes("startListeningTimer()"), "audio-track recovery should resume the timer only when media data is ready");
     for (const event of ["waiting", "pause", "ended"]) {
         const handler = html.match(new RegExp(`audioEl\\.addEventListener\\("${event}",[\\s\\S]{0,180}?\\n\\}\\);`));

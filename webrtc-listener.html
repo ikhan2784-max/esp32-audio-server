@@ -2404,13 +2404,19 @@ function hasLiveAudioTrack() {
   return Boolean(remoteStream && remoteStream.getAudioTracks().some((track) => track.readyState === "live"));
 }
 
+function hasPlayableAudioTrack() {
+  return Boolean(remoteStream && remoteStream.getAudioTracks().some((track) =>
+    track.readyState === "live" && !track.muted));
+}
+
 function refreshListeningTimerText() {
   const elapsed = listeningElapsedMs + (listeningStartedAtMs ? performance.now() - listeningStartedAtMs : 0);
   listeningTimerEl.textContent = `PLAY ${formatElapsedClock(elapsed)}`;
 }
 
 function startListeningTimer() {
-  if (!listenerActive || audioEl.paused || !hasLiveAudioTrack() || listeningStartedAtMs) return;
+  if (!listenerActive || !peer || peer.connectionState !== "connected" || audioEl.paused ||
+      audioEl.readyState < 2 || !hasPlayableAudioTrack() || listeningStartedAtMs) return;
   listeningStartedAtMs = performance.now();
   listeningTimerEl.hidden = false;
   refreshListeningTimerText();
@@ -2487,9 +2493,9 @@ audioEl.addEventListener("play", () => {
   if (hasLiveAudioTrack()) setState("Audio ready — buffering");
 });
 audioEl.addEventListener("playing", () => {
-  if (!listenerActive || !hasLiveAudioTrack()) return;
+  if (!listenerActive || !hasPlayableAudioTrack()) return;
   startListeningTimer();
-  setState("Audio is playing");
+  if (peer && peer.connectionState === "connected") setState("Audio is playing");
 });
 audioEl.addEventListener("waiting", () => {
   stopListeningTimer();
@@ -3052,11 +3058,13 @@ async function createPeer() {
       });
       track.addEventListener("unmute", () => {
         if (!listenerActive) return;
-        if (!audioEl.paused && audioEl.readyState >= 2) {
+        if (peer && peer.connectionState === "connected" && !audioEl.paused &&
+            audioEl.readyState >= 2 && hasPlayableAudioTrack()) {
           startListeningTimer();
           setState("Audio is playing");
         } else {
-          setState("Audio ready — buffering");
+          setState(peer && peer.connectionState !== "connected"
+            ? "Peer connecting — buffering" : "Audio ready — buffering");
         }
       });
       track.addEventListener("ended", () => {
@@ -3090,7 +3098,17 @@ async function createPeer() {
       audioSettingsRequestedSessionId = sessionId;
       sendAudioSettings();
     }
-    setState(`Peer ${peer.connectionState}`);
+    if (peer.connectionState === "connected") {
+      if (!audioEl.paused && audioEl.readyState >= 2 && hasPlayableAudioTrack()) {
+        startListeningTimer();
+        setState("Audio is playing");
+      } else {
+        setState("Peer connected — waiting for audio");
+      }
+    } else {
+      stopListeningTimer();
+      setState(`Peer ${peer.connectionState}`);
+    }
     if (peer.connectionState === "failed") {
       errorEl.textContent = "Direct ICE connection failed. This network may require TURN.";
       if (socket && socket.readyState === WebSocket.OPEN) {
