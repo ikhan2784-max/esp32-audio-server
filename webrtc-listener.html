@@ -815,6 +815,8 @@ let lastLoggedDeviceOnline = null;
 let lastLoggedFirmwareHealth = null;
 let lastHealthScoreLogKey = null;
 const previousHealthHeapByDevice = new Map();
+let previousTransportHealthDeviceId = "";
+let previousTransportHealthState = null;
 let lastLoggedAudioProfile = null;
 let pendingAudioProfileHz = null;
 let pendingAudioProfileTimer = null;
@@ -2082,12 +2084,34 @@ function updateRenderInformation() {
   setMetric("infoRenderHealth", `${health} · ${api}`);
 }
 
+function activeTransportDropDelta(telemetry, previous) {
+  const readCounter = (value) => Number.isSafeInteger(value) && value >= 0 ? value : null;
+  const current = {
+    peerConnected: telemetry?.peer_connected === true,
+    audioFramesDropped: readCounter(telemetry?.audio_frames_dropped),
+    opusDroppedFrames: readCounter(telemetry?.opus_dropped_frames),
+  };
+  if (!current.peerConnected || previous?.peerConnected !== true) {
+    return { dropped: 0, state: current };
+  }
+  const delta = (now, before) =>
+    now === null || !Number.isSafeInteger(before) || before < 0 || now < before
+      ? 0 : now - before;
+  return {
+    dropped: delta(current.audioFramesDropped, previous.audioFramesDropped) +
+      delta(current.opusDroppedFrames, previous.opusDroppedFrames),
+    state: current,
+  };
+}
+
 function updateDeviceHealthScore(device, telemetry, fresh) {
   const card = document.getElementById("healthScoreCard");
   const valueEl = document.getElementById("healthScoreValue");
   const reasonsEl = document.getElementById("healthScoreReasons");
   if (!card || !valueEl || !reasonsEl) return;
   if (!fresh || !telemetry) {
+    previousTransportHealthDeviceId = selectedDeviceId;
+    previousTransportHealthState = null;
     card.classList.remove("healthy", "warning", "critical");
     valueEl.textContent = "Waiting";
     reasonsEl.textContent = "A score appears when current device telemetry is available.";
@@ -2116,14 +2140,21 @@ function updateDeviceHealthScore(device, telemetry, fresh) {
 
   const faultFields = ["audio_capture_errors", "audio_buffer_overflows", "dsp_errors",
     "dsp_output_overflows"];
-  if (telemetry.peer_connected === true || device?.session_active === true) {
-    faultFields.push("audio_frames_dropped", "opus_dropped_frames");
-  }
   const audioFaults = faultFields.reduce((sum, field) => {
     const count = Number(telemetry[field]);
     return sum + (Number.isFinite(count) && count > 0 ? count : 0);
   }, 0);
-  if (audioFaults > 0) penalize(Math.min(24, Math.ceil(audioFaults * 2)), `${Math.floor(audioFaults)} reported audio/DSP/transport fault(s)`);
+  if (audioFaults > 0) penalize(Math.min(24, Math.ceil(audioFaults * 2)), `${Math.floor(audioFaults)} reported audio/DSP fault(s)`);
+
+  const previousTransport = previousTransportHealthDeviceId === selectedDeviceId
+    ? previousTransportHealthState : null;
+  const transport = activeTransportDropDelta(telemetry, previousTransport);
+  previousTransportHealthDeviceId = selectedDeviceId;
+  previousTransportHealthState = transport.state;
+  if (transport.dropped > 0) {
+    penalize(Math.min(24, Math.ceil(transport.dropped * 2)),
+      `${transport.dropped} new audio frame drop(s) during active WebRTC playback`);
+  }
   if (telemetry.health_fault_latched === true || telemetry.health_ok === false) {
     penalize(15, "firmware health reports a latched fault");
   }
