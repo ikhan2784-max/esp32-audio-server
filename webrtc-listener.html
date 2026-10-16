@@ -478,7 +478,7 @@
       </div>
       <div class="header-status" aria-label="Device and audio status">
         <div id="deviceOnlinePill" class="device-pill" role="status" aria-label="ESP32 device connection status"><i class="status-dot" aria-hidden="true"></i><span id="deviceStatusLabel">CHECKING</span></div>
-        <span id="listeningTimer" class="activity-timer" aria-label="Listening session elapsed time" title="Listening session duration" hidden>LISTEN 00:00</span>
+        <span id="listeningTimer" class="activity-timer" aria-label="Play session elapsed time" title="Play session duration" hidden>PLAY 00:00</span>
       </div>
       <small id="deviceSelectStatus" class="hidden-audio-label" role="status" aria-live="polite">Choose which ESP32 supplies the listener audio.</small>
     </header>
@@ -2406,7 +2406,7 @@ function hasLiveAudioTrack() {
 
 function refreshListeningTimerText() {
   const elapsed = listeningElapsedMs + (listeningStartedAtMs ? performance.now() - listeningStartedAtMs : 0);
-  listeningTimerEl.textContent = `LISTEN ${formatElapsedClock(elapsed)}`;
+  listeningTimerEl.textContent = `PLAY ${formatElapsedClock(elapsed)}`;
 }
 
 function startListeningTimer() {
