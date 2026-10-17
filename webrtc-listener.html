@@ -59,6 +59,8 @@
     .device-pill.online .status-dot { background:var(--green); }
     .device-pill.offline { color:#ff8987; border-color:#703e42; background:#291417; }
     .device-pill.offline .status-dot { background:var(--red); }
+    .device-pill.idle, .device-pill.standby { color:#ffd47a; border-color:#806321; background:#2a210b; }
+    .device-pill.idle .status-dot, .device-pill.standby .status-dot { background:#ffc64d; }
     .activity-timer { display:inline-flex; align-items:center; justify-content:center; min-height:28px; padding:5px 8px; color:#78ddff; border:1px solid #1c5b79; border-radius:999px; background:#082132; font-size:.6rem; font-weight:800; letter-spacing:.035em; white-space:nowrap; font-variant-numeric:tabular-nums; }
     .activity-timer[hidden] { display:none !important; }
     .record-status-row { display:flex; align-items:center; justify-content:center; gap:8px; width:100%; }
@@ -1908,6 +1910,39 @@ function persistDeviceSelection() {
   } catch {}
 }
 
+function getDevicePresencePresentation(device) {
+  if (!device || device.device_connected !== true) {
+    return {
+      state: device ? "offline" : "unknown",
+      label: device ? "OFFLINE" : "NO DEVICE",
+      description: device ? "disconnected from Render signaling" : "not selected",
+    };
+  }
+  if (device.session_active === true) {
+    return {
+      state: "online",
+      label: "ONLINE",
+      description: "connected to Render signaling with an active listener session",
+    };
+  }
+
+  const telemetry = device.telemetry;
+  const telemetryAge = telemetry?.telemetry_age_ms;
+  const telemetryFresh = Number.isFinite(telemetryAge) &&
+    telemetryAge >= 0 && telemetryAge <= 15000;
+  const inStandby = telemetryFresh && telemetry.audio_power_state === "standby";
+  const powerSavingEnabled = telemetryFresh && telemetry.auto_power_saving_enabled === true;
+  return {
+    state: inStandby ? "standby" : "idle",
+    label: inStandby ? "ONLINE · STANDBY" : "ONLINE · IDLE",
+    description: inStandby
+      ? "online; microphone and audio capture are in power-saving standby and ready for a new listener"
+      : powerSavingEnabled
+        ? "online; no listener is playing, waiting for the microphone idle timeout before power-saving standby"
+        : "online; no listener is playing and ready for a new connection",
+  };
+}
+
 function populateDeviceSelect(devices) {
   const validDevices = Array.isArray(devices)
     ? devices.filter((device) => device && typeof device.device_id === "string")
@@ -1937,8 +1972,9 @@ function populateDeviceSelect(devices) {
     }
   }
   for (const [index, device] of validDevices.entries()) {
+    const presence = getDevicePresencePresentation(device);
     deviceSelectEl.options[index].textContent =
-      `${brandText(device.device_id)} · ${device.device_connected ? "ONLINE" : "OFFLINE"}`;
+      brandText(device.device_id) + " · " + presence.label;
   }
 
   const preferred = validDevices.find((device) => device.device_id === previousSelection);
@@ -2492,9 +2528,13 @@ async function refreshAppStatus() {
       addLog(`${selectedDeviceId} device ${online ? "online" : "offline"} on Render`, online ? "success" : "warning", "backend", "SNF");
       lastLoggedDeviceOnline = online;
     }
-    deviceOnlinePill.classList.toggle("online", online);
-    deviceOnlinePill.classList.toggle("offline", Boolean(selected) && !online);
-    deviceStatusLabel.textContent = selected ? (online ? "ONLINE" : "OFFLINE") : "NO DEVICE";
+    const presence = getDevicePresencePresentation(selected);
+    deviceOnlinePill.classList.toggle("online", presence.state === "online");
+    deviceOnlinePill.classList.toggle("idle", presence.state === "idle");
+    deviceOnlinePill.classList.toggle("standby", presence.state === "standby");
+    deviceOnlinePill.classList.toggle("offline", presence.state === "offline");
+    deviceStatusLabel.textContent = presence.label;
+    deviceOnlinePill.setAttribute("aria-label", brandText(selectedDeviceId) + " " + presence.description);
     updateTelemetryViews(selected);
     const liveTelemetry = selected?.telemetry;
     if (liveTelemetry && Number.isFinite(liveTelemetry.telemetry_age_ms) && liveTelemetry.telemetry_age_ms <= 15000) {
@@ -2507,10 +2547,11 @@ async function refreshAppStatus() {
     }
     renderHealthDashboard();
     deviceSelectStatusEl.textContent = selected
-      ? `${brandText(selectedDeviceId)} is ${online ? "connected to Render signaling" : "offline"}.`
+      ? brandText(selectedDeviceId) + " is " + presence.description + "."
       : "Configure device credentials on the Render service to add SNF boards.";
   } else {
-    deviceOnlinePill.classList.remove("online", "offline");
+    deviceOnlinePill.classList.remove("online", "idle", "standby", "offline");
+    deviceOnlinePill.setAttribute("aria-label", "SNF device connection status is unknown");
     deviceStatusLabel.textContent = "UNKNOWN";
     deviceSelectStatusEl.textContent = selectedDeviceId
       ? `Connection status for ${brandText(selectedDeviceId)} is unavailable; retrying Render.`
