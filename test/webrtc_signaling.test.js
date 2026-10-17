@@ -211,6 +211,37 @@ test("listener stop releases its reservation so a refreshed page can reconnect",
     assert.equal(replacement.last("webrtc_error"), undefined);
 });
 
+test("late device session-end acknowledgement after Stop keeps signaling online", () => {
+    const harness = makeHarness();
+    const { signaling, device, listener } = harness;
+    const endedSessionId = joinBoth(harness);
+
+    assert.equal(signaling.handleMessage(listener, { type: "webrtc_listener_stop" }), true);
+    assert.equal(listener.closeCode, 1000);
+    assert.equal(signaling.getStatus().session_active, false);
+
+    // A quick retry can begin before the device has processed Render's
+    // asynchronous webrtc_session_end message for the previous session.
+    const replacement = new MockSocket(true);
+    assert.equal(signaling.handleMessage(replacement, { type: "webrtc_listener_hello" }), true);
+    const replacementSessionId = replacement.last("webrtc_session_ready").session_id;
+    assert.notEqual(replacementSessionId, endedSessionId);
+
+    assert.equal(signaling.handleMessage(device, {
+        type: "webrtc_diagnostic_event",
+        session_id: endedSessionId,
+        stage: "session_end",
+        status: "info",
+        reason: "listener_stopped",
+    }), true);
+
+    assert.equal(device.closeCode, null);
+    assert.equal(signaling.getStatus().device_connected, true);
+    assert.equal(signaling.getStatus().session_active, true);
+    assert.equal(device.last("webrtc_session_ready").session_id, replacementSessionId);
+    assert.equal(replacement.last("webrtc_error"), undefined);
+});
+
 test("a closed listener reservation is reclaimed during the next listener join", () => {
     const harness = makeHarness();
     const { signaling, listener } = harness;
