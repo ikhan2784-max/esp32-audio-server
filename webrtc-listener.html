@@ -178,11 +178,13 @@
     .health-score-card.healthy { border-color:#176447; }
     .health-score-card.warning { border-color:#705c26; }
     .health-score-card.critical { border-color:#784247; }
+    .health-score-card.unavailable { border-color:#705c26; }
     .health-score-heading { display:flex; align-items:center; justify-content:space-between; gap:10px; color:#dceefa; font-weight:750; }
     #healthScoreValue { font-variant-numeric:tabular-nums; }
     .health-score-card.healthy #healthScoreValue { color:#65e7ae; }
     .health-score-card.warning #healthScoreValue { color:#f7c85d; }
     .health-score-card.critical #healthScoreValue { color:#ff938d; }
+    .health-score-card.unavailable #healthScoreValue { color:#f7c85d; }
     .health-score-reasons { margin:0; color:#a9c0cf; font-size:.68rem; line-height:1.45; }
     .health-card-grid { display:grid; grid-template-columns:1fr; gap:7px; }
     .health-card { min-width:0; padding:0; overflow:hidden; border:1px solid #1a374b; border-radius:12px; background:linear-gradient(145deg,#0b1d2b,#081723); }
@@ -969,6 +971,8 @@ let listeningTimerInterval = null;
 let healthCheckRunning = false;
 let latestHealthSnapshot = null;
 let latestHealthSnapshotAt = 0;
+let latestHealthSnapshotDeviceId = "";
+let latestHealthSnapshotFailure = null;
 let latestBrowserHealthStats = null;
 let lastHealthRunEvidence = {};
 let lastOpusFrameObservation = null;
@@ -1269,7 +1273,8 @@ function buildHealthCategories() {
   const telemetry = device?.telemetry || null;
   const telemetryFresh = telemetry && Number.isFinite(telemetry.telemetry_age_ms) &&
     telemetry.telemetry_age_ms >= 0 && telemetry.telemetry_age_ms <= 15000;
-  const reportFresh = latestHealthSnapshot && Date.now() - latestHealthSnapshotAt <= 30000;
+  const reportFresh = latestHealthSnapshot && latestHealthSnapshotDeviceId === selectedDeviceId &&
+    Date.now() - latestHealthSnapshotAt <= 30000;
   const data = reportFresh ? latestHealthSnapshot : telemetryFresh ? telemetry : null;
   const d = data || {};
   const hasData = Boolean(data);
@@ -1657,6 +1662,8 @@ async function runHealthCheck() {
   lastHealthRunEvidence = {};
   latestHealthSnapshot = null;
   latestHealthSnapshotAt = 0;
+  latestHealthSnapshotDeviceId = "";
+  latestHealthSnapshotFailure = null;
   latestBrowserHealthStats = null;
     addLog("Full device, Render, online audio and browser health check started", "info", "health", "Health");
 
@@ -1763,6 +1770,11 @@ async function runHealthCheck() {
           valid ? `HTTP ${result.status} · status returned for ${brandText(selectedDeviceId)}` : result.status ? `HTTP ${result.status}${result.body?.error ? ` · ${result.body.error}` : ""}` : (result.detail || "invalid JSON response"));
         if (!valid) {
           lastHealthRunEvidence.deviceSnapshot = false;
+          latestHealthSnapshotFailure = {
+            deviceId: selectedDeviceId,
+            detail: result.status ? `Device status request returned HTTP ${result.status}` : (result.detail || "device status unavailable"),
+            at: Date.now(),
+          };
           logHealthSkipped("Firmware read-only health snapshot", "selected device status could not be verified");
           return;
         }
@@ -1779,6 +1791,11 @@ async function runHealthCheck() {
 
         if (!online) {
           lastHealthRunEvidence.deviceSnapshot = false;
+          latestHealthSnapshotFailure = {
+            deviceId: selectedDeviceId,
+            detail: "device is offline from Render signaling",
+            at: Date.now(),
+          };
           logHealthSkipped("Firmware read-only health snapshot", "device is offline; reconnect SNF to Render, then run the check again");
           return;
         }
@@ -1791,18 +1808,23 @@ async function runHealthCheck() {
         if (snapshotValid) {
           latestHealthSnapshot = healthResult.body.data;
           latestHealthSnapshotAt = Date.now();
+          latestHealthSnapshotDeviceId = selectedDeviceId;
+          latestHealthSnapshotFailure = null;
           observeOpusFrameRate(latestHealthSnapshot);
+          updateDeviceHealthScore(selectedDeviceStatus(), latestHealthSnapshot, true);
           logHealthResult(results, "Firmware read-only health snapshot", true,
             `request ${healthResult.body.request_id} completed at ${new Date(healthResult.body.checked_at).toLocaleTimeString()}`);
         } else {
           const detail = healthResult.status
             ? `HTTP ${healthResult.status}${healthResult.body?.error ? ` · ${healthResult.body.error}` : ""}`
             : (healthResult.detail || "device snapshot unavailable");
+          latestHealthSnapshotFailure = { deviceId: selectedDeviceId, detail, at: Date.now() };
           logHealthResult(results, "Firmware read-only health snapshot", false, detail, true);
         }
       })());
     } else {
       logHealthResult(results, "Selected device status API", false, "skipped because no device is selected", true);
+      latestHealthSnapshotFailure = { deviceId: "", detail: "no device is selected", at: Date.now() };
       logHealthSkipped("Firmware read-only health snapshot", "select a registered device first");
     }
 
@@ -1836,17 +1858,30 @@ async function runHealthCheck() {
     }
 
     await Promise.all(backendChecks);
+    if (!latestHealthSnapshot) {
+      updateDeviceHealthScore(selectedDeviceStatus(), null, false);
+    }
     const categories = renderHealthDashboard();
     logHealthDashboard(categories);
     const allItems = categories.flatMap((category) => category.items);
     const totals = { Healthy: 0, Warning: 0, Critical: 0, "Not Tested": 0 };
     for (const item of allItems) totals[item.status] = (totals[item.status] || 0) + 1;
+    const failedResults = results.filter((result) => !result.passed);
+    const criticalResults = failedResults.filter((result) => !result.warning).length;
+    const warningResults = failedResults.length - criticalResults;
     const summary = `${allItems.length} checks · ${totals.Healthy} healthy · ${totals.Warning} warning · ${totals.Critical} critical · ${totals["Not Tested"]} not tested`;
     const deviceOffline = lastHealthRunEvidence.deviceSignaling === false;
+    const snapshotFailed = lastHealthRunEvidence.deviceSnapshot === false;
     healthCheckStatusEl.textContent = deviceOffline
-      ? `Health check complete · SNF is offline. Browser and Render checks ran; firmware checks were skipped. Reconnect SNF and run again.`
-      : `Health check complete · ${totals.Critical ? "critical issues found" : totals.Warning ? "review warnings" : "no measured failures"}. Detailed results are in the Health Check log.`;
-    addLog(`Full Health Check complete · ${summary}`, totals.Critical ? "error" : totals.Warning ? "warning" : totals.Healthy ? "success" : "info", "health");
+      ? "Health check complete · SNF is offline. Browser and Render checks ran; firmware checks were skipped. Reconnect SNF and run again."
+      : snapshotFailed
+        ? "Health check complete · firmware health data was unavailable. See the Health Check log for the request failure; no numeric device score is calculated without firmware measurements."
+        : criticalResults
+          ? `Health check complete · ${criticalResults} failed check(s) and ${warningResults} warning(s). See the Health Check log for details.`
+          : warningResults
+            ? `Health check complete · ${warningResults} warning(s) need review. See the Health Check log for details.`
+            : `Health check complete · ${totals.Critical ? "critical issues found" : totals.Warning ? "review warnings" : "no measured failures"}. Detailed results are in the Health Check log.`;
+    addLog(`Full Health Check complete · ${summary}${failedResults.length ? ` · ${criticalResults} failed · ${warningResults} warning` : ""}${snapshotFailed ? " · firmware snapshot unavailable" : ""}`, criticalResults || totals.Critical ? "error" : warningResults || totals.Warning || snapshotFailed ? "warning" : totals.Healthy ? "success" : "info", "health");
   } catch (error) {
     healthCheckStatusEl.textContent = `Health check stopped unexpectedly${error?.message ? ` · ${error.message}` : ""}; see the Health Check log for completed checks.`;
     addLog(`Health check stopped unexpectedly${error?.message ? `: ${error.message}` : ""}`, "error", "health");
@@ -2311,15 +2346,34 @@ function updateDeviceHealthScore(device, telemetry, fresh) {
   const valueEl = document.getElementById("healthScoreValue");
   const reasonsEl = document.getElementById("healthScoreReasons");
   if (!card || !valueEl || !reasonsEl) return;
-  if (!fresh || !telemetry) {
+  const telemetryFresh = fresh && telemetry &&
+    Number.isFinite(telemetry.telemetry_age_ms) &&
+    telemetry.telemetry_age_ms >= 0 && telemetry.telemetry_age_ms <= 15000;
+  const snapshotFresh = latestHealthSnapshot &&
+    latestHealthSnapshotDeviceId === selectedDeviceId &&
+    Number.isFinite(latestHealthSnapshotAt) &&
+    Date.now() - latestHealthSnapshotAt <= 30000;
+  const scoreTelemetry = telemetryFresh ? telemetry : snapshotFresh ? latestHealthSnapshot : null;
+  if (!scoreTelemetry) {
     previousTransportHealthDeviceId = selectedDeviceId;
     previousTransportHealthState = null;
     latestActiveTransportDropObservation = null;
     card.classList.remove("healthy", "warning", "critical");
-    valueEl.textContent = "Waiting";
-    reasonsEl.textContent = "A score appears when current device telemetry is available.";
+    card.classList.add("unavailable");
+    valueEl.textContent = "Unavailable";
+    const snapshotFailure = latestHealthSnapshotFailure &&
+      latestHealthSnapshotFailure.deviceId === selectedDeviceId &&
+      Date.now() - latestHealthSnapshotFailure.at <= 30000
+      ? latestHealthSnapshotFailure.detail : "";
+    reasonsEl.textContent = snapshotFailure
+      ? `No device score: firmware health data is unavailable (${snapshotFailure}). Render signaling status alone is not enough to calculate a hardware score.`
+      : device?.device_connected === true
+        ? "SNF is connected to Render, but fresh firmware telemetry is missing. Run Full Health Check; the device score needs current firmware measurements."
+        : "No current firmware telemetry is available, so a device score cannot be calculated.";
     return;
   }
+  telemetry = scoreTelemetry;
+  card.classList.remove("unavailable");
 
   let score = 100;
   const reasons = [];

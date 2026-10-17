@@ -116,7 +116,14 @@ test("requires device token and authenticated listener session", () => {
     assert.deepEqual(signaling.getStatus(), {
         device_connected: false,
         listener_connected: false,
-        session_active: false
+        listener_count: 0,
+        session_active: false,
+        connected_at: null,
+        last_seen: null,
+        webrtc_sessions_started: 0,
+        webrtc_sessions_ended: 0,
+        last_session_started_at: null,
+        last_session_duration_ms: null,
     });
 });
 

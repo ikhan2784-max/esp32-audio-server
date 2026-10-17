@@ -37,7 +37,7 @@ test("task health does not call missing task measurements stopped", () => {
     assert.equal(healthBooleanGroupStatus([true, true, true]), "Healthy");
     assert.equal(healthBooleanGroupStatus([true, false, true]), "Warning");
     assert.equal(healthBooleanGroupStatus([true, undefined, true]), "Not Tested");
-    assert.match(html, /Capture \$\{taskStateText\(d\.audio_capture_running\)\} · DSP \$\{taskStateText\(d\.dsp_running\)\} · WebRTC \$\{taskStateText\(d\.webrtc_running\)\}/);
+    assert.match(html, /Capture \$\{taskStateText\(d\.audio_capture_running\)\} · DSP \$\{taskStateText\(d\.dsp_running\)\} · online audio \$\{taskStateText\(d\.webrtc_running\)\}/);
 });
 
 test("gain controls are separated between Settings and Listener with safe defaults", () => {
@@ -51,17 +51,22 @@ test("gain controls are separated between Settings and Listener with safe defaul
         "master volume must stay on the Listener page");
     assert.ok(settingsBoost > settingsPanel,
         "the existing playback boost must move into Settings");
-    assert.match(html, /id="autoGain" type="checkbox" checked/);
-    assert.match(html, /id="micGain" type="range" min="25" max="200" step="5" value="50"/);
+    assert.match(html, /id="autoGain" type="checkbox" disabled/);
+    assert.doesNotMatch(html, /id="autoGain" type="checkbox" checked/);
+    assert.match(html, /id="micGain" type="range" min="0" max="200" step="1" value="100"/);
     assert.match(html, /id="playVolume" type="range" min="0" max="300" step="1" value="0"/);
     assert.match(html, /id="listenerVolume" type="range" min="0" max="300" step="1" value="100"/);
     assert.match(html, /const selectedGain = Math\.min\(3, boostGain \* volumeGain\)/);
-    assert.match(html, /micGainEl\.value = "50"/);
+    assert.match(html, /micGainEl\.value = "100"/);
 });
 
-test("audio-processing controls expose four levels with tested defaults", () => {
+test("audio-processing controls expose current GTCRN blend and firmware levels", () => {
+    assert.match(html, /id="gtcrnEnabled" type="checkbox"/);
+    assert.doesNotMatch(html, /id="gtcrnEnabled" type="checkbox" checked/);
+    assert.match(html, /id="gtcrnBlend" type="range" min="0" max="100" step="1" value="15" disabled/);
+    assert.match(html, /gtcrnEnabledEl/);
+    assert.match(html, /control\.enabled\.addEventListener\("change"/);
     for (const [id, selected] of [
-        ["gtcrnLevel", "medium"],
         ["firmwareNoiseSuppression", "off"],
         ["firmwareVad", "medium"],
         ["firmwareLimiter", "low"],
@@ -79,7 +84,7 @@ test("audio-processing controls expose four levels with tested defaults", () => 
     assert.match(html, /noise_suppression_level: firmwareNoiseSuppressionEl\.value/);
     assert.match(html, /vad_level: firmwareVadEl\.value/);
     assert.match(html, /limiter_level: firmwareLimiterEl\.value/);
-    assert.match(html, /gtcrnLevelEl\.addEventListener\("change"/);
+    assert.match(html, /gtcrnBlendEl/);
 });
 
 test("play timer stays hidden while waiting and accumulates only actual playback", () => {
@@ -143,4 +148,82 @@ test("play timer stays hidden while waiting and accumulates only actual playback
         const handler = html.match(new RegExp(`audioEl\\.addEventListener\\("${event}",[\\s\\S]{0,180}?\\n\\}\\);`));
         assert.ok(handler && handler[0].includes("stopListeningTimer()"), `${event} should hide/pause the play timer`);
     }
+});
+
+test("health score uses a successful, recent snapshot for the selected device", () => {
+    const scoreFunction = html.match(/^function updateDeviceHealthScore\(device, telemetry, fresh\) \{[\s\S]*?^\}/m);
+    assert.ok(scoreFunction, "device health score function must exist");
+    const classes = new Set();
+    const elements = {
+        healthScoreCard: { classList: {
+            add: (...names) => names.forEach((name) => classes.add(name)),
+            remove: (...names) => names.forEach((name) => classes.delete(name)),
+            contains: (name) => classes.has(name),
+        } },
+        healthScoreValue: { textContent: "" },
+        healthScoreReasons: { textContent: "" },
+    };
+    const context = vm.createContext({
+        document: { getElementById: (id) => elements[id] || null },
+        selectedDeviceId: "SNF-S3-Mic",
+        latestHealthSnapshot: { uptime_ms: 900000, free_internal_heap: 50000 },
+        latestHealthSnapshotAt: Date.now(),
+        latestHealthSnapshotDeviceId: "SNF-S3-Mic",
+        latestHealthSnapshotFailure: null,
+        previousTransportHealthDeviceId: "",
+        previousTransportHealthState: null,
+        latestActiveTransportDropObservation: null,
+        previousHealthHeapByDevice: new Map(),
+        activeTransportDropDelta: () => ({ dropped: 0, state: { peerConnected: false } }),
+        formatBytes: (value) => `${value} B`,
+        lastHealthScoreLogKey: "",
+        addLog: () => {},
+    });
+    vm.runInContext(scoreFunction[0], context);
+    vm.runInContext("updateDeviceHealthScore({ device_connected: true }, null, false)", context);
+
+    assert.equal(elements.healthScoreValue.textContent, "100/100 · healthy");
+    assert.equal(classes.has("healthy"), true);
+    assert.match(elements.healthScoreReasons.textContent, /No measured reliability warnings/);
+});
+
+test("health score stays unavailable without fresh measurements or for another device's snapshot", () => {
+    const scoreFunction = html.match(/^function updateDeviceHealthScore\(device, telemetry, fresh\) \{[\s\S]*?^\}/m);
+    assert.ok(scoreFunction, "device health score function must exist");
+    const classes = new Set();
+    const elements = {
+        healthScoreCard: { classList: {
+            add: (...names) => names.forEach((name) => classes.add(name)),
+            remove: (...names) => names.forEach((name) => classes.delete(name)),
+        } },
+        healthScoreValue: { textContent: "" },
+        healthScoreReasons: { textContent: "" },
+    };
+    const context = vm.createContext({
+        document: { getElementById: (id) => elements[id] || null },
+        selectedDeviceId: "SNF-S3-Mic",
+        latestHealthSnapshot: { uptime_ms: 900000, free_internal_heap: 50000 },
+        latestHealthSnapshotAt: Date.now(),
+        latestHealthSnapshotDeviceId: "another-device",
+        latestHealthSnapshotFailure: null,
+        previousTransportHealthDeviceId: "",
+        previousTransportHealthState: null,
+        latestActiveTransportDropObservation: null,
+        previousHealthHeapByDevice: new Map(),
+        activeTransportDropDelta: () => ({ dropped: 0, state: { peerConnected: false } }),
+        formatBytes: (value) => `${value} B`,
+        lastHealthScoreLogKey: "",
+        addLog: () => {},
+    });
+    vm.runInContext(scoreFunction[0], context);
+    vm.runInContext("updateDeviceHealthScore({ device_connected: true }, null, false)", context);
+
+    assert.equal(elements.healthScoreValue.textContent, "Unavailable");
+    assert.equal(classes.has("unavailable"), true);
+    assert.match(elements.healthScoreReasons.textContent, /fresh firmware telemetry is missing/i);
+});
+
+test("full health check reports firmware snapshot failures instead of claiming no failures", () => {
+    assert.match(html, /firmware health data was unavailable[\s\S]{0,180}no numeric device score is calculated/);
+    assert.match(html, /firmware snapshot unavailable/);
 });
