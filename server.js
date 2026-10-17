@@ -2,26 +2,97 @@ const express = require("express");
 const http = require("http");
 const WebSocket = require("ws");
 const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
+const { createWebRtcSignaling } = require("./webrtc_signaling");
+const { createAuthState, constantTimeStringEqual } = require("./auth_state");
+const { getClientIp } = require("./client_ip");
+const { isSameOriginRequest } = require("./request_security");
+const { addListenerWithinLimit } = require("./listener_capacity");
+const { hasValidListenerSession } = require("./listener_auth");
+const { createDeviceCredentialRegistry, isValidDeviceId } = require("./device_registry");
 
 const PORT = process.env.PORT || 10000;
 
 const SOURCE_TOKEN = process.env.SOURCE_TOKEN || "";
+const DEVICE_CREDENTIALS_JSON = process.env.DEVICE_CREDENTIALS_JSON || "";
 const LISTENER_PIN = process.env.LISTENER_PIN || "";
+const MAX_CONFIGURED_DEVICES = process.env.MAX_CONFIGURED_DEVICES === undefined
+    ? 16
+    : Number(process.env.MAX_CONFIGURED_DEVICES);
+const deviceCredentialRegistry = createDeviceCredentialRegistry({
+    sourceToken: SOURCE_TOKEN,
+    deviceCredentialsJson: DEVICE_CREDENTIALS_JSON,
+    maxDevices: MAX_CONFIGURED_DEVICES,
+});
 
 const SESSION_COOKIE_NAME = "esp32_listener_session";
 const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
+const SESSION_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+const SESSION_TIMEOUT_OPTIONS_MINUTES = new Set([0, 30, 60, 120, 1440]);
+const SESSION_NEVER_COOKIE_MAX_AGE_SECONDS = 5 * 365 * 24 * 60 * 60;
+const MAX_SESSIONS = 4096;
+const MAX_WEBSOCKET_CLIENTS = 64;
+const MAX_LEGACY_LISTENERS = 4;
 
-const WS_CLIENT_PING_MS            = 45000;
-const DEVICE_HEARTBEAT_INTERVAL_MS = 5000;
+const WS_CLIENT_PING_MS            = 5000;
+const WS_CLIENT_PONG_TIMEOUT_MS    = 15000;
+const DEVICE_HEARTBEAT_INTERVAL_MS = 2000;
 const DEVICE_HEARTBEAT_TIMEOUT_MS  = 60000;
+const LISTENER_PONG_TIMEOUT_MS     = 15000;
 const SOURCE_KEEPALIVE_MS          = 60000;
 
 const app = express();
 const server = http.createServer(app);
 
 app.use(express.json({ limit: "4kb" }));
+app.use("/audio-suppressor/custom", requireHttps, express.static(
+    path.join(__dirname, "audio-suppressor"),
+    { fallthrough: false, index: false, maxAge: "1h" }
+));
+app.use("/audio-suppressor", requireHttps, express.static(
+    path.join(__dirname, "node_modules", "@sapphi-red", "web-noise-suppressor", "dist"),
+    { fallthrough: false, index: false, maxAge: "1h" }
+));
+const dtlnDistPath = path.join(__dirname, "node_modules", "@workadventure", "noise-suppression", "dist");
+const dtlnEntrySource = fs.readFileSync(path.join(dtlnDistPath, "index.js"), "utf8");
+const dtlnFftSource = fs.readFileSync(require.resolve("fft.js"), "utf8");
+const dtlnWorkletUrlFileName = fs.readdirSync(dtlnDistPath).find((file) =>
+    /^audio-worklet-dev-module-url-[\w-]+\.js$/.test(file));
+if (!dtlnWorkletUrlFileName) {
+    throw new Error("Could not locate the DTLN browser worklet URL module.");
+}
+const dtlnWorkletUrlSource = fs.readFileSync(path.join(dtlnDistPath, dtlnWorkletUrlFileName), "utf8");
+const dtlnBrowserEntry = dtlnEntrySource.replace('from "fft.js";', 'from "/audio-enhancement/dtln-fft.js";');
+const dtlnBrowserFft = dtlnFftSource.replace("module.exports = FFT;", "export default FFT;");
+const dtlnBrowserWorkletUrlSource = dtlnWorkletUrlSource.replace(
+    // The package's development URL is rooted at /node_modules, which this app does not expose.
+    '"/node_modules/@workadventure/noise-suppression/dist/assets/audio-worklet-processor.js"',
+    '"/audio-enhancement/dtln/assets/audio-worklet-processor.js"'
+);
+if (dtlnBrowserEntry === dtlnEntrySource || dtlnBrowserFft === dtlnFftSource
+    || dtlnBrowserWorkletUrlSource === dtlnWorkletUrlSource) {
+    throw new Error("Could not prepare the DTLN browser ESM modules for the pinned package versions.");
+}
+app.get("/audio-enhancement/dtln/index.js", requireHttps, (_req, res) => {
+    res.type("application/javascript").set("Cache-Control", "public, max-age=3600").send(dtlnBrowserEntry);
+});
+app.get(`/audio-enhancement/dtln/${dtlnWorkletUrlFileName}`, requireHttps, (_req, res) => {
+    res.type("application/javascript").set("Cache-Control", "no-cache").send(dtlnBrowserWorkletUrlSource);
+});
+app.get("/audio-enhancement/dtln-fft.js", requireHttps, (_req, res) => {
+    res.type("application/javascript").set("Cache-Control", "public, max-age=3600").send(dtlnBrowserFft);
+});
+app.use("/audio-enhancement/deepfilternet", requireHttps, express.static(
+    path.join(__dirname, "node_modules", "@lofcz", "deepfilternet-web", "dist"),
+    { fallthrough: false, index: false, maxAge: "1h" }
+));
+app.use("/audio-enhancement/dtln", requireHttps, express.static(
+    dtlnDistPath,
+    { fallthrough: false, index: false, maxAge: "1h" }
+));
 
-if (!SOURCE_TOKEN) console.error("ERROR: SOURCE_TOKEN not set.");
+if (!SOURCE_TOKEN && !DEVICE_CREDENTIALS_JSON) console.error("ERROR: No WebRTC device credentials configured.");
 if (!LISTENER_PIN) console.error("ERROR: LISTENER_PIN not set.");
 
 process.on("uncaughtException", (err) => {
@@ -32,55 +103,38 @@ process.on("unhandledRejection", (reason) => {
     console.error("UNHANDLED REJECTION:", reason);
 });
 
-const sessions = new Map();
-const authAttempts = new Map();
 const AUTH_WINDOW_MS = 15 * 60 * 1000;
 const AUTH_MAX_ATTEMPTS = 10;
+const MAX_TRACKED_AUTH_IPS = 8192;
+const authState = createAuthState({
+    sessionDurationMs: SESSION_DURATION_MS,
+    sessionIdleDurationMs: SESSION_IDLE_TIMEOUT_MS,
+    authWindowMs: AUTH_WINDOW_MS,
+    authMaxAttempts: AUTH_MAX_ATTEMPTS,
+    maxSessions: MAX_SESSIONS,
+    maxTrackedIps: MAX_TRACKED_AUTH_IPS,
+});
 
 const healthRequests = new Map();
 const HEALTH_REQUEST_TIMEOUT_MS = 5000;
 let healthRequestCounter = 0;
+const deviceHealthRequests = new Map();
+const DEVICE_HEALTH_REQUEST_TIMEOUT_MS = 6000;
+const MAX_PENDING_DEVICE_HEALTH_REQUESTS = 4;
+const DEVICE_HEALTH_REQUEST_COOLDOWN_MS = 2000;
+const deviceHealthRequestAt = new Map();
+
+function completeDeviceHealthRequest(deviceId, requestId, data) {
+    const pending = deviceHealthRequests.get(requestId);
+    if (!pending || pending.deviceId !== deviceId) return;
+    clearTimeout(pending.timeout);
+    deviceHealthRequests.delete(requestId);
+    pending.resolve({ data, checked_at: new Date().toISOString() });
+}
 
 let lastAudioSequence = null;
 let audioSequenceGaps = 0;
 let audioFramesReceived = 0;
-
-function getClientIp(req) {
-    const forwarded = req.headers["x-forwarded-for"];
-    if (forwarded) return forwarded.split(",")[0].trim();
-    return req.socket.remoteAddress || "unknown";
-}
-
-function isAuthRateLimited(ip) {
-    const now = Date.now();
-    const entry = authAttempts.get(ip);
-    if (!entry || now - entry.windowStart >= AUTH_WINDOW_MS) {
-        authAttempts.set(ip, { windowStart: now, attempts: 0 });
-        return false;
-    }
-    return entry.attempts >= AUTH_MAX_ATTEMPTS;
-}
-
-function recordAuthAttempt(ip) {
-    const now = Date.now();
-    const entry = authAttempts.get(ip);
-    if (!entry || now - entry.windowStart >= AUTH_WINDOW_MS) {
-        authAttempts.set(ip, { windowStart: now, attempts: 1 });
-        return;
-    }
-    entry.attempts++;
-}
-
-function clearAuthAttempts(ip) { authAttempts.delete(ip); }
-
-function createSession() {
-    const sessionId = crypto.randomBytes(32).toString("hex");
-    sessions.set(sessionId, {
-        createdAt: Date.now(),
-        expiresAt: Date.now() + SESSION_DURATION_MS
-    });
-    return sessionId;
-}
 
 function getCookie(req, name) {
     const cookieHeader = req.headers.cookie;
@@ -99,14 +153,7 @@ function getCookie(req, name) {
 
 function getSession(req) {
     const sessionId = getCookie(req, SESSION_COOKIE_NAME);
-    if (!sessionId) return null;
-    const session = sessions.get(sessionId);
-    if (!session) return null;
-    if (Date.now() > session.expiresAt) {
-        sessions.delete(sessionId);
-        return null;
-    }
-    return session;
+    return authState.getSession(sessionId);
 }
 
 function isAuthenticatedRequest(req) { return !!getSession(req); }
@@ -117,6 +164,15 @@ const wss = new WebSocket.Server({
     maxPayload: 16384,
     perMessageDeflate: false,
     clientTracking: true
+});
+const webrtcSignaling = createWebRtcSignaling({
+    WebSocket,
+    deviceRegistry: deviceCredentialRegistry,
+    isListenerSessionValid: (ws) => ws.sessionAuthenticated &&
+        typeof ws.sessionValid === "function" && ws.sessionValid(),
+    isListenerAuthorizedForDevice: (ws) => ws.sessionAuthenticated &&
+        typeof ws.sessionValid === "function" && ws.sessionValid(),
+    onHealthCheckResponse: completeDeviceHealthRequest,
 });
 
 const listeners = new Set();
@@ -188,41 +244,112 @@ function requireHttps(req, res, next) {
     return res.redirect(`https://${host}${req.originalUrl}`);
 }
 
+function requireSameOrigin(req, res, next) {
+    if (isSameOriginRequest(req)) return next();
+    return res.status(403).json({ ok: false, error: "Invalid origin" });
+}
+
 app.get("/", requireHttps, (req, res) => {
-    if (isAuthenticatedRequest(req)) return res.redirect("/listener");
-    res.sendFile(__dirname + "/index.html");
+    if (isAuthenticatedRequest(req)) return res.redirect("/phase5-listener");
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.sendFile("index.html", { root: __dirname });
 });
 
 app.get("/health", (req, res) => res.status(200).send("OK"));
 
-app.post("/api/auth", requireHttps, (req, res) => {
+app.post("/api/auth", requireHttps, requireSameOrigin, (req, res) => {
     const clientIp = getClientIp(req);
-    if (isAuthRateLimited(clientIp)) {
+    if (authState.isAuthRateLimited(clientIp)) {
         return res.status(429).json({ ok: false, error: "Too many attempts." });
     }
     const { pin } = req.body || {};
-    if (!LISTENER_PIN || typeof pin !== "string" || pin !== LISTENER_PIN) {
-        recordAuthAttempt(clientIp);
+    if (!LISTENER_PIN || !constantTimeStringEqual(LISTENER_PIN, pin)) {
+        authState.recordAuthAttempt(clientIp);
         return res.status(401).json({ ok: false, error: "Invalid PIN" });
     }
-    clearAuthAttempts(clientIp);
-    const sessionId = createSession();
+    authState.clearAuthAttempts(clientIp);
+    const sessionId = authState.createSession();
     res.setHeader("Set-Cookie",
         `${SESSION_COOKIE_NAME}=${encodeURIComponent(sessionId)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${Math.floor(SESSION_DURATION_MS / 1000)}`);
     return res.json({ ok: true });
 });
 
-app.post("/api/logout", requireHttps, (req, res) => {
+app.post("/api/logout", requireHttps, requireSameOrigin, (req, res) => {
     const sessionId = getCookie(req, SESSION_COOKIE_NAME);
-    if (sessionId) sessions.delete(sessionId);
+    if (sessionId) authState.deleteSession(sessionId);
     res.setHeader("Set-Cookie",
         `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`);
     res.json({ ok: true });
 });
 
+app.post("/api/session/activity", requireHttps, requireSameOrigin, (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    const sessionId = getCookie(req, SESSION_COOKIE_NAME);
+    if (!authState.touchSession(sessionId)) {
+        return res.status(401).json({ ok: false, error: "Session expired" });
+    }
+    const session = authState.getSession(sessionId);
+    return res.json({
+        ok: true,
+        timeout_minutes: session.timeoutMinutes,
+        idle_expires_at_ms: session.idleTimeoutMs === 0 ? null : session.expiresAt,
+    });
+});
+
+app.get("/api/session/settings", requireHttps, (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    const session = getSession(req);
+    if (!session) return res.status(401).json({ ok: false, error: "Unauthorized" });
+    return res.json({
+        ok: true,
+        timeout_minutes: session.timeoutMinutes ?? 30,
+        idle_expires_at_ms: session.idleTimeoutMs === 0 ? null : session.expiresAt,
+    });
+});
+
+app.post("/api/session/timeout", requireHttps, requireSameOrigin, (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    const sessionId = getCookie(req, SESSION_COOKIE_NAME);
+    const timeoutMinutes = req.body && req.body.timeout_minutes;
+    if (!getSession(req)) return res.status(401).json({ ok: false, error: "Unauthorized" });
+    if (!Number.isSafeInteger(timeoutMinutes) ||
+        !SESSION_TIMEOUT_OPTIONS_MINUTES.has(timeoutMinutes)) {
+        return res.status(400).json({ ok: false, error: "Invalid session timeout" });
+    }
+    if (!authState.setSessionTimeout(sessionId, timeoutMinutes)) {
+        return res.status(401).json({ ok: false, error: "Session expired" });
+    }
+    const maxAgeSeconds = timeoutMinutes === 0
+        ? SESSION_NEVER_COOKIE_MAX_AGE_SECONDS
+        : Math.floor(SESSION_DURATION_MS / 1000);
+    res.setHeader("Set-Cookie",
+        `${SESSION_COOKIE_NAME}=${encodeURIComponent(sessionId)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAgeSeconds}`);
+    const session = authState.getSession(sessionId);
+    return res.json({
+        ok: true,
+        timeout_minutes: timeoutMinutes,
+        idle_expires_at_ms: session && session.idleTimeoutMs !== 0 ? session.expiresAt : null,
+    });
+});
+
+app.get("/session-activity.js", requireHttps, (req, res) => {
+    res.setHeader("Cache-Control", "no-cache");
+    res.type("application/javascript").sendFile(path.join(__dirname, "session-activity.js"));
+});
+
 app.get("/listener", requireHttps, (req, res) => {
     if (!isAuthenticatedRequest(req)) return res.redirect("/");
-    res.sendFile(__dirname + "/listener.html");
+    return res.redirect("/phase5-listener");
+});
+
+app.get("/phase5-listener", requireHttps, (req, res) => {
+    if (!isAuthenticatedRequest(req)) return res.redirect("/");
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.sendFile("webrtc-listener.html", { root: __dirname });
 });
 
 app.get("/api/device-status", requireHttps, (req, res) => {
@@ -230,6 +357,103 @@ app.get("/api/device-status", requireHttps, (req, res) => {
         return res.status(401).json({ ok: false, error: "Unauthorized" });
     }
     res.json(buildDeviceStatus());
+});
+
+app.get("/api/webrtc/device-status", requireHttps, (req, res) => {
+    if (!isAuthenticatedRequest(req)) {
+        return res.status(401).json({ ok: false, error: "Unauthorized" });
+    }
+    res.setHeader("Cache-Control", "no-store");
+    const status = webrtcSignaling.getStatus();
+    return res.json({
+        online: status.device_connected,
+        ready: status.device_connected,
+        session_active: status.session_active,
+        listener_connected: status.listener_connected,
+        telemetry: status.telemetry,
+        telemetry_updated_at: status.telemetry_updated_at
+    });
+});
+
+app.get("/api/webrtc-status", requireHttps, (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    if (!isAuthenticatedRequest(req)) {
+        return res.status(401).json({ ok: false, error: "Unauthorized" });
+    }
+    return res.json({ ok: true, transport: "webrtc", ...webrtcSignaling.getStatus() });
+});
+
+app.get("/api/devices", requireHttps, (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    if (!isAuthenticatedRequest(req)) {
+        return res.status(401).json({ ok: false, error: "Unauthorized" });
+    }
+    return res.json({ ok: true, devices: webrtcSignaling.getStatuses() });
+});
+
+app.get("/api/devices/:deviceId/status", requireHttps, (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    if (!isAuthenticatedRequest(req)) {
+        return res.status(401).json({ ok: false, error: "Unauthorized" });
+    }
+    const deviceId = req.params.deviceId;
+    if (!isValidDeviceId(deviceId)) {
+        return res.status(400).json({ ok: false, error: "Invalid device ID" });
+    }
+    const status = webrtcSignaling.getStatus(deviceId);
+    if (!status) return res.status(404).json({ ok: false, error: "Unknown device" });
+    return res.json({ ok: true, device_id: deviceId, ...status });
+});
+
+app.post("/api/devices/:deviceId/health-check", requireHttps, requireSameOrigin, async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    if (!isAuthenticatedRequest(req)) {
+        return res.status(401).json({ ok: false, error: "Unauthorized" });
+    }
+    const deviceId = req.params.deviceId;
+    if (!isValidDeviceId(deviceId)) {
+        return res.status(400).json({ ok: false, error: "Invalid device ID" });
+    }
+    const current = webrtcSignaling.getStatus(deviceId);
+    if (!current || current.device_connected !== true) {
+        return res.status(503).json({ ok: false, error: "Device is offline" });
+    }
+    if (deviceHealthRequests.size >= MAX_PENDING_DEVICE_HEALTH_REQUESTS) {
+        return res.status(429).json({ ok: false, error: "Health check capacity reached" });
+    }
+    const now = Date.now();
+    const lastRequestAt = deviceHealthRequestAt.get(deviceId) || 0;
+    if (now - lastRequestAt < DEVICE_HEALTH_REQUEST_COOLDOWN_MS) {
+        return res.status(429).json({ ok: false, error: "Please wait before running another device health check" });
+    }
+    deviceHealthRequestAt.set(deviceId, now);
+
+    const requestId = crypto.randomUUID().replace(/-/g, "");
+    let resolvePending;
+    const responsePromise = new Promise((resolve) => { resolvePending = resolve; });
+    const timeout = setTimeout(() => {
+        deviceHealthRequests.delete(requestId);
+        resolvePending(null);
+    }, DEVICE_HEALTH_REQUEST_TIMEOUT_MS);
+    deviceHealthRequests.set(requestId, { deviceId, timeout, resolve: resolvePending });
+
+    if (!webrtcSignaling.requestDeviceHealth(deviceId, requestId)) {
+        clearTimeout(timeout);
+        deviceHealthRequests.delete(requestId);
+        return res.status(503).json({ ok: false, error: "Device health request could not be sent" });
+    }
+
+    const result = await responsePromise;
+    if (!result) {
+        return res.status(504).json({ ok: false, error: "Device health check timed out" });
+    }
+    return res.json({
+        ok: true,
+        device_id: deviceId,
+        request_id: requestId,
+        checked_at: result.checked_at,
+        data: result.data,
+    });
 });
 
 app.get("/api/esp32-health", requireHttps, async (req, res) => {
@@ -257,7 +481,7 @@ app.get("/api/esp32-health", requireHttps, async (req, res) => {
     }
 });
 
-app.post("/api/esp32/reboot", requireHttps, (req, res) => {
+app.post("/api/esp32/reboot", requireHttps, requireSameOrigin, (req, res) => {
     if (!isAuthenticatedRequest(req)) {
         return res.status(401).json({ ok: false, error: "Unauthorized" });
     }
@@ -276,7 +500,7 @@ app.post("/api/esp32/reboot", requireHttps, (req, res) => {
     return res.json({ ok: true, source_connected: forwarded });
 });
 
-app.post("/api/esp32/forget-wifi", requireHttps, (req, res) => {
+app.post("/api/esp32/forget-wifi", requireHttps, requireSameOrigin, (req, res) => {
     if (!isAuthenticatedRequest(req)) {
         return res.status(401).json({ ok: false, error: "Unauthorized" });
     }
@@ -295,16 +519,27 @@ app.post("/api/esp32/forget-wifi", requireHttps, (req, res) => {
 wss.on("connection", (ws, req) => {
     const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown";
 
+    if (wss.clients.size > MAX_WEBSOCKET_CLIENTS) {
+        try { ws.close(1013, "Server connection capacity reached"); } catch {}
+        return;
+    }
+    if (getCookie(req, SESSION_COOKIE_NAME) && !isSameOriginRequest(req)) {
+        try { ws.close(1008, "Invalid listener origin"); } catch {}
+        return;
+    }
+
     if (ws._socket && typeof ws._socket.setNoDelay === "function") ws._socket.setNoDelay(true);
     if (ws._socket && typeof ws._socket.setKeepAlive === "function") ws._socket.setKeepAlive(true, 30000);
 
     ws.role = "unknown";
     ws.authenticated = false;
+    ws.sessionValid = () => !!getSession(req);
     ws.sessionAuthenticated = !!getSession(req);
     ws.isAlive = true;
     ws.pingOutstanding = false;
     ws.pingSentAt = 0;
     ws.connectedAt = Date.now();
+    ws.lastPongAt = ws.connectedAt;
 
     console.log(`WS connected: ${ip}`);
 
@@ -312,10 +547,11 @@ wss.on("connection", (ws, req) => {
         ws.isAlive = true;
         ws.pingOutstanding = false;
         ws.pingSentAt = 0;
+        ws.lastPongAt = Date.now();
     });
 
     ws.pingTimer = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) {
+        if (ws.readyState === WebSocket.OPEN && !ws.pingOutstanding) {
             try {
                 ws.pingOutstanding = true;
                 ws.pingSentAt = Date.now();
@@ -329,7 +565,13 @@ wss.on("connection", (ws, req) => {
     sendJson(ws, { type: "welcome", message: "ESP32 INMP441 Relay connected" });
 
     ws.on("message", (data, isBinary) => {
+        if (ws.role === "listener" && !hasValidListenerSession(ws)) {
+            sendJson(ws, { type: "auth_failed", reason: "session_expired" });
+            try { ws.close(1008, "Listener session expired"); } catch {}
+            return;
+        }
         if (isBinary) {
+            if (webrtcSignaling.handleBinary(ws)) return;
             if (ws.role !== "source" || !ws.authenticated) return;
             const frame = Buffer.isBuffer(data) ? data : Buffer.from(data);
             if (frame.length < 16 ||
@@ -340,8 +582,21 @@ wss.on("connection", (ws, req) => {
                 return;
             }
             const frameSamples = frame.readUInt16LE(6);
-            if (frameSamples === 0 || frameSamples > 2048 ||
-                frame.length !== 16 + frameSamples * 3) {
+            if (frameSamples === 0 || frameSamples > 2048) {
+                console.warn(`Rejected invalid ESP32 frame sample count: ${frameSamples}`);
+                return;
+            }
+            let forwardFrame = frame;
+            if (frame.length === 16 + frameSamples * 2) {
+                // Legacy ESP32 firmware sends signed PCM16. The existing browser
+                // listener decodes PCM24, so expand each sample without changing
+                // its amplitude or the 16-byte frame header.
+                forwardFrame = Buffer.allocUnsafe(16 + frameSamples * 3);
+                frame.copy(forwardFrame, 0, 0, 16);
+                for (let i = 0; i < frameSamples; i++) {
+                    forwardFrame.writeIntLE(frame.readInt16LE(16 + i * 2) * 256, 16 + i * 3, 3);
+                }
+            } else if (frame.length !== 16 + frameSamples * 3) {
                 console.warn(`Rejected invalid ESP32 frame length: ${frame.length}`);
                 return;
             }
@@ -372,7 +627,7 @@ wss.on("connection", (ws, req) => {
                         try { listener.terminate(); } catch {}
                         continue;
                     }
-                    try { listener.send(data, { binary: true }); }
+                    try { listener.send(forwardFrame, { binary: true }); }
                     catch (err) {
                         console.warn(`Audio forward error: ${err.message}`);
                         try { listener.terminate(); } catch {}
@@ -385,6 +640,8 @@ wss.on("connection", (ws, req) => {
         let message;
         try { message = JSON.parse(data.toString()); }
         catch { console.log("Rejected invalid JSON WS message."); return; }
+
+        if (webrtcSignaling.handleMessage(ws, message)) return;
 
         if (message.type === "health_response" &&
             ws.role === "source" && ws.authenticated) {
@@ -399,7 +656,7 @@ wss.on("connection", (ws, req) => {
 
         if (message.type === "hello") {
             if (message.device !== "ESP32-S3-INMP441" ||
-                !SOURCE_TOKEN || message.source_token !== SOURCE_TOKEN) {
+                !SOURCE_TOKEN || !constantTimeStringEqual(SOURCE_TOKEN, message.source_token)) {
                 console.log("Rejected unauthorized ESP32 source.");
                 sendJson(ws, { type: "auth_failed" });
                 try { ws.close(1008); } catch {}
@@ -442,15 +699,19 @@ wss.on("connection", (ws, req) => {
         }
 
         if (message.type === "listener") {
-            if (!ws.sessionAuthenticated) {
+            if (!ws.sessionAuthenticated || typeof ws.sessionValid !== "function" || !ws.sessionValid()) {
                 console.log("Rejected listener without session.");
                 sendJson(ws, { type: "auth_failed", reason: "session_required" });
                 try { ws.close(1008); } catch {}
                 return;
             }
+            if (!addListenerWithinLimit(listeners, ws, MAX_LEGACY_LISTENERS)) {
+                sendJson(ws, { type: "auth_failed", reason: "listener_limit" });
+                try { ws.close(1013, "Listener capacity reached"); } catch {}
+                return;
+            }
             ws.role = "listener";
             ws.authenticated = true;
-            listeners.add(ws);
             console.log(`Listener authenticated. Active listeners: ${listeners.size}`);
             sendJson(ws, {
                 type: "listener_ready",
@@ -494,6 +755,25 @@ wss.on("connection", (ws, req) => {
             return;
         }
 
+        if (message.type === "rgb_led_set") {
+            if (ws.role !== "listener" || !ws.authenticated ||
+                typeof message.enabled !== "boolean") return;
+            let forwarded = false;
+            for (const source of sources) {
+                if (source.readyState === WebSocket.OPEN &&
+                    source.role === "source" && source.authenticated) {
+                    sendJson(source, { type: "rgb_led_set", enabled: message.enabled });
+                    forwarded = true;
+                }
+            }
+            sendJson(ws, {
+                type: "rgb_led_set_result",
+                enabled: message.enabled,
+                source_connected: forwarded
+            });
+            return;
+        }
+
         if (message.type === "forget_wifi") {
             if (ws.role !== "listener" || !ws.authenticated) return;
             console.log("Listener requested ESP32 Wi-Fi reset.");
@@ -511,6 +791,7 @@ wss.on("connection", (ws, req) => {
     });
 
     ws.on("close", (code, reason) => {
+        webrtcSignaling.handleClose(ws);
         console.log(
             `WS closed from ${ip}: code=${code}, reason=${reason.toString() || "(none)"}, ` +
             `role=${ws.role}, authenticated=${ws.authenticated}, ` +
@@ -551,11 +832,16 @@ const heartbeat = setInterval(() => {
         if (ws.readyState !== WebSocket.OPEN) return;
         if (ws.pingOutstanding && ws.pingSentAt > 0) {
             const elapsed = now - ws.pingSentAt;
-            if (elapsed > DEVICE_HEARTBEAT_TIMEOUT_MS) {
+            const timeout = ws.role === "listener" || ws.role === "webrtc_listener"
+                ? LISTENER_PONG_TIMEOUT_MS
+                : WS_CLIENT_PONG_TIMEOUT_MS;
+            if (elapsed > timeout) {
                 console.log(
                     `Terminating dead WS (no pong in ${Math.floor(elapsed / 1000)}s): ` +
                     `role=${ws.role || "unknown"}`
                 );
+                // Clear signaling presence synchronously; the socket close event is async.
+                webrtcSignaling.handleClose(ws);
                 try { ws.terminate(); } catch {}
             }
         }
@@ -584,14 +870,19 @@ const sourceKeepalive = setInterval(() => {
 }, SOURCE_KEEPALIVE_MS);
 
 const sessionCleanup = setInterval(() => {
-    const now = Date.now();
-    for (const [sessionId, session] of sessions) {
-        if (now > session.expiresAt) sessions.delete(sessionId);
+    authState.cleanup();
+    for (const ws of wss.clients) {
+        if (!ws.sessionAuthenticated || typeof ws.sessionValid !== "function" || ws.sessionValid()) continue;
+        if (ws.role === "listener") {
+            sendJson(ws, { type: "auth_failed", reason: "session_expired" });
+        } else if (ws.role === "webrtc_listener") {
+            sendJson(ws, { type: "webrtc_error", reason: "listener_session_expired" });
+        } else {
+            continue;
+        }
+        try { ws.close(1008, "Listener session expired"); } catch {}
     }
-    for (const [ip, entry] of authAttempts) {
-        if (now - entry.windowStart >= AUTH_WINDOW_MS) authAttempts.delete(ip);
-    }
-}, 15 * 60 * 1000);
+}, 60 * 1000);
 
 server.on("close", () => {
     clearInterval(heartbeat);
@@ -603,7 +894,7 @@ server.listen(PORT, "0.0.0.0", () => {
     console.log(`HTTP/WS server on port ${PORT}`);
     console.log(`SOURCE_TOKEN: ${SOURCE_TOKEN ? "YES" : "NO"}`);
     console.log(`LISTENER_PIN: ${LISTENER_PIN ? "YES" : "NO"}`);
-    console.log(`Device heartbeat check: every ${DEVICE_HEARTBEAT_INTERVAL_MS / 1000}s, timeout ${DEVICE_HEARTBEAT_TIMEOUT_MS / 1000}s`);
-    console.log(`Per-connection WS ping: every ${WS_CLIENT_PING_MS / 1000}s (ONLY ping mechanism)`);
+    console.log(`Device heartbeat check: every ${DEVICE_HEARTBEAT_INTERVAL_MS / 1000}s, application timeout ${DEVICE_HEARTBEAT_TIMEOUT_MS / 1000}s`);
+    console.log(`Per-connection WS ping: every ${WS_CLIENT_PING_MS / 1000}s, pong timeout ${WS_CLIENT_PONG_TIMEOUT_MS / 1000}s`);
     console.log(`Server->ESP32 JSON keepalive: every ${SOURCE_KEEPALIVE_MS / 1000}s`);
 });

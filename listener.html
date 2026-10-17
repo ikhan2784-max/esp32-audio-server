@@ -2,967 +2,2800 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ESP32 INMP441 Listener</title>
-
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0a0f1a">
+<title>ESP32 INMP441 · Live Audio Listener</title>
 <style>
-:root{--bg:#0b0f14;--card:#151b23;--card2:#10161d;--border:#28313d;--text:#f2f5f8;--muted:#9aa7b5;--green:#35d07f;--red:#ff5d67;--yellow:#f5c451;--blue:#5aa7ff;}
-*{box-sizing:border-box}
-body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text);}
-.container{width:min(1200px,calc(100% - 28px));margin:24px auto 50px;}
-h1{margin:0 0 5px;font-size:30px;}
-.subtitle{color:var(--muted);margin-bottom:22px;}
-.section{margin-top:18px;padding:20px;background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.18);}
-.section-title{font-size:18px;font-weight:700;margin-bottom:16px;}
-.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}
-.card{background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:14px;min-height:76px;}
-.label{color:var(--muted);font-size:13px;margin-bottom:8px;}
-.value{font-size:18px;font-weight:700;word-break:break-word;}
-.online{color:var(--green)}
-.offline{color:var(--red)}
-.ok{color:var(--green)}
-.idle{color:var(--muted)}
-.statusbar{margin-top:12px;padding:13px 15px;border-radius:10px;background:var(--card2);border:1px solid var(--border);color:var(--muted);}
-button{border:0;border-radius:9px;padding:12px 18px;margin:6px 8px 0 0;font-size:16px;font-weight:700;cursor:pointer;background:var(--blue);color:white;}
-button.secondary{background:#303b49;}
-button.danger{background:#b8323c;}
-button:disabled{opacity:.45;cursor:not-allowed;}
-input[type=password]{width:100%;padding:13px;border-radius:9px;border:1px solid var(--border);background:#0c1117;color:white;font-size:17px;}
-input[type=range]{width:100%;accent-color:var(--blue);}
-.volume-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
-.volume-value{font-size:20px;font-weight:700;}
-#meter{width:100%;height:22px;background:#29313b;border-radius:11px;overflow:hidden;margin-top:10px;}
-#level{width:0%;height:100%;background:var(--green);transition:width .05s;}
-.record-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;}
-.record-box{background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:14px;}
-.record-value{margin-top:8px;font-weight:700;}
-.small{color:var(--muted);font-size:13px;line-height:1.5;}
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
-/* Side-by-side layout */
-.split{
-  display:grid;
-  grid-template-columns:1fr 1fr;
-  gap:18px;
-  margin-top:18px;
-}
-.split > .section{
-  margin-top:0;
-  min-width:0;
-}
-
-/* Compact cards in side-by-side mode */
-.split .card{
-  padding:10px 12px;
-  min-height:62px;
-}
-.split .value{
-  font-size:15px;
-}
-.split .label{
-  font-size:12px;
-  margin-bottom:6px;
-}
-.split .grid{
-  gap:8px;
-}
-
-@media(max-width:850px){
-  .split{
-    grid-template-columns:1fr;
+  :root {
+    --bg:          #0a0f1a;
+    --bg-card:     #111827;
+    --bg-elev:     #1a2332;
+    --bg-input:    #0f172a;
+    --border:      #1f2937;
+    --border-soft: #18202e;
+    --text:        #f1f5f9;
+    --text-dim:    #94a3b8;
+    --text-faint:  #64748b;
+    --blue:        #3b82f6;
+    --blue-bright: #60a5fa;
+    --green:       #22c55e;
+    --red:         #ef4444;
+    --amber:       #f59e0b;
+    --purple:      #a855f7;
+    --cyan:        #06b6d4;
   }
-}
 
-@media(max-width:650px){
-  .container{width:min(100% - 18px,1200px);margin-top:14px;}
-  h1{font-size:25px}
-  .grid,.record-grid{grid-template-columns:1fr;}
-  .section{padding:16px;}
-  button{width:100%;margin-right:0;}
-}
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overscroll-behavior: none;
+  }
+
+  body {
+    display: flex;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 20px;
+    background:
+      radial-gradient(circle at 15% 10%, rgba(59, 130, 246, 0.08), transparent 40%),
+      radial-gradient(circle at 85% 90%, rgba(168, 85, 247, 0.06), transparent 40%),
+      #0a0f1a;
+  }
+
+  .phone {
+    width: 100%;
+    max-width: 400px;
+    height: 844px;
+    max-height: calc(100vh - 40px);
+    background: #000;
+    border-radius: 44px;
+    padding: 12px;
+    box-shadow:
+      0 0 0 2px #1f2937,
+      0 0 0 6px #0a0f1a,
+      0 30px 80px -20px rgba(0, 0, 0, 0.9);
+    position: relative;
+  }
+
+  .screen {
+    width: 100%;
+    height: 100%;
+    background: var(--bg);
+    border-radius: 34px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+
+  .status-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 24px 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    flex-shrink: 0;
+  }
+  .status-bar .right { display: flex; align-items: center; gap: 5px; }
+  .status-bar svg { width: 14px; height: 14px; fill: currentColor; }
+
+  .app-header {
+    padding: 6px 20px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    gap: 8px;
+  }
+
+  .device-selector {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    padding: 6px 10px 6px 6px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    min-width: 0;
+    flex: 1;
+    max-width: 240px;
+    font-family: inherit;
+    text-align: left;
+  }
+  .device-selector:hover { background: var(--bg-elev); border-color: #2d3748; }
+  .device-selector.open {
+    border-color: var(--blue);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+  }
+
+  .device-logo {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: rgba(59, 130, 246, 0.12);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .device-logo svg {
+    width: 18px; height: 18px;
+    stroke: var(--blue); fill: none;
+    stroke-width: 2; stroke-linecap: round;
+  }
+  .device-logo::after {
+    content: '';
+    position: absolute;
+    bottom: 0; right: 0;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--green);
+    border: 2px solid var(--bg-card);
+  }
+
+  .device-text { min-width: 0; flex: 1; }
+  .device-text h1 {
+    font-size: 13px; font-weight: 700;
+    color: var(--text); letter-spacing: -0.2px;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .device-text p {
+    font-size: 10.5px;
+    color: var(--text-dim);
+    line-height: 1.2;
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .device-chevron {
+    width: 14px; height: 14px;
+    stroke: var(--text-faint); fill: none;
+    stroke-width: 2; stroke-linecap: round;
+    flex-shrink: 0;
+    transition: transform 0.25s;
+  }
+  .device-selector.open .device-chevron {
+    transform: rotate(180deg);
+    stroke: var(--blue);
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .session-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    padding: 5px 9px;
+    border-radius: 20px;
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--text-dim);
+    font-family: 'SF Mono', Monaco, Consolas, monospace;
+    transition: all 0.3s;
+  }
+  .session-chip svg {
+    width: 11px; height: 11px;
+    stroke: currentColor; fill: none;
+    stroke-width: 2; stroke-linecap: round;
+  }
+  .session-chip.warning {
+    color: var(--amber);
+    border-color: rgba(245, 158, 11, 0.35);
+    background: rgba(245, 158, 11, 0.08);
+  }
+  .session-chip.danger {
+    color: var(--red);
+    border-color: rgba(239, 68, 68, 0.35);
+    background: rgba(239, 68, 68, 0.08);
+    animation: chipPulse 1s infinite;
+  }
+  .session-chip.hidden { display: none; }
+  @keyframes chipPulse { 50% { opacity: 0.6; } }
+
+  .device-dropdown-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(2, 6, 23, 0.5);
+    backdrop-filter: blur(2px);
+    z-index: 100;
+    opacity: 0; visibility: hidden;
+    transition: all 0.25s;
+    border-radius: 34px;
+  }
+  .device-dropdown-backdrop.show { opacity: 1; visibility: visible; }
+
+  .device-dropdown {
+    position: absolute;
+    top: 118px;
+    left: 20px;
+    right: 20px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 8px;
+    z-index: 101;
+    box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.8);
+    opacity: 0; visibility: hidden;
+    transform: translateY(-8px) scale(0.98);
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    max-height: 420px;
+    overflow-y: auto;
+  }
+  .device-dropdown.show {
+    opacity: 1; visibility: visible;
+    transform: translateY(0) scale(1);
+  }
+
+  .dropdown-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px 10px;
+    border-bottom: 1px solid var(--border-soft);
+    margin-bottom: 6px;
+  }
+  .dropdown-header h3 {
+    font-size: 11px; font-weight: 700;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+  }
+  .dropdown-header .count {
+    font-size: 10.5px; font-weight: 600;
+    color: var(--text-faint);
+    background: var(--bg-elev);
+    padding: 3px 8px;
+    border-radius: 10px;
+  }
+
+  .device-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background 0.15s;
+    border: 1px solid transparent;
+  }
+  .device-item:hover { background: var(--bg-elev); }
+  .device-item.selected {
+    background: rgba(59, 130, 246, 0.08);
+    border-color: rgba(59, 130, 246, 0.3);
+  }
+
+  .device-item-logo {
+    width: 38px; height: 38px;
+    border-radius: 50%;
+    background: rgba(59, 130, 246, 0.12);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .device-item-logo svg {
+    width: 20px; height: 20px;
+    stroke: var(--blue); fill: none;
+    stroke-width: 2; stroke-linecap: round;
+  }
+  .device-item-logo::after {
+    content: '';
+    position: absolute;
+    bottom: -1px; right: -1px;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    border: 2px solid var(--bg-card);
+  }
+  .device-item-logo.online::after   { background: var(--green); box-shadow: 0 0 6px rgba(34, 197, 94, 0.6); }
+  .device-item-logo.offline::after  { background: var(--text-faint); }
+  .device-item-logo.warning::after  { background: var(--amber); box-shadow: 0 0 6px rgba(245, 158, 11, 0.6); }
+
+  .device-item-text { flex: 1; min-width: 0; }
+  .device-item-text h4 {
+    font-size: 13.5px; font-weight: 600;
+    color: var(--text); line-height: 1.2;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .device-item-text p {
+    font-size: 11px;
+    color: var(--text-faint);
+    line-height: 1.2;
+    margin-top: 3px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font-family: 'SF Mono', Monaco, Consolas, monospace;
+  }
+
+  .device-item-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    font-size: 10.5px;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 20px;
+  }
+  .device-item-status.online { color: var(--green); background: rgba(34, 197, 94, 0.1); }
+  .device-item-status.offline { color: var(--text-faint); background: rgba(148, 163, 184, 0.1); }
+  .device-item-status.warning { color: var(--amber); background: rgba(245, 158, 11, 0.1); }
+  .device-item-status::before {
+    content: '';
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  .device-item-check {
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: var(--blue);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .device-item.selected .device-item-check { display: flex; }
+  .device-item-check svg {
+    width: 12px; height: 12px;
+    stroke: white; fill: none;
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .dropdown-divider {
+    height: 1px;
+    background: var(--border-soft);
+    margin: 6px 4px;
+  }
+
+  .add-device-btn {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background 0.15s;
+    background: transparent;
+    border: none;
+    width: 100%;
+    font-family: inherit;
+    color: var(--text);
+  }
+  .add-device-btn:hover { background: var(--bg-elev); }
+  .add-device-icon {
+    width: 38px; height: 38px;
+    border-radius: 50%;
+    background: rgba(59, 130, 246, 0.08);
+    border: 1.5px dashed rgba(59, 130, 246, 0.4);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .add-device-icon svg {
+    width: 18px; height: 18px;
+    stroke: var(--blue-bright); fill: none;
+    stroke-width: 2.5; stroke-linecap: round;
+  }
+  .add-device-text { flex: 1; text-align: left; }
+  .add-device-text h4 {
+    font-size: 13.5px; font-weight: 600;
+    color: var(--blue-bright);
+    line-height: 1.2;
+  }
+  .add-device-text p {
+    font-size: 11px;
+    color: var(--text-faint);
+    margin-top: 2px;
+  }
+
+  .tab-nav {
+    display: flex;
+    gap: 6px;
+    padding: 0 20px 14px;
+    flex-shrink: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tab-nav::-webkit-scrollbar { display: none; }
+
+  .tab-btn {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 8px 4px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    color: var(--text-dim);
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+  }
+  .tab-btn svg {
+    width: 16px; height: 16px;
+    stroke: currentColor; fill: none;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+  }
+  .tab-btn.active {
+    background: var(--blue);
+    color: white;
+    border-color: var(--blue);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+  }
+  .tab-btn:not(.active):hover {
+    background: var(--bg-card);
+    color: var(--text);
+  }
+
+  .content {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 0 20px 20px;
+    scrollbar-width: none;
+  }
+  .content::-webkit-scrollbar { display: none; }
+
+  .panel { display: none; }
+  .panel.active {
+    display: block;
+    animation: fadeIn 0.3s ease;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--text);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin: 18px 0 10px;
+  }
+  .section-title:first-child { margin-top: 4px; }
+  .section-title svg {
+    width: 14px; height: 14px;
+    stroke: var(--blue-bright); fill: none;
+    stroke-width: 2; stroke-linecap: round;
+  }
+
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 14px;
+    margin-bottom: 10px;
+  }
+  .card.flat { padding: 0; overflow: hidden; }
+
+  .row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--border-soft);
+    font-size: 13px;
+    gap: 12px;
+  }
+  .row:last-child { border-bottom: none; }
+  .row .label { color: var(--text-dim); font-weight: 500; }
+  .row .value {
+    color: var(--text);
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    text-align: right;
+  }
+  .row .value.mono {
+    font-family: 'SF Mono', Monaco, Consolas, monospace;
+    font-size: 12px;
+  }
+  .row .value.good { color: var(--green); }
+  .row .value.warn { color: var(--amber); }
+  .row .value.bad  { color: var(--red); }
+  .row.clickable { cursor: pointer; transition: background 0.15s; }
+  .row.clickable:hover { background: var(--bg-elev); }
+  .row .chevron {
+    width: 14px; height: 14px;
+    stroke: var(--text-faint); fill: none;
+    stroke-width: 2;
+    margin-left: 4px;
+    flex-shrink: 0;
+  }
+
+  .pass-value {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .pass-value .eye-btn {
+    background: transparent;
+    border: none;
+    padding: 2px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    color: var(--text-faint);
+    transition: color 0.15s;
+  }
+  .pass-value .eye-btn:hover { color: var(--text); }
+  .pass-value .eye-btn svg {
+    width: 14px; height: 14px;
+    stroke: currentColor; fill: none;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+  }
+
+  /* ============ LISTENER ============ */
+  .live-audio-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 20px 16px;
+    text-align: center;
+    margin-bottom: 12px;
+  }
+  .live-audio-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 18px;
+  }
+  .live-audio-header .title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px; font-weight: 700;
+    color: var(--text);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+  }
+  .live-audio-header .title svg {
+    width: 14px; height: 14px;
+    stroke: var(--blue-bright); fill: none;
+    stroke-width: 2;
+  }
+  .listening-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--green);
+    font-size: 11px;
+    font-weight: 600;
+    background: rgba(34, 197, 94, 0.1);
+    padding: 4px 9px;
+    border-radius: 20px;
+  }
+  .listening-badge::before {
+    content: '';
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: pulseDot 1.5s infinite;
+  }
+  .listening-badge.idle {
+    color: var(--text-faint);
+    background: rgba(148, 163, 184, 0.1);
+  }
+  .listening-badge.idle::before { background: var(--text-faint); animation: none; }
+
+  .mic-visual {
+    width: 160px; height: 160px;
+    margin: 0 auto 18px;
+    position: relative;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .mic-ring {
+    position: absolute;
+    border-radius: 50%;
+    border: 1.5px solid var(--blue);
+    inset: 0;
+    opacity: 0.3;
+    animation: ringPulse 3s ease-out infinite;
+  }
+  .mic-ring:nth-child(2) { animation-delay: 1s; }
+  .mic-ring:nth-child(3) { animation-delay: 2s; }
+  @keyframes ringPulse {
+    0%   { transform: scale(0.5); opacity: 0.6; }
+    100% { transform: scale(1.1); opacity: 0; }
+  }
+  .mic-outer {
+    width: 90px; height: 90px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(59, 130, 246, 0.15), rgba(59, 130, 246, 0.02));
+    border: 2px solid rgba(59, 130, 246, 0.4);
+    display: flex; align-items: center; justify-content: center;
+    position: relative; z-index: 1;
+    box-shadow: 0 0 30px rgba(59, 130, 246, 0.3);
+    transition: box-shadow 0.15s;
+  }
+  .mic-outer.active { box-shadow: 0 0 50px rgba(59, 130, 246, 0.6); }
+  .mic-outer svg {
+    width: 44px; height: 44px;
+    stroke: var(--blue-bright); fill: none;
+    stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+  }
+
+  .audio-btn {
+    width: 100%;
+    padding: 15px;
+    border: none;
+    border-radius: 12px;
+    font-size: 14px; font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex; align-items: center; justify-content: center;
+    gap: 8px;
+    letter-spacing: 0.3px;
+    font-family: inherit;
+    text-transform: uppercase;
+  }
+  .audio-btn svg { width: 16px; height: 16px; fill: currentColor; }
+  .audio-btn.start {
+    background: var(--blue);
+    color: white;
+    box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4);
+  }
+  .audio-btn.start:hover { background: #2563eb; }
+  .audio-btn.stop {
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    color: white;
+    box-shadow: 0 4px 14px rgba(239, 68, 68, 0.4);
+  }
+
+  .info-pills {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  .info-pill {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px 6px;
+    display: flex; flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    text-align: center;
+  }
+  .info-pill svg {
+    width: 14px; height: 14px;
+    stroke: var(--blue-bright); fill: none;
+    stroke-width: 2; stroke-linecap: round;
+  }
+  .info-pill .pv {
+    font-size: 11px; font-weight: 700;
+    color: var(--text); line-height: 1;
+  }
+  .info-pill .pl {
+    font-size: 9px;
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    font-weight: 500;
+  }
+
+  .meter-wrap {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 14px;
+    margin-bottom: 12px;
+  }
+  .meter-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 10px;
+    font-size: 11px; font-weight: 700;
+    color: var(--text);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .meter-value {
+    font-family: 'SF Mono', Monaco, Consolas, monospace;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .meter-bars {
+    display: flex; align-items: flex-end;
+    gap: 2px; height: 32px;
+    margin-bottom: 8px;
+  }
+  .meter-bar {
+    flex: 1; background: var(--border);
+    border-radius: 2px;
+    transition: background 0.05s;
+    height: 40%;
+  }
+  .meter-bar.on-1 { background: var(--green); height: 60%; }
+  .meter-bar.on-2 { background: var(--amber); height: 80%; }
+  .meter-bar.on-3 { background: var(--red); height: 100%; }
+  .meter-track {
+    height: 5px; background: var(--bg-input);
+    border-radius: 3px; overflow: hidden;
+  }
+  .meter-fill {
+    height: 100%; width: 0%;
+    background: linear-gradient(90deg, var(--green), var(--amber), var(--red));
+    border-radius: 3px;
+    transition: width 0.1s linear;
+  }
+
+  .slider-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 14px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    margin-bottom: 10px;
+  }
+  .slider-row svg {
+    width: 18px; height: 18px;
+    stroke: var(--blue-bright); fill: none;
+    stroke-width: 2; flex-shrink: 0; stroke-linecap: round;
+  }
+  .slider {
+    -webkit-appearance: none;
+    flex: 1;
+    height: 4px; border-radius: 2px;
+    background: var(--bg-input);
+    outline: none;
+  }
+  .slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: var(--blue);
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(59, 130, 246, 0.5);
+    border: 2px solid white;
+  }
+  .slider::-moz-range-thumb {
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: var(--blue);
+    cursor: pointer;
+    border: 2px solid white;
+  }
+  .slider-value {
+    font-family: 'SF Mono', Monaco, Consolas, monospace;
+    font-size: 12px; color: var(--text);
+    font-weight: 600; min-width: 42px; text-align: right;
+  }
+
+  .record-card {
+    background: rgba(239, 68, 68, 0.06);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    border-radius: 14px;
+    padding: 14px;
+    margin-bottom: 10px;
+  }
+  .record-header {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 11.5px; font-weight: 700;
+    color: var(--red);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
+  }
+  .record-header svg {
+    width: 14px; height: 14px;
+    stroke: var(--red); fill: none;
+    stroke-width: 2;
+  }
+  .record-actions { display: flex; gap: 8px; align-items: center; }
+  .rec-btn {
+    flex: 1; padding: 11px;
+    border: none; border-radius: 10px;
+    font-size: 12.5px; font-weight: 700;
+    cursor: pointer; transition: all 0.2s;
+    display: flex; align-items: center; justify-content: center;
+    gap: 6px;
+    font-family: inherit;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  .rec-btn svg { width: 12px; height: 12px; fill: currentColor; }
+  .rec-btn.record {
+    background: var(--red); color: white;
+    box-shadow: 0 3px 10px rgba(239, 68, 68, 0.4);
+  }
+  .rec-btn.stop {
+    background: var(--bg-elev); color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .record-timer {
+    display: flex; flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+  }
+  .record-timer .t {
+    font-family: 'SF Mono', Monaco, Consolas, monospace;
+    font-size: 15px; font-weight: 700;
+    color: var(--text);
+    letter-spacing: 0.5px;
+  }
+  .record-timer .s {
+    font-size: 9.5px;
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+
+  /* ============ SETTINGS ============ */
+  .radio-group { display: flex; flex-direction: column; }
+  .radio-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 11px 14px;
+    cursor: pointer;
+    transition: background 0.15s;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .radio-item:last-child { border-bottom: none; }
+  .radio-item:hover { background: var(--bg-elev); }
+  .radio-item input { display: none; }
+  .radio-circle {
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    border: 2px solid var(--text-faint);
+    flex-shrink: 0;
+    position: relative;
+    transition: all 0.2s;
+  }
+  .radio-item input:checked + .radio-circle { border-color: var(--blue); }
+  .radio-item input:checked + .radio-circle::after {
+    content: '';
+    position: absolute; inset: 3px;
+    border-radius: 50%;
+    background: var(--blue);
+    box-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
+  }
+  .radio-label {
+    flex: 1; font-size: 13.5px;
+    color: var(--text); font-weight: 500;
+  }
+  .radio-label small {
+    display: block; font-size: 11px;
+    color: var(--text-faint);
+    font-weight: 400;
+    margin-top: 2px;
+  }
+
+  .switch-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border-soft);
+    font-size: 13.5px; gap: 12px;
+  }
+  .switch-row:last-child { border-bottom: none; }
+  .switch-row .sw-label { color: var(--text); font-weight: 500; flex: 1; }
+  .switch {
+    position: relative;
+    display: inline-block;
+    width: 40px; height: 22px;
+    flex-shrink: 0;
+  }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider-sw {
+    position: absolute; cursor: pointer;
+    inset: 0;
+    background-color: #334155;
+    transition: 0.25s;
+    border-radius: 22px;
+  }
+  .slider-sw::before {
+    content: ""; position: absolute;
+    height: 16px; width: 16px;
+    left: 3px; bottom: 3px;
+    background-color: white;
+    transition: 0.25s; border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  }
+  .switch input:checked + .slider-sw {
+    background: var(--blue);
+    box-shadow: 0 0 12px rgba(59, 130, 246, 0.5);
+  }
+  .switch input:checked + .slider-sw::before { transform: translateX(18px); }
+
+  /* ============ GAIN CONTROL (enhanced) ============ */
+  .gain-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px;
+    margin-bottom: 10px;
+  }
+
+  .gain-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .gain-header .gain-title {
+    font-size: 13px;
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  /* The big gain value badge */
+  .gain-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.25);
+    padding: 5px 10px;
+    border-radius: 10px;
+  }
+  .gain-badge .gain-db {
+    font-family: 'SF Mono', Monaco, Consolas, monospace;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--blue-bright);
+    letter-spacing: 0.3px;
+    min-width: 38px;
+    text-align: center;
+  }
+  .gain-badge .gain-divider {
+    width: 1px;
+    height: 14px;
+    background: rgba(59, 130, 246, 0.3);
+  }
+  .gain-badge .gain-pct {
+    font-family: 'SF Mono', Monaco, Consolas, monospace;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+    min-width: 34px;
+    text-align: right;
+  }
+
+  /* Slider with tick marks */
+  .gain-slider-wrap {
+    position: relative;
+    padding: 8px 0 24px;
+  }
+
+  .gain-track-labels {
+    display: flex;
+    justify-content: space-between;
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    font-size: 9.5px;
+    color: var(--text-faint);
+    font-family: 'SF Mono', Monaco, Consolas, monospace;
+    font-weight: 600;
+    pointer-events: none;
+  }
+  .gain-track-labels span {
+    position: relative;
+    text-align: center;
+    transition: color 0.2s;
+  }
+  .gain-track-labels span.active {
+    color: var(--blue-bright);
+    font-weight: 700;
+  }
+  .gain-track-labels span::before {
+    content: '';
+    position: absolute;
+    top: -12px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 2px;
+    height: 6px;
+    background: var(--border);
+    border-radius: 1px;
+    transition: background 0.2s;
+  }
+  .gain-track-labels span.active::before {
+    background: var(--blue-bright);
+    box-shadow: 0 0 6px rgba(59, 130, 246, 0.6);
+  }
+
+  /* Preset chips below slider */
+  .gain-presets {
+    display: flex;
+    gap: 6px;
+    margin-top: 4px;
+  }
+  .gain-preset {
+    flex: 1;
+    padding: 7px 4px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-dim);
+    font-size: 11px;
+    font-weight: 600;
+    font-family: 'SF Mono', Monaco, Consolas, monospace;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+    letter-spacing: 0.2px;
+  }
+  .gain-preset:hover {
+    background: var(--bg-input);
+    color: var(--text);
+    border-color: #2d3748;
+  }
+  .gain-preset.active {
+    background: rgba(59, 130, 246, 0.15);
+    border-color: var(--blue);
+    color: var(--blue-bright);
+    box-shadow: 0 0 0 1px var(--blue), 0 3px 8px rgba(59, 130, 246, 0.25);
+  }
+
+  /* Note */
+  .gain-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-faint);
+    line-height: 1.4;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-soft);
+  }
+  .gain-note svg {
+    width: 12px; height: 12px;
+    stroke: var(--text-faint); fill: none;
+    stroke-width: 2; flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  /* ============ DIAGNOSTICS ============ */
+  .mini-meter {
+    display: inline-flex; align-items: flex-end;
+    gap: 2px; height: 12px; margin-right: 4px;
+  }
+  .mini-meter span {
+    width: 3px; background: var(--green); border-radius: 1px;
+  }
+  .mini-meter span:nth-child(1) { height: 4px; }
+  .mini-meter span:nth-child(2) { height: 6px; }
+  .mini-meter span:nth-child(3) { height: 9px; }
+  .mini-meter span:nth-child(4) { height: 12px; }
+  .mini-meter span.off { background: #334155; }
+
+  /* ============ LOGS ============ */
+  .filter-bar {
+    display: flex; gap: 6px;
+    margin-bottom: 12px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+  .filter-bar::-webkit-scrollbar { display: none; }
+  .filter-chip {
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 11px; font-weight: 600;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+    white-space: nowrap;
+  }
+  .filter-chip:hover { background: var(--bg-elev); color: var(--text); }
+  .filter-chip.active { background: var(--blue); color: white; border-color: var(--blue); }
+  .filter-chip.warning.active { background: var(--amber); }
+  .filter-chip.error.active   { background: var(--red); }
+
+  .log-card {
+    background: #000;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 14px;
+    font-family: 'SF Mono', Monaco, Consolas, monospace;
+    font-size: 11px;
+    line-height: 1.7;
+    max-height: 440px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .log-card::-webkit-scrollbar { width: 6px; }
+  .log-card::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  .log-card::-webkit-scrollbar-track { background: transparent; }
+
+  .log-entry {
+    display: flex; gap: 8px;
+    padding: 2px 0;
+    animation: logIn 0.3s ease;
+  }
+  @keyframes logIn {
+    from { opacity: 0; transform: translateX(-6px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  .log-time { color: var(--text-faint); flex-shrink: 0; }
+  .log-tag { flex-shrink: 0; font-weight: 600; }
+  .log-tag.system   { color: var(--purple); }
+  .log-tag.wifi     { color: var(--cyan); }
+  .log-tag.internet { color: var(--green); }
+  .log-tag.renderer { color: var(--red); }
+  .log-tag.webrtc   { color: var(--blue-bright); }
+  .log-tag.audio    { color: var(--amber); }
+  .log-tag.vad      { color: var(--green); }
+  .log-tag.limiter  { color: #f472b6; }
+  .log-tag.ns       { color: var(--cyan); }
+  .log-msg { color: var(--text-dim); }
+  .log-level-WARNING .log-msg { color: #fbbf24; }
+  .log-level-ERROR   .log-msg { color: #f87171; }
+
+  .log-actions { display: flex; gap: 8px; margin-top: 12px; }
+  .log-action-btn {
+    flex: 1; padding: 10px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text-dim);
+    font-size: 12px; font-weight: 600;
+    cursor: pointer; transition: all 0.2s;
+    display: flex; align-items: center; justify-content: center;
+    gap: 6px;
+    font-family: inherit;
+  }
+  .log-action-btn svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 2; }
+  .log-action-btn:hover { background: var(--bg-elev); color: var(--text); }
+  .log-action-btn.danger { color: #f87171; }
+  .log-action-btn.danger:hover { background: rgba(239, 68, 68, 0.1); }
+
+  /* ============ SYSTEM ============ */
+  .update-banner {
+    display: flex; align-items: center; gap: 10px;
+    background: rgba(34, 197, 94, 0.08);
+    border: 1px solid rgba(34, 197, 94, 0.3);
+    border-radius: 12px;
+    padding: 12px;
+    margin-bottom: 12px;
+    font-size: 12.5px; color: var(--text);
+  }
+  .update-banner svg {
+    width: 20px; height: 20px;
+    stroke: var(--green); fill: none;
+    stroke-width: 2.5; flex-shrink: 0;
+    stroke-linecap: round; stroke-linejoin: round;
+  }
+  .update-banner strong { color: var(--green); font-weight: 700; display: block; font-size: 13px; }
+  .update-banner span { color: var(--text-dim); font-size: 11.5px; }
+
+  .btn-pill {
+    padding: 12px;
+    border-radius: 10px;
+    font-size: 13px; font-weight: 600;
+    border: none; cursor: pointer;
+    transition: all 0.2s;
+    display: flex; align-items: center; justify-content: center;
+    gap: 7px;
+    font-family: inherit;
+    width: 100%;
+  }
+  .btn-pill svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; }
+  .btn-pill.primary {
+    background: var(--blue); color: white;
+    box-shadow: 0 3px 12px rgba(59, 130, 246, 0.35);
+    margin-bottom: 8px;
+  }
+  .btn-pill.primary:hover { background: #2563eb; }
+  .btn-pill.secondary {
+    background: var(--bg-elev); color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-pill.secondary:hover { background: var(--border); }
+
+  .action-list { display: flex; flex-direction: column; }
+
+  .action-row {
+    display: grid;
+    grid-template-columns: 36px 1fr 16px;
+    align-items: center;
+    column-gap: 12px;
+    padding: 14px;
+    cursor: pointer;
+    transition: background 0.15s;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .action-row:last-child { border-bottom: none; }
+  .action-row:hover { background: var(--bg-elev); }
+  .action-row.danger .action-label { color: #f87171; }
+
+  .action-icon {
+    width: 36px; height: 36px;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    background: rgba(59, 130, 246, 0.1);
+  }
+  .action-icon svg {
+    width: 17px; height: 17px;
+    stroke: var(--blue-bright); fill: none;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+    display: block;
+  }
+  .action-row.danger .action-icon { background: rgba(239, 68, 68, 0.1); }
+  .action-row.danger .action-icon svg { stroke: #f87171; }
+  .action-icon.green { background: rgba(34, 197, 94, 0.1); }
+  .action-icon.green svg { stroke: var(--green); }
+  .action-icon.amber { background: rgba(245, 158, 11, 0.1); }
+  .action-icon.amber svg { stroke: var(--amber); }
+
+  .action-label {
+    font-size: 13.5px; font-weight: 500;
+    color: var(--text);
+    line-height: 1.3;
+    min-width: 0;
+  }
+  .action-label small {
+    display: block; font-size: 11px;
+    color: var(--text-faint);
+    font-weight: 400;
+    margin-top: 2px;
+    line-height: 1.3;
+  }
+
+  .action-chevron {
+    width: 16px; height: 16px;
+    stroke: var(--text-faint); fill: none;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+    justify-self: end;
+    flex-shrink: 0;
+    display: block;
+  }
+
+  /* Modal */
+  .modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(2, 6, 23, 0.75);
+    backdrop-filter: blur(6px);
+    display: flex; align-items: flex-end; justify-content: center;
+    z-index: 5000;
+    opacity: 0; visibility: hidden;
+    transition: all 0.25s;
+  }
+  .modal-backdrop.show { opacity: 1; visibility: visible; }
+  .modal {
+    width: 100%; max-width: 400px;
+    background: var(--bg-card);
+    border-top-left-radius: 24px;
+    border-top-right-radius: 24px;
+    border: 1px solid var(--border);
+    border-bottom: none;
+    padding: 20px 20px 28px;
+    transform: translateY(100%);
+    transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .modal-backdrop.show .modal { transform: translateY(0); }
+  .modal-handle {
+    width: 40px; height: 4px;
+    background: #334155; border-radius: 2px;
+    margin: 0 auto 18px;
+  }
+  .modal-title {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 15px; font-weight: 700;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+  .modal-title svg {
+    width: 18px; height: 18px;
+    stroke: var(--blue-bright); fill: none;
+    stroke-width: 2; stroke-linecap: round;
+  }
+  .modal-desc {
+    font-size: 12.5px;
+    color: var(--text-dim);
+    line-height: 1.5;
+    margin-bottom: 16px;
+  }
+  .timeout-options {
+    display: flex; flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .timeout-opt {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px;
+    background: var(--bg-elev);
+    border: 2px solid transparent;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .timeout-opt:hover {
+    border-color: rgba(59, 130, 246, 0.4);
+    background: rgba(59, 130, 246, 0.05);
+  }
+  .timeout-opt.selected {
+    border-color: var(--blue);
+    background: rgba(59, 130, 246, 0.1);
+    box-shadow: 0 0 0 1px var(--blue), 0 4px 12px rgba(59, 130, 246, 0.2);
+  }
+  .timeout-opt input { display: none; }
+  .timeout-radio {
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    border: 2px solid var(--text-faint);
+    flex-shrink: 0;
+    position: relative;
+    transition: all 0.2s;
+  }
+  .timeout-opt.selected .timeout-radio { border-color: var(--blue); }
+  .timeout-opt.selected .timeout-radio::after {
+    content: ''; position: absolute;
+    inset: 4px; border-radius: 50%;
+    background: var(--blue);
+    box-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
+  }
+  .timeout-body { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+  .timeout-title { font-size: 14px; font-weight: 600; color: var(--text); }
+  .timeout-sub { font-size: 11.5px; color: var(--text-faint); line-height: 1.4; }
+  .modal-actions { display: flex; gap: 10px; margin-top: 4px; }
+  .modal-btn {
+    flex: 1; padding: 13px;
+    border-radius: 11px;
+    font-size: 14px; font-weight: 600;
+    cursor: pointer; transition: all 0.2s;
+    font-family: inherit;
+    border: none;
+  }
+  .modal-btn.cancel {
+    background: transparent;
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+  }
+  .modal-btn.cancel:hover { background: var(--bg-elev); color: var(--text); }
+  .modal-btn.save {
+    background: var(--blue); color: white;
+    box-shadow: 0 4px 14px rgba(59, 130, 246, 0.35);
+  }
+  .modal-btn.save:hover { background: #2563eb; }
+
+  /* Toast */
+  .toast {
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background: #1e293b;
+    color: var(--text);
+    padding: 12px 20px;
+    border-radius: 12px;
+    font-size: 13px; font-weight: 500;
+    box-shadow: 0 15px 35px -8px rgba(0, 0, 0, 0.7);
+    opacity: 0;
+    transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 9999;
+    max-width: 90vw;
+    border-left: 4px solid var(--blue);
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.success { border-left-color: var(--green); }
+  .toast.error   { border-left-color: var(--red); }
+  .toast.warning { border-left-color: var(--amber); }
 </style>
+<style>
+  body { display:block; min-height:100vh; padding:0; }
+  .phone { width:100%; max-width:none; height:auto; max-height:none; padding:0; background:transparent; border:0; border-radius:0; box-shadow:none; position:static; }
+  .screen { width:100%; height:auto; min-height:100vh; border-radius:0; overflow:visible; }
+  .content { flex:none; overflow:visible; }
+</style>
+<style>.project-compat{display:none!important}.toast.show{opacity:1;visibility:visible}#logBox{overflow:auto;white-space:pre-wrap}.listening-badge.active{color:#32df9b}</style>
+<style>.add-device-top{display:inline-flex;align-items:center;justify-content:center;gap:6px;flex-shrink:0;padding:9px 12px;border:1px solid #2b4b77;border-radius:10px;background:rgba(59,130,246,.12);color:#bfdbfe;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer}.add-device-top:hover{background:rgba(59,130,246,.2)}.capacity-note{margin:-7px 4px 12px;color:var(--text-dim);font-size:11px;line-height:1.45}.capacity-note.busy{color:var(--amber)}.volume-presets{position:relative;display:block;height:34px;margin:0 68px 6px 44px;padding:4px 0 12px;overflow:visible}.volume-preset{position:absolute;left:var(--preset-position);top:2px;transform:translateX(-50%);min-width:0;padding:4px 2px;border:0;border-radius:6px;background:transparent;color:var(--text-dim);font-family:inherit;font-size:11px;font-weight:600;line-height:18px;white-space:nowrap;cursor:pointer}.volume-preset[data-volume="0"]{transform:none}.volume-preset[data-volume="300"]{transform:translateX(-100%)}.volume-preset.active,.volume-preset:hover{color:#fff;background:rgba(59,130,246,.24)}@media(max-width:360px){.volume-presets{margin-right:64px;margin-left:42px}.volume-preset{font-size:10px}}.add-device-modal{position:fixed;inset:0;z-index:300;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(2,6,23,.78);backdrop-filter:blur(5px)}.add-device-modal.show{display:flex}.add-device-dialog{width:min(100%,420px);padding:22px;border:1px solid var(--border);border-radius:18px;background:var(--bg-card);box-shadow:0 24px 70px #0009}.add-device-dialog h2{margin:0 0 10px;font-size:18px}.add-device-dialog p{margin:0 0 16px;color:var(--text-dim);font-size:13px;line-height:1.55}.add-device-dialog button{padding:9px 15px;border:0;border-radius:9px;background:var(--blue);color:white;font-weight:650;cursor:pointer}@media(max-width:420px){.add-device-top{padding:8px 9px;font-size:11px}.volume-presets{gap:4px}.volume-preset{min-width:38px;padding:6px}}</style>
 </head>
-
 <body>
-<div class="container">
 
-  <h1>ESP32 INMP441</h1>
-  <div class="subtitle">Secure Live Audio Listener</div>
+<div class="phone">
+  <div class="screen">
 
-  <!-- ============================================================ -->
-  <!-- 1. LISTENER ACCESS                                           -->
-  <!-- ============================================================ -->
-  <div class="section">
-    <div class="section-title">Listener Access</div>
-    <button id="start">▶ Start Listening</button>
-    <button id="stop" class="secondary" disabled>⏹ Stop Listening</button>
-    <button id="rebootBtn" class="danger" disabled>ESP32 Reboot</button>
-    <button id="forgetWifiBtn" class="danger" disabled>Forget Wi-Fi</button>
-    <div class="small" style="margin-top:12px">Wi-Fi settings are erased from the ESP32 and the device restarts into setup mode.</div>
-    <div id="status" class="statusbar" style="margin-top:12px">Disconnected</div>
-  </div>
-
-  <!-- ============================================================ -->
-  <!-- 2. LIVE AUDIO                                                -->
-  <!-- ============================================================ -->
-  <div class="section">
-    <div class="section-title">Live Audio</div>
-    <div class="volume-row">
-      <span>Browser Volume</span>
-      <span id="volumeValue" class="volume-value">150%</span>
-    </div>
-    <input id="volume" type="range" min="0" max="3" step="0.01" value="1.5">
-    <div class="label" style="margin-top:22px">Audio Level</div>
-    <div id="meter"><div id="level"></div></div>
-    <div class="small" style="margin-top:12px">16 kHz mono PCM24 • Secure PIN • Multi-listener • Low-latency playback</div>
-  </div>
-
-  <!-- ============================================================ -->
-  <!-- 3. RECORDING                                                 -->
-  <!-- ============================================================ -->
-  <div class="section">
-    <div class="section-title">Recording</div>
-    <button id="record" disabled>🔴 Start Recording</button>
-    <button id="stopRecord" class="secondary" disabled>⏹ Stop Recording</button>
-    <div class="record-grid">
-      <div class="record-box"><div class="label">Recording Status</div><div id="recordStatus" class="record-value">Not recording</div></div>
-      <div class="record-box"><div class="label">Duration</div><div id="duration" class="record-value">00:00</div></div>
-    </div>
-  </div>
-
-  <!-- ============================================================ -->
-  <!-- 4. ESP32 STATUS + HARDWARE HEALTH (SIDE BY SIDE)             -->
-  <!-- ============================================================ -->
-  <div class="split">
-
-    <!-- ESP32 Status -->
-    <div class="section">
-      <div class="section-title">ESP32 Status</div>
-      <div class="grid">
-        <div class="card"><div class="label">Device</div><div id="deviceStatus" class="value offline">🔴 OFFLINE</div></div>
-        <div class="card"><div class="label">Audio</div><div id="audioState" class="value idle">IDLE</div></div>
-        <div class="card"><div class="label">Streaming</div><div id="streamingState" class="value idle">OFF</div></div>
-        <div class="card"><div class="label">Listeners</div><div id="listenerCount" class="value">0</div></div>
-        <div class="card"><div class="label">Render / WSS</div><div id="renderState" class="value idle">Checking...</div></div>
-        <div class="card"><div class="label">Last Seen</div><div id="lastSeen" class="value">Never</div></div>
-        <div class="card"><div class="label">Last Reboot</div><div id="lastReboot" class="value">Never</div></div>
-        <div class="card"><div class="label">ESP32 Uptime</div><div id="uptime" class="value">—</div></div>
-        <div class="card"><div class="label">Connection Since</div><div id="connectedAt" class="value">—</div></div>
+    <div class="app-header">
+      <button class="device-selector" id="deviceSelector" >
+        <div class="device-logo">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 2v6M12 16v6M4.93 4.93l4.24 4.24M14.83 14.83l4.24 4.24M2 12h6M16 12h6M4.93 19.07l4.24-4.24M14.83 9.17l4.24-4.24"/>
+          </svg>
+        </div>
+        <div class="device-text">
+          <h1 id="currentDeviceName">ESP32 INMP441</h1>
+          <p id="topStatus">Not connected</p>
+        </div>
+        <svg class="device-chevron" viewBox="0 0 24 24">
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </button>
+      <button class="add-device-top" id="addDeviceTop" type="button" onclick="addDevice()">＋ Add Device</button>
+      <div class="header-right">
+        <div class="session-chip hidden" id="sessionChip">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <span id="sessionChipText">30:00</span>
+        </div>
       </div>
     </div>
 
-    <!-- ESP32 Hardware Health -->
-    <div class="section">
-      <div class="section-title">ESP32 Hardware Health</div>
-      <div class="grid">
-        <div class="card"><div class="label">MAC</div><div id="hwMac" class="value">—</div></div>
-        <div class="card"><div class="label">Chip</div><div id="hwChip" class="value">—</div></div>
-        <div class="card"><div class="label">Version</div><div id="hwVersion" class="value">—</div></div>
-        <div class="card"><div class="label">Uptime</div><div id="hwUptime" class="value">—</div></div>
-        <div class="card"><div class="label">Boot Reason</div><div id="hwBoot" class="value">—</div></div>
-        <div class="card"><div class="label">Total Reboots</div><div id="hwReboots" class="value">—</div></div>
-        <div class="card"><div class="label">Brownouts</div><div id="hwBrownouts" class="value">—</div></div>
-        <div class="card"><div class="label">Chip Temp</div><div id="hwTemp" class="value">—</div></div>
-        <div class="card"><div class="label">WiFi RSSI</div><div id="hwRssi" class="value">—</div></div>
-        <div class="card"><div class="label">WiFi Drops</div><div id="hwWifiDrops" class="value">—</div></div>
-        <div class="card"><div class="label">WS Connects</div><div id="hwWsConn" class="value">—</div></div>
-        <div class="card"><div class="label">WS Disconnects</div><div id="hwWsDisc" class="value">—</div></div>
-        <div class="card"><div class="label">Free Heap</div><div id="hwHeap" class="value">—</div></div>
-        <div class="card"><div class="label">Min Heap</div><div id="hwMinHeap" class="value">—</div></div>
-        <div class="card"><div class="label">Free PSRAM</div><div id="hwPsram" class="value">—</div></div>
-        <div class="card"><div class="label">Stacks (A/Tx/Mon)</div><div id="hwStack" class="value">—</div></div>
-        <div class="card"><div class="label">Packets / Bytes</div><div id="hwPackets" class="value">—</div></div>
-        <div class="card"><div class="label">Send / I2S Err</div><div id="hwErrors" class="value">—</div></div>
-        <div class="card"><div class="label">TX Max / Slow</div><div id="hwTx" class="value">—</div></div>
+    <div class="device-dropdown-backdrop" id="deviceBackdrop" ></div>
+    <div class="device-dropdown" id="deviceDropdown">
+      <div class="dropdown-header">
+        <h3>Your Devices</h3>
+        <span class="count" id="deviceCount">1 device</span>
+      </div>
+      <div id="deviceList"></div>
+      <div class="dropdown-divider"></div>
+      <button class="add-device-btn" id="addDeviceBtn" type="button" onclick="addDevice()">
+        <div class="add-device-icon">
+          <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </div>
+        <div class="add-device-text">
+          <h4>Add New Device</h4>
+          <p>Open device setup information</p>
+        </div>
+      </button>
+    </div>
+
+    <div class="tab-nav">
+      <button class="tab-btn active" data-tab="listener">
+        <svg viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+        <span>Listener</span>
+      </button>
+      <button class="tab-btn" data-tab="settings">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span>Settings</span>
+      </button>
+      <button class="tab-btn" data-tab="diagnostics">
+        <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        <span>Diagnostics</span>
+      </button>
+      <button class="tab-btn" data-tab="logs">
+        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        <span>Logs</span>
+      </button>
+      <button class="tab-btn" data-tab="system">
+        <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>
+        <span>System</span>
+      </button>
+    </div>
+
+    <div class="content">
+
+      <!-- ============ LISTENER ============ -->
+      <div class="panel active" id="panel-listener">
+        <div class="live-audio-card">
+          <div class="live-audio-header">
+            <div class="title">
+              <svg viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+              LIVE AUDIO
+            </div>
+            <div class="listening-badge" id="listeningBadge">Not listening</div>
+          </div>
+          <p class="capacity-note" id="capacityNote" role="status">Live audio supports one listener at a time. If someone else is listening, wait until they stop and try again.</p>
+
+          <div class="mic-visual">
+            <div class="mic-ring"></div>
+            <div class="mic-ring"></div>
+            <div class="mic-ring"></div>
+            <div class="mic-outer active" id="micOuter">
+              <svg viewBox="0 0 24 24">
+                <rect x="9" y="2" width="6" height="12" rx="3"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                <line x1="12" y1="19" x2="12" y2="22"/>
+              </svg>
+            </div>
+          </div>
+
+          <button class="audio-btn stop" id="audioBtn" onclick="toggleListening()">
+            <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+            <span id="audioBtnText">Stop Listening</span>
+          </button>
+        </div>
+
+        <div class="info-pills">
+          <div class="info-pill">
+            <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            <span class="pv" id="pillRate">16 kHz</span>
+            <span class="pl">Rate</span>
+          </div>
+          <div class="info-pill">
+            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6v6H9z"/></svg>
+            <span class="pv" id="pillBits">—</span>
+            <span class="pl">Codec</span>
+          </div>
+          <div class="info-pill">
+            <svg viewBox="0 0 24 24"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+            <span class="pv" id="pillChannels">—</span>
+            <span class="pl">Channels</span>
+          </div>
+          <div class="info-pill">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v6M12 17v6"/></svg>
+            <span class="pv" id="pillInput">—</span>
+            <span class="pl">Mic input</span>
+          </div>
+        </div>
+
+        <div class="meter-wrap">
+          <div class="meter-header">
+            <span>AUDIO LEVEL</span>
+            <span class="meter-value" id="dbValue">— dB</span>
+          </div>
+          <div class="meter-bars" id="meterBars"></div>
+          <div class="meter-track">
+            <div class="meter-fill" id="level"></div>
+          </div>
+        </div>
+
+        <div class="slider-row">
+          <svg viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+          <input type="range" class="slider" min="0" max="3" step="0.01" value="1.5" id="volume" aria-label="Playback volume, 0 to 300 percent" >
+          <span class="slider-value" id="volumeValue">150%</span>
+        </div>
+        <div class="volume-presets" id="volumePresets" aria-label="Playback volume presets"><button class="volume-preset" style="--preset-position:0%" type="button" data-volume="0" aria-label="Set volume to 0 percent">0</button><button class="volume-preset" style="--preset-position:16.6667%" type="button" data-volume="50" aria-label="Set volume to 50 percent">50</button><button class="volume-preset" style="--preset-position:33.3333%" type="button" data-volume="100" aria-label="Set volume to 100 percent">100</button><button class="volume-preset active" style="--preset-position:50%" type="button" data-volume="150" aria-label="Set volume to 150 percent">150</button><button class="volume-preset" style="--preset-position:66.6667%" type="button" data-volume="200" aria-label="Set volume to 200 percent">200</button><button class="volume-preset" style="--preset-position:83.3333%" type="button" data-volume="250" aria-label="Set volume to 250 percent">250</button><button class="volume-preset" style="--preset-position:100%" type="button" data-volume="300" aria-label="Set volume to 300 percent">300</button></div>
+
+        <div class="record-card">
+          <div class="record-header">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
+            RECORDING
+          </div>
+          <div class="record-actions">
+            <button class="rec-btn record" id="recBtn" onclick="toggleRecording()">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>
+              <span id="recBtnText">Start Recording</span>
+            </button>
+            <div class="record-timer">
+              <span class="t" id="duration">00:00:00</span>
+              <span class="s" id="recordStatus">Not recording</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-title">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          QUICK STATUS
+        </div>
+        <div class="info-pills" style="margin-bottom:0;">
+          <div class="info-pill">
+            <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+            <span class="pv">ESP32</span>
+            <span class="pl" style="color:var(--green);">Online</span>
+          </div>
+          <div class="info-pill">
+            <svg viewBox="0 0 24 24"><path d="M12 2v6M12 16v6M4.93 4.93l4.24 4.24M14.83 14.83l4.24 4.24"/></svg>
+            <span class="pv">WebRTC Audio</span>
+            <span class="pl" style="color:var(--green);">Connected</span>
+          </div>
+          <div class="info-pill">
+            <svg viewBox="0 0 24 24"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/></svg>
+            <span class="pv">Render</span>
+            <span class="pl" style="color:var(--green);">Connected</span>
+          </div>
+          <div class="info-pill">
+            <svg viewBox="0 0 24 24"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+            <span class="pv">ESP32 Wi-Fi</span>
+            <span class="pl" style="color:var(--green);">Connected</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ SETTINGS ============ -->
+      <div class="panel" id="panel-settings">
+        <div class="section-title">
+          <svg viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/></svg>
+          AUDIO SETTINGS
+        </div>
+
+        <div class="card flat">
+          <div style="padding:11px 14px;font-size:12.5px;color:var(--text-dim);font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">Microphone Mode</div>
+          <div class="radio-group">
+            <label class="radio-item">
+              <input type="radio" name="micMode" checked onchange="toast('Mic 1 selected', 'success')">
+              <span class="radio-circle"></span>
+              <span class="radio-label">Mic 1 <small>GPIO 4/5/6</small></span>
+            </label>
+            <label class="radio-item">
+              <input type="radio" name="micMode" onchange="toast('Mic 2 selected', 'success')">
+              <span class="radio-circle"></span>
+              <span class="radio-label">Mic 2 <small>GPIO 7/8/9 (Future)</small></span>
+            </label>
+            <label class="radio-item">
+              <input type="radio" name="micMode" onchange="toast('Both mics (Mono)', 'success')">
+              <span class="radio-circle"></span>
+              <span class="radio-label">Both (Mono)</span>
+            </label>
+            <label class="radio-item">
+              <input type="radio" name="micMode" onchange="toast('Both mics (Stereo)', 'success')">
+              <span class="radio-circle"></span>
+              <span class="radio-label">Both (Stereo)</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="card flat">
+          <div style="padding:11px 14px;font-size:12.5px;color:var(--text-dim);font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">Audio Quality</div>
+          <div class="radio-group">
+            <label class="radio-item">
+              <input type="radio" name="quality" checked onchange="setQuality('16 kHz / 16-bit', 'Voice Optimized')">
+              <span class="radio-circle"></span>
+              <span class="radio-label">16 kHz / 16-bit <small>Voice Optimized</small></span>
+            </label>
+            <label class="radio-item">
+              <input type="radio" name="quality" onchange="setQuality('44.1 kHz / 24-bit', 'High Quality')">
+              <span class="radio-circle"></span>
+              <span class="radio-label">44.1 kHz / 24-bit <small>High Quality</small></span>
+            </label>
+          </div>
+        </div>
+
+        <!-- ============ ENHANCED GAIN CONTROL ============ -->
+        <div class="gain-card">
+          <div class="gain-header">
+            <span class="gain-title">Device Gain (Microphone)</span>
+            <div class="gain-badge">
+              <span class="gain-db" id="gainDb">100%</span>
+              <span class="gain-divider"></span>
+              <span class="gain-pct" id="gainFactor">1.0x</span>
+            </div>
+          </div>
+
+          <div class="gain-slider-wrap">
+            <input type="range" class="slider" min="50" max="150" step="5" value="100" id="gainSlider" aria-label="ESP32 microphone gain, 50 to 150 percent" style="width:100%;">
+
+            <div class="gain-track-labels" id="gainLabels">
+              <span data-val="50">50%</span><span data-val="75">75%</span><span data-val="100">100%</span><span data-val="125">125%</span><span data-val="150">150%</span>
+            </div>
+          </div>
+
+          <!-- Preset chips -->
+          <div class="gain-presets">
+            <button class="gain-preset" type="button" data-gain="50" disabled>50%</button><button class="gain-preset" type="button" data-gain="75" disabled>75%</button><button class="gain-preset active" type="button" data-gain="100" disabled>100%</button><button class="gain-preset" type="button" data-gain="125" disabled>125%</button><button class="gain-preset" type="button" data-gain="150" disabled>150%</button>
+          </div>
+
+          <div class="gain-note">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            <span>Sets the ESP32 microphone gain from 50% to 150%. Available while the WebRTC connection is active; higher gain can clip loud sounds.</span>
+          </div>
+        </div>
+
+        <div class="card flat">
+          <div class="switch-row">
+            <span class="sw-label">Noise Suppression</span>
+            <label class="switch"><input type="checkbox" checked><span class="slider-sw"></span></label>
+          </div>
+          <div class="switch-row">
+            <span class="sw-label">Voice Detection (VAD)</span>
+            <label class="switch"><input type="checkbox" checked><span class="slider-sw"></span></label>
+          </div>
+          <div class="switch-row">
+            <span class="sw-label">Limiter</span>
+            <label class="switch"><input type="checkbox" checked><span class="slider-sw"></span></label>
+          </div>
+        </div>
+
+        <div class="section-title">
+          <svg viewBox="0 0 24 24"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+          WI-FI SETTINGS
+        </div>
+        <div class="card flat">
+          <div class="row">
+            <span class="label">Connected to</span>
+            <span class="value" id="settingsWifiStatus">Waiting for device telemetry</span>
+          </div>
+          <div class="row clickable" onclick="toast('Scanning networks…', 'info')">
+            <span class="label">Scan Networks</span>
+            <svg class="chevron" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+          </div>
+          <div class="row clickable" onclick="toast('Use Forget Wi-Fi to reconfigure the ESP32 network.', 'info')">
+            <span class="label">Change Wi-Fi</span>
+            <svg class="chevron" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+          </div>
+        </div>
+
+        <div class="section-title">
+          <svg viewBox="0 0 24 24"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+          HOTSPOT SETTINGS
+        </div>
+        <div class="card flat">
+          <div class="switch-row">
+            <span class="sw-label">Enable Hotspot</span>
+            <label class="switch"><input type="checkbox" id="hotspotToggle" checked disabled><span class="slider-sw"></span></label>
+          </div>
+          <div class="row">
+            <span class="label">SSID</span>
+            <span class="value mono">ESP32-AUDIO-XXXX</span>
+          </div>
+          <div class="row">
+            <span class="label">Password</span>
+            <span class="value mono pass-value">
+              <span id="hotspotPassword">•••••••••</span>
+              <button class="eye-btn" onclick="toggleHotspotPassword(this)" aria-label="Show password">
+                <svg viewBox="0 0 24 24">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+              </button>
+            </span>
+          </div>
+          <div class="row clickable" onclick="toast('Hotspot settings are managed by ESP32 firmware.', 'info')">
+            <span class="label">Change Password</span>
+            <svg class="chevron" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ DIAGNOSTICS ============ -->
+      <div class="panel" id="panel-diagnostics">
+        <div class="section-title">
+          <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+          SYSTEM
+        </div>
+        <div class="card flat">
+          <div class="row"><span class="label">Device</span><span class="value mono" id="hwChip">—</span></div>
+          <div class="row"><span class="label">Firmware</span><span class="value mono" id="hwVersion">—</span></div>
+          <div class="row"><span class="label">Uptime</span><span class="value mono" id="uptime">—</span></div>
+          <div class="row"><span class="label">Boot Reason</span><span class="value" id="hwBoot">—</span></div>
+          <div class="row"><span class="label">Wi-Fi Retries</span><span class="value mono" id="hwWifiRetries">—</span></div>
+          <div class="row"><span class="label">Reset Reason</span><span class="value mono" id="hwResetReason">—</span></div>
+        </div>
+
+        <div class="section-title">
+          <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+          MEMORY
+        </div>
+        <div class="card flat">
+          <div class="row"><span class="label">Free Heap</span><span class="value mono" id="hwHeap">—</span></div>
+          <div class="row"><span class="label">Minimum Heap</span><span class="value mono" id="hwMinHeap">—</span></div>
+          <div class="row"><span class="label">Free PSRAM</span><span class="value mono" id="hwPsram">—</span></div>
+          <div class="row"><span class="label">Total PSRAM</span><span class="value mono" id="hwTotalPsram">—</span></div>
+        </div>
+
+        <div class="section-title">AUDIO HEALTH</div>
+        <div class="card flat">
+          <div class="row"><span class="label">Health</span><span class="value" id="hwHealth">—</span></div>
+          <div class="row"><span class="label">Capture errors</span><span class="value mono" id="hwCaptureErrors">—</span></div>
+          <div class="row"><span class="label">Buffer overflows</span><span class="value mono" id="hwBufferOverflows">—</span></div>
+          <div class="row"><span class="label">DSP errors</span><span class="value mono" id="hwDspErrors">—</span></div>
+          <div class="row"><span class="label">Input level</span><span class="value mono" id="hwAudioRms">—</span></div>
+        </div>
+
+        <div class="section-title">
+          <svg viewBox="0 0 24 24"><path d="M5 12.55a11 11 0 0 1 14.08 0"/></svg>
+          NETWORK
+        </div>
+        <div class="card flat">
+          <div class="row"><span class="label">SSID</span><span class="value mono" id="hwSsid">Waiting for device telemetry</span></div>
+          <div class="row">
+            <span class="label">IP address</span><span class="value mono" id="hwIp">—</span></div>
+          <div class="row">
+            <span class="label">RSSI</span>
+            <span class="value">
+              <span class="mono" id="hwRssi">—</span>
+              <span class="mini-meter"><span></span><span></span><span></span><span></span></span>
+            </span>
+          </div>
+          <div class="row"><span class="label">Wi-Fi Link</span><span class="value" id="hwInternet">Waiting for device telemetry</span></div>
+          <div class="row"><span class="label">Render Server</span><span class="value" id="hwRender">—</span></div>
+          <div class="row"><span class="label">WebRTC</span><span class="value" id="hwWebRtc">Waiting for device telemetry</span></div>
+        </div>
+      </div>
+
+      <!-- ============ LOGS ============ -->
+      <div class="panel" id="panel-logs">
+        <div class="section-title">
+          <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+          EVENT LOG
+        </div>
+        <div class="filter-bar">
+          <button class="filter-chip active" data-filter="all">All</button>
+          <button class="filter-chip" data-filter="INFO">Info</button>
+          <button class="filter-chip warning" data-filter="WARNING">Warning</button>
+          <button class="filter-chip error" data-filter="ERROR">Error</button>
+        </div>
+        <div class="log-card" id="logBox"></div>
+        <div class="log-actions">
+          <button class="log-action-btn danger" onclick="clearProjectLogs()">
+            <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+            Clear
+          </button>
+          <button class="log-action-btn" onclick="copyProjectLogs()">
+            <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/></svg>
+            Export
+          </button>
+        </div>
+      </div>
+
+      <!-- ============ SYSTEM ============ -->
+      <div class="panel" id="panel-system">
+        <div class="section-title">DEVICE STATUS</div>
+        <div class="card flat">
+          <div class="row"><span class="label">Connection</span><span class="value" id="systemConnection">Checking…</span></div>
+          <div class="row"><span class="label">Firmware</span><span class="value mono" id="systemFirmware">Waiting for firmware telemetry</span></div>
+          <div class="row"><span class="label">Wi-Fi</span><span class="value" id="systemWifi">Waiting for firmware telemetry</span></div>
+        </div>
+
+        <div class="section-title">DEVICE ACTIONS</div>
+        <div class="card">
+          <button class="audio-btn start" id="restartDeviceButton" type="button">Restart ESP32</button>
+          <p class="small" style="margin-top:10px">Restart is sent over the authenticated device connection and requires the updated firmware.</p>
+        </div>
+
+        <div class="section-title">FEATURE AVAILABILITY</div>
+        <div class="card flat">
+          <div class="row"><span class="label">OTA firmware update</span><span class="value">Not configured</span></div>
+          <div class="row"><span class="label">Change or forget Wi-Fi</span><span class="value">Use device setup portal</span></div>
+          <div class="row"><span class="label">Built-in LED control</span><span class="value">Not exposed by firmware</span></div>
+          <div class="row"><span class="label">Factory reset</span><span class="value">Not exposed by firmware</span></div>
+        </div>
+        <div class="card flat small">Wi-Fi changes are managed by the ESP32 setup portal. OTA, remote Wi-Fi reset, and LED control need dedicated firmware support; these controls are not available in this project today.</div>
+      </div>
+
+    </div>
+
+    <div class="modal-backdrop" id="sessionModal">
+      <div class="modal">
+        <div class="modal-handle"></div>
+        <div class="modal-title">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Session Timeout
+        </div>
+        <p class="modal-desc">Automatically sign out after a period of inactivity. A shorter timeout is more secure but requires signing in more often.</p>
+
+        <div class="timeout-options" id="timeoutOptions">
+          <label class="timeout-opt" data-min="15">
+            <input type="radio" name="timeout" value="15">
+            <span class="timeout-radio"></span>
+            <div class="timeout-body">
+              <span class="timeout-title">15 minutes</span>
+              <span class="timeout-sub">Best for security — quick lock when away</span>
+            </div>
+          </label>
+          <label class="timeout-opt" data-min="30">
+            <input type="radio" name="timeout" value="30">
+            <span class="timeout-radio"></span>
+            <div class="timeout-body">
+              <span class="timeout-title">30 minutes</span>
+              <span class="timeout-sub">Balanced — recommended default</span>
+            </div>
+          </label>
+          <label class="timeout-opt" data-min="120">
+            <input type="radio" name="timeout" value="120">
+            <span class="timeout-radio"></span>
+            <div class="timeout-body">
+              <span class="timeout-title">2 hours</span>
+              <span class="timeout-sub">Extended session for longer monitoring</span>
+            </div>
+          </label>
+          <label class="timeout-opt" data-min="0">
+            <input type="radio" name="timeout" value="0">
+            <span class="timeout-radio"></span>
+            <div class="timeout-body">
+              <span class="timeout-title">Never</span>
+              <span class="timeout-sub">Only sign out manually — least secure</span>
+            </div>
+          </label>
+        </div>
+
+        <div class="modal-actions">
+          <button class="modal-btn cancel" >Cancel</button>
+          <button class="modal-btn save" >Save</button>
+        </div>
       </div>
     </div>
 
   </div>
-
-  <!-- ============================================================ -->
-  <!-- 5. EVENT LOG                                                 -->
-  <!-- ============================================================ -->
-  <div class="section">
-    <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
-      <span>Event Log</span>
-      <span style="font-weight:400;font-size:13px;color:var(--muted);">
-        <button id="logCopy" style="font-size:12px;padding:6px 12px;margin:0 4px 0 0;background:#303b49;">Copy</button>
-        <button id="logClear" style="font-size:12px;padding:6px 12px;margin:0 4px 0 0;background:#303b49;">Clear</button>
-        <button id="logToggle" style="font-size:12px;padding:6px 12px;margin:0;background:#303b49;">Hide</button>
-      </span>
-    </div>
-    <div id="logBox"
-         style="
-           background:#000;
-           color:#ccc;
-           font-family:'Courier New',monospace;
-           font-size:12px;
-           line-height:1.4;
-           padding:10px 12px;
-           border-radius:8px;
-           border:1px solid var(--border);
-           height:220px;
-           overflow-y:auto;
-           white-space:pre-wrap;
-           word-break:break-all;
-         ">
-      <span style="color:var(--muted);">Log initialized...</span>
-    </div>
-  </div>
-
 </div>
 
+<div class="project-compat" aria-hidden="true">
+<button id="legacy-start">Start</button><button id="legacy-stop" disabled>Stop</button><button id="legacy-record" disabled>Record</button><button id="legacy-stopRecord" disabled>Stop recording</button><button id="legacy-rebootBtn">Reboot</button><button id="legacy-forgetWifiBtn">Forget Wi-Fi</button><button id="legacy-rgbLedBtn">Turn blue RGB LED on</button><button id="legacy-logToggle">Hide</button><button id="legacy-logClear">Clear</button><button id="legacy-logCopy">Copy</button>
+<div id="legacy-status"></div><div id="legacy-renderState"></div><div id="legacy-diagDevice"></div><div id="legacy-deviceStatus"></div><div id="legacy-audioState"></div><div id="legacy-streamingState"></div><div id="legacy-listenerCount"></div><div id="legacy-diagListeners"></div><div id="legacy-diagStreaming"></div><div id="legacy-lastSeen"></div><div id="legacy-lastReboot"></div><div id="legacy-connectedAt"></div><div id="legacy-hwMac"></div><div id="legacy-hwUptime"></div><div id="legacy-hwReboots"></div><div id="legacy-hwBrownouts"></div><div id="legacy-hwWifiDrops"></div><div id="legacy-hwWsConn"></div><div id="legacy-hwWsDisc"></div><div id="legacy-hwStack"></div><div id="legacy-hwPackets"></div><div id="legacy-hwErrors"></div><div id="legacy-hwTx"></div><div id="legacy-quickListening"></div><div id="legacy-quickRender"></div><div id="legacy-quickStreaming"></div><div id="legacy-quickDevice"></div><div id="legacy-quickAudio"></div><div id="legacy-quickWifi"></div>
+
+<span id="legacy-state">Stopped</span><span id="legacy-error"></span><span id="legacy-mediaStatus">Audio: waiting for a remote track.</span><span id="legacy-micGainValue"></span><span id="legacy-micGainStatus"></span><span id="legacy-processingStatus"></span><audio id="legacy-audio" autoplay playsinline aria-hidden="true"></audio><input id="legacy-micGain" type="range" min="50" max="150" step="5" value="100" disabled><input id="legacy-noiseSuppression" type="checkbox" checked><select id="legacy-recordSource"><option value="raw" selected>Raw incoming audio</option><option value="filtered">Filtered listener output</option></select>
+</div><div class="toast" id="toast"></div>
+<div class="add-device-modal" id="addDeviceModal" role="dialog" aria-modal="true" aria-labelledby="addDeviceTitle" onclick="if(event.target===this)closeAddDevice()"><div class="add-device-dialog"><h2 id="addDeviceTitle">Add a new ESP32</h2><p>This staging server currently accepts one ESP32 audio source. The connected device appears here automatically. Adding a second device requires multi-device pairing on the server and firmware.</p><button type="button" onclick="closeAddDevice()">Close</button></div></div>
+
+
+<script src="/session-activity.js"></script>
 <script>
-/* ============================================================
- * EVENT LOG
- * ============================================================ */
-const LOG_MAX_LINES = 500;
-let logLineCount = 0;
-const logBox = document.getElementById("logBox");
+"use strict";
 
-function logAdd(message, level = "info") {
-  if (!logBox) return;
-  const color =
-    level === "error" ? "#ff5d67" :
-    level === "warn"  ? "#f5c451" :
-    level === "ok"    ? "#35d07f" :
-    level === "debug" ? "#6b7684" :
-                        "#9aa7b5";
-  const d = new Date();
-  const t = String(d.getHours()).padStart(2,"0") + ":" +
-            String(d.getMinutes()).padStart(2,"0") + ":" +
-            String(d.getSeconds()).padStart(2,"0") + "." +
-            String(d.getMilliseconds()).padStart(3,"0");
-  const line = document.createElement("div");
-  line.style.color = color;
-  line.textContent = `[${t}] ${message}`;
-  logBox.appendChild(line);
-  logLineCount++;
-  while (logLineCount > LOG_MAX_LINES) {
-    logBox.removeChild(logBox.firstChild);
-    logLineCount--;
-  }
-  logBox.scrollTop = logBox.scrollHeight;
-}
+const stateEl = document.getElementById("legacy-state");
+const errorEl = document.getElementById("legacy-error");
+const mediaStatusEl = document.getElementById("legacy-mediaStatus");
+const audioEl = document.getElementById("legacy-audio");
+const micGainEl = document.getElementById("legacy-micGain");
+const micGainValueEl = document.getElementById("legacy-micGainValue");
+const micGainStatusEl = document.getElementById("legacy-micGainStatus");
+const noiseSuppressionEl = document.getElementById("legacy-noiseSuppression");
+const processingStatusEl = document.getElementById("legacy-processingStatus");
+const startButton = document.getElementById("legacy-start");
+const stopButton = document.getElementById("legacy-stop");
+const recordButton = document.getElementById("legacy-record");
+const stopRecordButton = document.getElementById("legacy-stopRecord");
+const recordSourceEl = document.getElementById("legacy-recordSource");
 
-const logToggleBtn = document.getElementById("logToggle");
-const logClearBtn  = document.getElementById("logClear");
-const logCopyBtn   = document.getElementById("logCopy");
-
-logToggleBtn.onclick = () => {
-  const hidden = logBox.style.display === "none";
-  logBox.style.display = hidden ? "block" : "none";
-  logToggleBtn.textContent = hidden ? "Hide" : "Show";
-};
-
-logClearBtn.onclick = () => {
-  logBox.innerHTML = "";
-  logLineCount = 0;
-  logAdd("Log cleared", "debug");
-};
-
-logCopyBtn.onclick = async () => {
-  try {
-    await navigator.clipboard.writeText(logBox.innerText);
-    logAdd("Log copied to clipboard", "ok");
-  } catch {
-    logAdd("Copy failed", "error");
-  }
-};
-
-logAdd("Log initialized", "info");
-
-/* ============================================================
- * CONSTANTS AND STATE
- * ============================================================ */
-const SAMPLE_RATE = 16000;
-const CHANNELS = 1;
-const BYTES_PER_SAMPLE = 3;
-const BITS_PER_SAMPLE = 24;
-
-const TARGET_BUFFER_SECONDS = 0.20;
-const MAX_BUFFER_SECONDS = 0.80;
-const MIN_BUFFER_SECONDS = 0.06;
-
-let ws = null;
-let audioContext = null;
-let gainNode = null;
-let audioWorkletNode = null;
-let audioWorkletReady = false;
-let playbackStarted = false;
-let recording = false;
-let recordedChunks = [];
-let recordedSamples = 0;
-let recordStartTime = 0;
-let timerHandle = null;
-
-let deviceOnline = false;
-let statusUptimeSeconds = null;
-let statusUptimeBaseMs = 0;
-
+let socket = null;
+let peer = null;
+let remoteStream = null;
+let sessionId = null;
 let listenerActive = false;
 let manualStop = false;
 let reconnectTimer = null;
-let reconnectAttempts = 0;
-let reconnectInProgress = false;
+let reconnectAttempt = 0;
+let statsTimer = null;
+let pendingCandidates = [];
+let pendingLocalCandidates = [];
+let localDescriptionSent = false;
+let localIceComplete = false;
+let recorder = null;
+let recordingSourceLabel = "raw";
+let recordedChunks = [];
+let recordedBytes = 0;
+let sessionRedirectTimer = null;
+let audioContext = null;
+let mediaElementSource = null;
+let mediaStreamSource = null;
+let inputAnalyser = null;
+let outputAnalyser = null;
+let latestInputDbfs = null;
+let latestOutputDbfs = null;
+let playbackGain = null;
+let processedDestination = null;
+let gtcrnApi = null;
+let gtcrnWasmBinary = null;
+let gtcrnWorkletLoaded = false;
+let gtcrnNode = null;
+let noiseSuppressionActive = false;
+let silentInputSinceMs = null;
+let audioProcessingStatus = "GTCRN will activate when listening starts.";
+const MAX_PENDING_CANDIDATES = 32;
+const MAX_RECONNECT_MS = 15000;
+const MAX_RECORDING_BYTES = 128 * 1024 * 1024;
+const WS_RECONNECT_CLOSE_CODE = 3000;
 
-const MAX_RECONNECT_DELAY_MS = 15000;
+function addProjectLog(level,message) { const box=document.getElementById("logBox"); if(!box||!message)return; const entry=document.createElement("div"); entry.className="project-log-entry"; entry.dataset.level=level; entry.textContent="["+new Date().toLocaleTimeString()+"] ["+level+"] "+message; box.appendChild(entry); while(box.children.length>500)box.firstElementChild.remove(); const filter=document.querySelector(".filter-chip.active")?.dataset.filter||"all"; entry.hidden=filter!=="all"&&entry.dataset.level!==filter; box.scrollTop=box.scrollHeight; }
+function applyProjectLogFilter(filter){document.querySelectorAll(".filter-chip").forEach(b=>b.classList.toggle("active",b.dataset.filter===filter));document.querySelectorAll("#logBox .project-log-entry").forEach(e=>e.hidden=filter!=="all"&&e.dataset.level!==filter)}
+let lastLoggedState="";function setState(value){stateEl.textContent=value;if(value&&value!==lastLoggedState){lastLoggedState=value;addProjectLog(/failed|error|rejected|busy/i.test(value)?"ERROR":/waiting|reconnect|not connected/i.test(value)?"WARNING":"INFO",value)}}
 
-const $ = id => document.getElementById(id);
-
-const status = $("status");
-const level = $("level");
-const start = $("start");
-const stop = $("stop");
-const record = $("record");
-const stopRecord = $("stopRecord");
-const recordStatus = $("recordStatus");
-const duration = $("duration");
-const volume = $("volume");
-const volumeValue = $("volumeValue");
-const rebootBtn = $("rebootBtn");
-const forgetWifiBtn = $("forgetWifiBtn");
-
-function setStatus(text) { status.textContent = text; }
-
-function formatDate(value) {
-  if (!value) return "Never";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString();
+function refreshMicGainAvailability() {
+  const connected = !!sessionId && !!peer && peer.connectionState === "connected" &&
+    !!socket && socket.readyState === WebSocket.OPEN;
+  micGainEl.disabled = !connected;
+  const visibleGain=document.getElementById("gainSlider");if(visibleGain){visibleGain.disabled=!connected;if(document.activeElement!==visibleGain)visibleGain.value=micGainEl.value;const value=Number(micGainEl.value);document.getElementById("gainDb").textContent=value+"%";document.getElementById("gainFactor").textContent=(value/100).toFixed(2)+"x";document.querySelectorAll(".gain-preset").forEach(b=>{b.disabled=!connected;b.classList.toggle("active",Number(b.dataset.gain)===value)})}
+  if (!connected && sessionId) micGainStatusEl.textContent = "Available when the WebRTC audio connection is up.";
+  else if (!connected) micGainStatusEl.textContent = "Start listening and connect to adjust microphone gain.";
 }
 
-function formatUptime(seconds) {
-  if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return "—";
-  seconds = Math.max(0, Math.floor(seconds));
-  const days = Math.floor(seconds / 86400); seconds %= 86400;
-  const hours = Math.floor(seconds / 3600); seconds %= 3600;
-  const minutes = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  if (days > 0) return `${days}d ${String(hours).padStart(2,"0")}:${String(minutes).padStart(2,"0")}:${String(secs).padStart(2,"0")}`;
-  return `${String(hours).padStart(2,"0")}:${String(minutes).padStart(2,"0")}:${String(secs).padStart(2,"0")}`;
-}
-
-function updateUptimeDisplay() {
-  if (!deviceOnline || statusUptimeSeconds === null) { $("uptime").textContent = "—"; return; }
-  const elapsed = Math.floor((Date.now() - statusUptimeBaseMs) / 1000);
-  $("uptime").textContent = formatUptime(statusUptimeSeconds + elapsed);
-}
-
-function applyDeviceStatus(data) {
-  deviceOnline = !!data.online;
-  $("deviceStatus").textContent = deviceOnline ? "🟢 ONLINE" : "🔴 OFFLINE";
-  $("deviceStatus").className = "value " + (deviceOnline ? "online" : "offline");
-  $("audioState").textContent = data.audio || "IDLE";
-  $("audioState").className = "value " + (data.audio === "OK" ? "ok" : "idle");
-  const streaming = !!data.streaming;
-  $("streamingState").textContent = streaming ? "ON" : "OFF";
-  $("streamingState").className = "value " + (streaming ? "ok" : "idle");
-  $("listenerCount").textContent = Number.isFinite(Number(data.listeners)) ? data.listeners : "0";
-  $("lastSeen").textContent = formatDate(data.last_seen);
-  $("lastReboot").textContent = formatDate(data.last_rebooted);
-  $("connectedAt").textContent = formatDate(data.connected_at);
-
-  if (deviceOnline && data.uptime_seconds !== null && data.uptime_seconds !== undefined) {
-    statusUptimeSeconds = Number(data.uptime_seconds);
-    statusUptimeBaseMs = Date.now();
-  } else {
-    statusUptimeSeconds = null;
-  }
-  updateUptimeDisplay();
-
-  const wsActive = ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING);
-  start.disabled = !deviceOnline || wsActive;
-  rebootBtn.disabled = !deviceOnline;
-  forgetWifiBtn.disabled = !deviceOnline;
-}
-
-async function refreshDeviceStatus() {
-  try {
-    const response = await fetch("/api/device-status?_=" + Date.now(), {
-      cache: "no-store",
-      headers: { "Cache-Control": "no-cache" }
-    });
-    if (!response.ok) throw new Error("HTTP " + response.status);
-    const data = await response.json();
-    applyDeviceStatus(data);
-    const wasUnavailable = $("renderState").textContent !== "CONNECTED";
-    $("renderState").textContent = "CONNECTED";
-    $("renderState").className = "value ok";
-    if (wasUnavailable) logAdd("Render reachable", "ok");
-  } catch (error) {
-    const wasConnected = $("renderState").textContent === "CONNECTED";
-    $("renderState").textContent = "UNAVAILABLE";
-    $("renderState").className = "value offline";
-    if (wasConnected) logAdd("Render unreachable: " + error.message, "error");
-  }
-}
-
-setInterval(refreshDeviceStatus, 1000);
-setInterval(updateUptimeDisplay, 1000);
-
-/* ============================================================
- * ESP32 HEALTH POLLING
- * ============================================================ */
-let healthFailCount = 0;
-async function refreshHealth() {
-  try {
-    const r = await fetch("/api/esp32-health?_=" + Date.now(), { cache: "no-store" });
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    const h = await r.json();
-
-    if (healthFailCount > 0) {
-      logAdd("Health endpoint recovered", "ok");
-      healthFailCount = 0;
-    }
-
-    const upSec = h.uptime_sec || 0;
-    const hrs = Math.floor(upSec / 3600);
-    const mins = Math.floor((upSec % 3600) / 60);
-    const secs = upSec % 60;
-
-    $("hwMac").textContent = h.mac || "—";
-    $("hwChip").textContent = h.chip || "—";
-    $("hwVersion").textContent = h.version || "—";
-    $("hwUptime").textContent = `${hrs}h ${mins}m ${secs}s`;
-    $("hwBoot").textContent = h.boot_reason || "—";
-    $("hwReboots").textContent = (h.total_reboots || 0).toString();
-    $("hwBrownouts").textContent = (h.brownouts || 0).toString();
-    $("hwTemp").textContent = (h.temp_c !== undefined ? Number(h.temp_c).toFixed(1) : "—") + " °C";
-    $("hwRssi").textContent = (h.wifi_rssi || 0) + " dBm";
-    $("hwWifiDrops").textContent = (h.wifi_drops || 0).toString();
-    $("hwWsConn").textContent = (h.ws_connects || 0).toString();
-    $("hwWsDisc").textContent = (h.ws_disconnects || 0).toString();
-    $("hwHeap").textContent = Math.round((h.free_heap || 0) / 1024) + " KB";
-    $("hwMinHeap").textContent = Math.round((h.min_heap || 0) / 1024) + " KB";
-    $("hwPsram").textContent = Math.round((h.free_psram || 0) / 1024) + " KB";
-    $("hwStack").textContent = `${h.stack_audio || 0} / ${h.stack_sender || 0} / ${h.stack_monitor || 0}`;
-    $("hwPackets").textContent = `${h.packets || 0} / ${((h.bytes || 0) / 1048576).toFixed(1)} MB`;
-    $("hwErrors").textContent = `${h.send_err || 0} / ${h.i2s_err || 0}`;
-    $("hwTx").textContent = `${h.tx_max_us || 0} µs / ${h.tx_slow || 0}`;
-
-    const tempEl = $("hwTemp");
-    if (h.temp_c > 70) tempEl.style.color = "var(--red)";
-    else if (h.temp_c > 60) tempEl.style.color = "var(--yellow)";
-    else tempEl.style.color = "var(--green)";
-
-    const bootEl = $("hwBoot");
-    if (h.boot_reason === "POWERON" || h.boot_reason === "SOFTWARE") {
-      bootEl.style.color = "var(--green)";
-    } else if (h.boot_reason === "BROWNOUT" || h.boot_reason === "PANIC" || h.boot_reason === "CPU_LOCKUP") {
-      bootEl.style.color = "var(--red)";
-    } else {
-      bootEl.style.color = "var(--yellow)";
-    }
-
-    const brownEl = $("hwBrownouts");
-    brownEl.style.color = h.brownouts > 0 ? "var(--red)" : "var(--green)";
-
-    const rssiEl = $("hwRssi");
-    if (h.wifi_rssi > -55) rssiEl.style.color = "var(--green)";
-    else if (h.wifi_rssi > -70) rssiEl.style.color = "var(--yellow)";
-    else rssiEl.style.color = "var(--red)";
-
-    const wsDiscEl = $("hwWsDisc");
-    wsDiscEl.style.color = h.ws_disconnects > 0 ? "var(--yellow)" : "var(--green)";
-
-  } catch (e) {
-    healthFailCount++;
-    if (healthFailCount === 1) {
-      logAdd("Health endpoint unavailable: " + e.message, "warn");
-    } else if (healthFailCount % 20 === 0) {
-      logAdd("Health endpoint still down (" + healthFailCount + " tries)", "warn");
-    }
-  }
-}
-
-setInterval(refreshHealth, 3000);
-refreshHealth();
-
-/* ============================================================
- * VOLUME / DURATION
- * ============================================================ */
-function updateVolume() {
-  const value = Number(volume.value);
-  volumeValue.textContent = Math.round(value * 100) + "%";
-  if (gainNode) gainNode.gain.value = value;
-}
-volume.addEventListener("input", updateVolume);
-
-function updateDuration() {
-  if (!recording) return;
-  const seconds = Math.floor((Date.now() - recordStartTime) / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const remaining = seconds % 60;
-  duration.textContent = String(minutes).padStart(2, "0") + ":" + String(remaining).padStart(2, "0");
-  timerHandle = setTimeout(updateDuration, 500);
-}
-
-/* ============================================================
- * AUDIO WORKLET
- * ============================================================ */
-async function createAudioEngine() {
-  const workletCode = `
-    class PCMPlayerProcessor extends AudioWorkletProcessor {
-      constructor() {
-        super();
-        this.capacity = 32768;
-        this.buffer = new Float32Array(this.capacity);
-        this.readIndex = 0;
-        this.writeIndex = 0;
-        this.available = 0;
-        this.started = false;
-        this.targetSamples = ${Math.round(TARGET_BUFFER_SECONDS * SAMPLE_RATE)};
-        this.minSamples = ${Math.round(MIN_BUFFER_SECONDS * SAMPLE_RATE)};
-        this.maxSamples = ${Math.round(MAX_BUFFER_SECONDS * SAMPLE_RATE)};
-        this.underruns = 0;
-        this.port.onmessage = (event) => {
-          const data = event.data;
-          if (!data) return;
-          if (data.type === "pcm") {
-            const samples = new Float32Array(data.buffer);
-            for (let i = 0; i < samples.length; i++) {
-              if (this.available >= this.capacity) {
-                this.readIndex = (this.readIndex + 1) % this.capacity;
-                this.available--;
-              }
-              this.buffer[this.writeIndex] = samples[i];
-              this.writeIndex = (this.writeIndex + 1) % this.capacity;
-              this.available++;
-            }
-            if (this.available > this.maxSamples) {
-              const excess = this.available - this.maxSamples;
-              this.readIndex = (this.readIndex + excess) % this.capacity;
-              this.available -= excess;
-            }
-          }
-          if (data.type === "reset") {
-            this.readIndex = 0;
-            this.writeIndex = 0;
-            this.available = 0;
-            this.started = false;
-          }
-        };
-      }
-      process(inputs, outputs) {
-        const output = outputs[0];
-        if (!output || !output[0]) return true;
-        const channel = output[0];
-        if (!this.started) {
-          if (this.available >= this.targetSamples) this.started = true;
-          else { channel.fill(0); return true; }
-        }
-        for (let i = 0; i < channel.length; i++) {
-          if (this.available > 0) {
-            channel[i] = this.buffer[this.readIndex];
-            this.readIndex = (this.readIndex + 1) % this.capacity;
-            this.available--;
-          } else {
-            channel[i] = 0;
-            this.underruns++;
-            this.started = false;
-          }
-        }
-        return true;
-      }
-    }
-    registerProcessor("pcm-player", PCMPlayerProcessor);
-  `;
-  const blob = new Blob([workletCode], { type: "application/javascript" });
-  const url = URL.createObjectURL(blob);
-  try { await audioContext.audioWorklet.addModule(url); } finally { URL.revokeObjectURL(url); }
-  audioWorkletNode = new AudioWorkletNode(audioContext, "pcm-player", {
-    numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [1]
-  });
-  audioWorkletReady = true;
-  audioWorkletNode.connect(gainNode);
-  playbackStarted = false;
-}
-
-/* ============================================================
- * PCM DECODER
- * ============================================================ */
-let playCount = 0;
-function playPCM24(arrayBuffer) {
-  if (!audioContext || !gainNode || !audioWorkletNode || !audioWorkletReady) return;
-  if (arrayBuffer.byteLength < 16) return;
-  const view = new DataView(arrayBuffer);
-  const magic = view.getUint32(0, true);
-  const version = view.getUint8(4);
-  const headerBytes = view.getUint8(5);
-  const sampleCount = view.getUint16(6, true);
-  if (magic !== 0x41334631 || version !== 1 || headerBytes !== 16 ||
-      sampleCount === 0 || arrayBuffer.byteLength !== headerBytes + sampleCount * 3) {
-    console.warn("Invalid ESP32 audio frame", arrayBuffer.byteLength);
-    logAdd("Bad audio frame: " + arrayBuffer.byteLength + " bytes", "error");
+function sendMicGain() {
+  const gainPercent = Number(micGainEl.value);
+  micGainValueEl.value = `${gainPercent}%`;
+  if (!sessionId || !peer || peer.connectionState !== "connected") {
+    refreshMicGainAvailability();
     return;
   }
-  const pcm = new Int32Array(sampleCount);
-  const floatSamples = new Float32Array(sampleCount);
-  let sum = 0;
-  for (let i = 0; i < sampleCount; i++) {
-    const offset = headerBytes + i * 3;
-    let sample = view.getUint8(offset) | (view.getUint8(offset + 1) << 8) | (view.getUint8(offset + 2) << 16);
-    if (sample & 0x800000) sample |= 0xFF000000;
-    pcm[i] = sample;
-    const value = sample / 8388608.0;
-    floatSamples[i] = value;
-    sum += value * value;
+  if (!send({
+    type: "webrtc_audio_control",
+    session_id: sessionId,
+    command: "mic_gain",
+    gain_percent: gainPercent
+  })) {
+    micGainStatusEl.textContent = "Could not send gain change. Check the listener connection.";
+    return;
   }
-  if (recording) { recordedChunks.push(pcm); recordedSamples += sampleCount; }
-  const rms = Math.sqrt(sum / sampleCount);
-  level.style.width = Math.min(100, rms * 220) + "%";
-  audioWorkletNode.port.postMessage({ type: "pcm", buffer: floatSamples.buffer }, [floatSamples.buffer]);
-  playbackStarted = true;
-
-  playCount++;
-  if (playCount % 500 === 0) {
-    logAdd("Received " + playCount + " frames, RMS=" + rms.toFixed(4), "debug");
-  }
+  micGainStatusEl.textContent = `Sending ${gainPercent}% to the ESP32…`;
 }
 
-/* ============================================================
- * RECORDING
- * ============================================================ */
-function startRecording() {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  recordedChunks = [];
-  recordedSamples = 0;
-  recording = true;
-  recordStartTime = Date.now();
-  record.disabled = true;
-  stopRecord.disabled = false;
-  recordStatus.textContent = "🔴 Recording...";
-  duration.textContent = "00:00";
-  updateDuration();
-  logAdd("Recording started", "info");
-}
-
-function stopRecording() {
-  if (!recording) return;
-  recording = false;
-  if (timerHandle) { clearTimeout(timerHandle); timerHandle = null; }
-  record.disabled = false;
-  stopRecord.disabled = true;
-  recordStatus.textContent = "Processing WAV...";
-  const wavBlob = createWavBlob(recordedChunks, recordedSamples);
-  const url = URL.createObjectURL(wavBlob);
-  const link = document.createElement("a");
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  link.href = url;
-  link.download = "ESP32_INMP441_" + stamp + ".wav";
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-  recordStatus.textContent = "Recording saved as WAV";
-  logAdd("Recording saved (" + recordedSamples + " samples)", "ok");
-}
-
-function createWavBlob(chunks, sampleCount) {
-  const dataSize = sampleCount * BYTES_PER_SAMPLE;
-  const buffer = new ArrayBuffer(44 + dataSize);
-  const view = new DataView(buffer);
-  function writeString(offset, text) {
-    for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i));
+function handleMicGainAck(message) {
+  if (message.session_id !== sessionId || message.command !== "mic_gain") return;
+  const gainPercent = Number(message.gain_percent);
+  if (!message.ok) {
+    addProjectLog("ERROR","ESP32 rejected microphone gain change.");
+    micGainStatusEl.textContent = "The ESP32 rejected the gain change.";
+    return;
   }
-  writeString(0, "RIFF");
-  view.setUint32(4, 36 + dataSize, true);
-  writeString(8, "WAVE");
-  writeString(12, "fmt ");
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, CHANNELS, true);
-  view.setUint32(24, SAMPLE_RATE, true);
-  view.setUint32(28, SAMPLE_RATE * CHANNELS * BYTES_PER_SAMPLE, true);
-  view.setUint16(32, CHANNELS * BYTES_PER_SAMPLE, true);
-  view.setUint16(34, BITS_PER_SAMPLE, true);
-  writeString(36, "data");
-  view.setUint32(40, dataSize, true);
-  let offset = 44;
-  for (const chunk of chunks) {
-    for (let i = 0; i < chunk.length; i++) {
-      const sample = chunk[i];
-      view.setUint8(offset, sample & 0xFF);
-      view.setUint8(offset + 1, (sample >> 8) & 0xFF);
-      view.setUint8(offset + 2, (sample >> 16) & 0xFF);
-      offset += 3;
+  if (gainPercent !== Number(micGainEl.value)) return;
+  micGainStatusEl.textContent = `ESP32 gain set to ${gainPercent}%.`;
+  addProjectLog("INFO",`ESP32 microphone gain set to ${gainPercent}%.`);
+}
+
+function setAudioProcessingStatus(value) {
+  audioProcessingStatus = value;
+  processingStatusEl.textContent = value;
+}
+
+function readAudioLevelDbfs(analyser) {
+  if (!analyser) return null;
+  const samples = new Float32Array(analyser.fftSize);
+  analyser.getFloatTimeDomainData(samples);
+  let sumSquares = 0;
+  for (const sample of samples) sumSquares += sample * sample;
+  const rms = Math.sqrt(sumSquares / samples.length);
+  return rms === 0 ? Number.NEGATIVE_INFINITY : 20 * Math.log10(rms);
+}
+
+function formatAudioLevelDbfs(value) {
+  if (value === null) return "unavailable";
+  return Number.isFinite(value) ? `${value.toFixed(1)} dBFS` : "digital silence";
+}
+
+function syncPlaybackGain() {
+  if (!audioContext || !playbackGain) return;
+  const playing = remoteStream && !audioEl.paused;
+  const requestedGain = Number(document.getElementById("volume").value);
+  const targetGain = playing ? Math.max(0, Math.min(3, requestedGain)) : 0;
+  playbackGain.gain.setTargetAtTime(targetGain, audioContext.currentTime, 0.015);
+}
+
+audioEl.addEventListener("play", () => {
+  if (audioContext && audioContext.state === "suspended") {
+    void audioContext.resume().then(syncPlaybackGain).catch(() => {});
+  } else {
+    syncPlaybackGain();
+  }
+});
+audioEl.addEventListener("pause", syncPlaybackGain);
+audioEl.addEventListener("volumechange", syncPlaybackGain);
+
+function refreshAudioProcessingStatus() {
+  const hasLiveTrack = remoteStream && remoteStream.getAudioTracks().some((track) => track.readyState === "live");
+  const sampleRate = audioContext ? `${audioContext.sampleRate / 1000} kHz` : "";
+  if (!hasLiveTrack) {
+    setAudioProcessingStatus(noiseSuppressionActive
+      ? `GTCRN ready · ${sampleRate}; waiting for audio`
+      : "Noise suppression off · waiting for audio");
+    return;
+  }
+  setAudioProcessingStatus(noiseSuppressionActive
+    ? `GTCRN enabled · ${sampleRate}; checking signal levels`
+    : "Noise suppression off · direct WebRTC audio");
+}
+
+async function prepareAudioOutput() {
+  if (!audioContext) {
+    const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextConstructor) throw new Error("Web Audio is not supported in this browser");
+
+    const context = new AudioContextConstructor({ latencyHint: "interactive", sampleRate: 48000 });
+    if (context.sampleRate !== 48000 && context.sampleRate !== 16000) {
+      await context.close();
+      throw new Error(`GTCRN does not support ${context.sampleRate} Hz playback`);
+    }
+
+    try {
+      const inputMeter = context.createAnalyser();
+      const outputMeter = context.createAnalyser();
+      const gain = context.createGain();
+      const destination = context.createMediaStreamDestination();
+      inputMeter.fftSize = 2048;
+      outputMeter.fftSize = 2048;
+      inputMeter.smoothingTimeConstant = 0;
+      outputMeter.smoothingTimeConstant = 0;
+      gain.gain.value = 1;
+      inputMeter.connect(outputMeter);
+      outputMeter.connect(gain);
+      gain.connect(destination);
+      gain.connect(context.destination);
+      // Keep the visible audio element as the source of its play/volume/mute controls,
+      // but do not use its MediaElementAudioSourceNode for RTP audio processing.
+      // WebRTC tracks are connected directly with createMediaStreamSource below.
+      const elementSource = context.createMediaElementSource(audioEl);
+      audioContext = context;
+      mediaElementSource = elementSource;
+      inputAnalyser = inputMeter;
+      outputAnalyser = outputMeter;
+      playbackGain = gain;
+      processedDestination = destination;
+      syncPlaybackGain();
+    } catch (error) {
+      await context.close();
+      throw error;
     }
   }
-  return new Blob([buffer], { type: "audio/wav" });
+
+  if (audioContext.state === "suspended") await audioContext.resume();
 }
 
-/* ============================================================
- * RECONNECT LOGIC
- * ============================================================ */
-function resetReconnectState() {
-  reconnectAttempts = 0;
-  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+function connectRemoteAudioStream(stream) {
+  if (!audioContext || !inputAnalyser || !stream) {
+    throw new Error("Web Audio input is not ready");
+  }
+  audioEl.srcObject = stream;
+  audioEl.muted = true;
+  if (mediaStreamSource) {
+    try { mediaStreamSource.disconnect(); } catch {}
+  }
+  // Feed the WebRTC track directly into Web Audio. The package's GTCRN worklet
+  // expects live AudioWorklet channel buffers; routing via the media element
+  // source can leave those buffers silent in this browser path.
+  mediaStreamSource = audioContext.createMediaStreamSource(stream);
+  mediaStreamSource.connect(inputAnalyser);
+  syncPlaybackGain();
 }
 
-function resetAudioBuffer() {
-  if (audioWorkletNode) { try { audioWorkletNode.port.postMessage({ type: "reset" }); } catch {} }
-  playbackStarted = false;
+async function enableNoiseSuppression() {
+  await prepareAudioOutput();
+  if (!gtcrnApi) gtcrnApi = await import("/audio-suppressor/index.js");
+  if (!gtcrnWasmBinary) {
+    gtcrnWasmBinary = await gtcrnApi.loadGtcrn({ url: "/audio-suppressor/gtcrn.wasm" });
+  }
+  if (!gtcrnWorkletLoaded) {
+    await audioContext.audioWorklet.addModule("/audio-suppressor/gtcrn/workletProcessor.js");
+    gtcrnWorkletLoaded = true;
+  }
+  if (!gtcrnNode) {
+    gtcrnNode = new gtcrnApi.GtcrnWorkletNode(audioContext, {
+      wasmBinary: gtcrnWasmBinary,
+      maxChannels: 2
+    });
+    const node = gtcrnNode;
+    node.addEventListener("processorerror", () => {
+      if (gtcrnNode !== node) return;
+      restoreDirectAudio("GTCRN processing failed. Direct WebRTC audio has been restored; noise suppression is off.");
+    });
+  }
+
+  if (!inputAnalyser || !outputAnalyser || !playbackGain) {
+    throw new Error("GTCRN audio graph is not ready");
+  }
+  if (remoteStream) connectRemoteAudioStream(remoteStream);
+  inputAnalyser.disconnect();
+  inputAnalyser.connect(gtcrnNode);
+  gtcrnNode.connect(outputAnalyser);
+  audioEl.muted = true;
+  syncPlaybackGain();
+  // Do not wait for playback until the remote track exists: signaling starts
+  // only after this initializer returns, and play() can remain pending with no source.
+  if (remoteStream) {
+    try { await audioEl.play(); } catch { setState("Audio ready — press play"); }
+  }
+  noiseSuppressionActive = true;
+  silentInputSinceMs = null;
+  refreshAudioProcessingStatus();
+}
+
+function disableNoiseSuppression() {
+  if (inputAnalyser) inputAnalyser.disconnect();
+  if (inputAnalyser && outputAnalyser) inputAnalyser.connect(outputAnalyser);
+  if (inputAnalyser && outputAnalyser) {
+    if (gtcrnNode) {
+      try { gtcrnNode.disconnect(); } catch {}
+      try { gtcrnNode.destroy(); } catch {}
+      gtcrnNode = null;
+    }
+  }
+  noiseSuppressionActive = false;
+  silentInputSinceMs = null;
+  if (remoteStream) {
+    if (mediaElementSource) connectRemoteAudioStream(remoteStream);
+    else audioEl.srcObject = remoteStream;
+    void audioEl.play().catch(() => setState("Audio ready — press play"));
+  }
+  refreshAudioProcessingStatus();
+}
+
+function restoreDirectAudio(message) {
+  noiseSuppressionEl.checked = false;
+  disableNoiseSuppression();
+  if (remoteStream) {
+    audioEl.srcObject = remoteStream;
+    void audioEl.play().catch(() => setState("Audio ready — press play"));
+  }
+  if (recorder && recorder.state !== "inactive" && recordingSourceLabel === "filtered") {
+    recordingSourceLabel = "direct-fallback";
+  }
+  setAudioProcessingStatus("Direct WebRTC audio restored; noise suppression is off");
+  errorEl.textContent = message;
+}
+
+async function updateMediaStatus(targetPeer) {
+  if (!targetPeer || peer !== targetPeer) return;
+  const tracks = remoteStream ? remoteStream.getAudioTracks() : [];
+  let inboundAudio = null;
+  const codecsById = new Map();
+  try {
+    const report = await targetPeer.getStats();
+    report.forEach((stat) => {
+      if (stat.type === "codec") codecsById.set(stat.id, stat);
+      if (stat.type === "inbound-rtp" && (stat.kind === "audio" || stat.mediaType === "audio")) {
+        inboundAudio = stat;
+      }
+    });
+  } catch {
+    mediaStatusEl.textContent = "Audio stats unavailable in this browser.";
+    return;
+  }
+
+  const track = tracks[0];
+  const trackState = track ? `${track.readyState}${track.muted ? ", muted" : ", unmuted"}` : "not received";
+  const packets = inboundAudio?.packetsReceived ?? 0;
+  const bytes = inboundAudio?.bytesReceived ?? 0;
+  const jitterMs = Number.isFinite(inboundAudio?.jitter) ? Math.round(inboundAudio.jitter * 1000) : null;
+  const level = Number.isFinite(inboundAudio?.audioLevel) ? inboundAudio.audioLevel.toFixed(3) : null;
+  const codec = inboundAudio?.codecId ? codecsById.get(inboundAudio.codecId) : null;
+  const audioReceiver = targetPeer.getReceivers()
+    .find((receiver) => receiver.track?.kind === "audio");
+  const jitterEmitted = inboundAudio?.jitterBufferEmittedCount;
+  const jitterDelayMs = Number.isFinite(jitterEmitted) && jitterEmitted > 0
+    && Number.isFinite(inboundAudio?.jitterBufferDelay)
+    ? Math.round(inboundAudio.jitterBufferDelay * 1000 / jitterEmitted)
+    : null;
+  const jitterTargetDelayMs = Number.isFinite(jitterEmitted) && jitterEmitted > 0
+    && Number.isFinite(inboundAudio?.jitterBufferTargetDelay)
+    ? Math.round(inboundAudio.jitterBufferTargetDelay * 1000 / jitterEmitted)
+    : null;
+  const jitterMinimumDelayMs = Number.isFinite(jitterEmitted) && jitterEmitted > 0
+    && Number.isFinite(inboundAudio?.jitterBufferMinimumDelay)
+    ? Math.round(inboundAudio.jitterBufferMinimumDelay * 1000 / jitterEmitted)
+    : null;
+  const jitterTarget = Number.isFinite(audioReceiver?.jitterBufferTarget)
+    ? Math.round(audioReceiver.jitterBufferTarget) + " ms"
+    : "browser default";
+  const jitterBuffer = Number.isFinite(jitterEmitted)
+    ? "; jitter buffer emitted " + jitterEmitted + " samples (avg "
+      + (jitterDelayMs ?? "n/a") + " ms, target "
+      + (jitterTargetDelayMs ?? "n/a") + " ms, min "
+      + (jitterMinimumDelayMs ?? "n/a") + " ms; configured " + jitterTarget + ")"
+    : "";
+  const decoderStatus = inboundAudio?.decoderImplementation
+    ? "; decoder " + inboundAudio.decoderImplementation
+    : "";
+  const codecLabel = codec
+    ? `${codec.mimeType || "codec"}${Number.isFinite(codec.clockRate) ? `/${codec.clockRate} Hz` : ""}${Number.isFinite(codec.channels) ? `/${codec.channels} ch` : ""}`
+    : "codec unavailable";
+  const decodedSamples = Number.isFinite(inboundAudio?.totalSamplesReceived)
+    ? `decoded ${inboundAudio.totalSamplesReceived} samples`
+    : "decoded sample count unavailable";
+  const packetLoss = Number.isFinite(inboundAudio?.packetsLost)
+    ? `, ${inboundAudio.packetsLost} lost`
+    : "";
+  const packetDiscard = Number.isFinite(inboundAudio?.packetsDiscarded)
+    ? `, ${inboundAudio.packetsDiscarded} discarded`
+    : "";
+  const concealment = Number.isFinite(inboundAudio?.concealedSamples)
+    ? `, concealed ${inboundAudio.concealedSamples}`
+    : "";
+  const silentConcealment = Number.isFinite(inboundAudio?.silentConcealedSamples)
+    ? ` (${inboundAudio.silentConcealedSamples} silent)`
+    : "";
+  const concealmentEvents = Number.isFinite(inboundAudio?.concealmentEvents)
+    ? `, ${inboundAudio.concealmentEvents} concealment events`
+    : "";
+  const playback = audioEl.paused ? "paused" : "playing";
+  const playbackState = `player ${playback}, volume ${Math.round(audioEl.volume * 100)}%`;
+  latestInputDbfs = readAudioLevelDbfs(inputAnalyser);
+  latestOutputDbfs = readAudioLevelDbfs(outputAnalyser);
+  const graphLevels = noiseSuppressionActive && inputAnalyser && outputAnalyser
+    ? `; Web Audio input ${formatAudioLevelDbfs(latestInputDbfs)}, output ${formatAudioLevelDbfs(latestOutputDbfs)}`
+    : "";
+  const silentFilterWarning = noiseSuppressionActive && packets > 0
+    && Number.isFinite(latestInputDbfs) && latestInputDbfs > -80
+    && (latestOutputDbfs === Number.NEGATIVE_INFINITY
+      || (Number.isFinite(latestOutputDbfs) && latestOutputDbfs < -85))
+    ? "; GTCRN output is near silence despite input"
+    : "";
+  const silentInputWarning = noiseSuppressionActive && packets > 0
+    && Number.isFinite(inboundAudio?.audioLevel) && inboundAudio.audioLevel > 0.002
+    && (latestInputDbfs === Number.NEGATIVE_INFINITY
+      || (Number.isFinite(latestInputDbfs) && latestInputDbfs < -85))
+    ? "; Web Audio input is silent despite received audio"
+    : "";
+  const inboundSignalPresent = Number.isFinite(inboundAudio?.audioLevel) && inboundAudio.audioLevel > 0.002;
+  const webAudioInputSilent = latestInputDbfs === Number.NEGATIVE_INFINITY
+    || (Number.isFinite(latestInputDbfs) && latestInputDbfs < -85);
+  const webAudioOutputSilent = latestOutputDbfs === Number.NEGATIVE_INFINITY
+    || (Number.isFinite(latestOutputDbfs) && latestOutputDbfs < -85);
+  const graphHasSignalMismatch = noiseSuppressionActive && packets > 0
+    && (inboundSignalPresent && webAudioInputSilent
+      || Number.isFinite(latestInputDbfs) && latestInputDbfs > -80 && webAudioOutputSilent);
+  silentInputSinceMs = graphHasSignalMismatch ? (silentInputSinceMs ?? Date.now()) : null;
+  if (silentInputSinceMs !== null && Date.now() - silentInputSinceMs >= 5000) {
+    restoreDirectAudio("GTCRN audio path stayed silent while WebRTC audio was arriving. Direct playback is restored; noise suppression is off.");
+  }
+  const receiveState = packets > 0
+    ? `${codecLabel}; RTP ${packets} packets / ${bytes} bytes${packetLoss}${packetDiscard}${jitterMs === null ? "" : `, jitter ${jitterMs} ms`}; ${decodedSamples}${concealment}${silentConcealment}${concealmentEvents}${level === null ? "" : `, level ${level}`}`
+    : "no inbound audio RTP packets";
+  const processing = noiseSuppressionActive
+    ? (packets > 0 ? "GTCRN enabled" : "GTCRN ready; no audio packets received")
+    : "noise suppression off";
+  mediaStatusEl.textContent = `Audio: track ${trackState}; ${receiveState}; ${playbackState}; ${processing}${graphLevels}${silentFilterWarning}${silentInputWarning}${jitterBuffer}${decoderStatus}.`;
+}
+
+function startMediaStats(targetPeer) {
+  if (statsTimer) clearInterval(statsTimer);
+  void updateMediaStatus(targetPeer);
+  statsTimer = setInterval(() => { void updateMediaStatus(targetPeer); }, 2000);
+}
+
+function send(message) {
+  if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+  socket.send(JSON.stringify(message));
+  return true;
+}
+
+function closePeer() {
+  if (statsTimer) clearInterval(statsTimer);
+  statsTimer = null;
+  if (recorder && recorder.state !== "inactive") stopRecording();
+  if (peer) {
+    try { peer.ontrack = null; peer.onicecandidate = null; peer.close(); } catch {}
+  }
+  peer = null;
+  refreshMicGainAvailability();
+  silentInputSinceMs = null;
+  if (mediaStreamSource) {
+    try { mediaStreamSource.disconnect(); } catch {}
+    mediaStreamSource = null;
+  }
+  remoteStream = null;
+  audioEl.pause();
+  audioEl.srcObject = null;
+  mediaStatusEl.textContent = "Audio: waiting for a remote track.";
+  refreshAudioProcessingStatus();
+  recordButton.disabled = true;
+  stopRecordButton.disabled = true;
+  pendingCandidates = [];
+  pendingLocalCandidates = [];
+  localDescriptionSent = false;
+  localIceComplete = false;
 }
 
 function scheduleReconnect() {
-  if (!listenerActive || manualStop) return;
-  if (reconnectTimer || reconnectInProgress) return;
-  reconnectAttempts++;
-  const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), MAX_RECONNECT_DELAY_MS);
-  setStatus(`Connection lost — reconnecting in ${Math.ceil(delay / 1000)}s...`);
-  $("renderState").textContent = "RECONNECTING";
-  $("renderState").className = "value offline";
-  logAdd("Reconnecting in " + Math.ceil(delay / 1000) + "s (attempt " + reconnectAttempts + ")", "warn");
-  reconnectTimer = setTimeout(() => { reconnectTimer = null; connectWebSocket(); }, delay);
+  if (!listenerActive || manualStop || reconnectTimer) return;
+  reconnectAttempt++;
+  const delay = Math.min(1000 * (2 ** Math.min(reconnectAttempt - 1, 4)), MAX_RECONNECT_MS);
+  setState(`Reconnecting in ${Math.ceil(delay / 1000)}s`);
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connectSocket();
+  }, delay);
 }
 
-/* ============================================================
- * WEBSOCKET
- * ============================================================ */
-function connectWebSocket() {
+function connectSocket() {
   if (!listenerActive || manualStop) return;
-  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
-  reconnectInProgress = true;
-  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-  const socket = new WebSocket(protocol + "//" + location.host + "/ws");
-  ws = socket;
-  socket.binaryType = "arraybuffer";
-
-  socket.onopen = () => {
-    reconnectInProgress = false;
-    setStatus("Connected — authenticating listener...");
-    logAdd("WebSocket connected to " + location.host, "ok");
-    try {
-      socket.send(JSON.stringify({ type: "listener" }));
-      logAdd("Sent listener authentication", "debug");
-    } catch (error) {
-      console.error(error);
-      logAdd("Failed to send auth: " + error.message, "error");
-      socket.close();
-      return;
-    }
-    resetAudioBuffer();
-    start.disabled = true;
-    stop.disabled = false;
-    record.disabled = false;
-    rebootBtn.disabled = !deviceOnline;
-    forgetWifiBtn.disabled = !deviceOnline;
-    $("renderState").textContent = "CONNECTED";
-    $("renderState").className = "value ok";
+  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+  const scheme = location.protocol === "https:" ? "wss:" : "ws:";
+  const current = new WebSocket(`${scheme}//${location.host}/ws`);
+  socket = current;
+  setState("Connecting to Render signaling");
+  current.onopen = () => {
+    current.send(JSON.stringify({ type: "webrtc_listener_hello" }));
   };
-
-  socket.onmessage = (event) => {
-    if (typeof event.data === "string") {
-      try {
-        const message = JSON.parse(event.data);
-        if (message.type === "auth_failed") {
-          listenerActive = false;
-          reconnectInProgress = false;
-          resetReconnectState();
-          setStatus("Access denied — listener authentication failed");
-          logAdd("Auth failed: " + (message.reason || "unknown"), "error");
-          start.disabled = !deviceOnline;
-          stop.disabled = true;
-          record.disabled = true;
-          stopRecord.disabled = true;
-          rebootBtn.disabled = !deviceOnline;
-          forgetWifiBtn.disabled = !deviceOnline;
-          return;
-        }
-        if (message.type === "listener_ready") {
-          resetReconnectState();
-          setStatus("Listening — " + message.sample_rate + " Hz " + message.format);
-          logAdd("Listener ready: " + message.sample_rate + " Hz " + message.format, "ok");
-          rebootBtn.disabled = !deviceOnline;
-          forgetWifiBtn.disabled = !deviceOnline;
-        }
-        if (message.type === "device_status") applyDeviceStatus(message);
-        if (message.type === "stream_start") {
-          $("streamingState").textContent = "ON";
-          $("streamingState").className = "value ok";
-          logAdd("Stream started", "ok");
-        }
-        if (message.type === "stream_stop") {
-          $("streamingState").textContent = "OFF";
-          $("streamingState").className = "value idle";
-          logAdd("Stream stopped", "warn");
-        }
-        if (message.type === "reboot_requested") {
-          setStatus(message.source_connected ? "ESP32 reboot command sent..." : "ESP32 is not currently connected");
-          logAdd("Reboot request: " + (message.source_connected ? "forwarded" : "no source"), "warn");
-        }
-        if (message.type === "forget_wifi_requested") {
-          setStatus(message.source_connected ? "Forget Wi-Fi command sent. ESP32 is restarting into setup mode..." : "ESP32 is not currently connected");
-          logAdd("Forget Wi-Fi request: " + (message.source_connected ? "forwarded" : "no source"), "warn");
-          forgetWifiBtn.disabled = true;
-          rebootBtn.disabled = true;
-        }
-      } catch {
-        setStatus(event.data);
-        logAdd("Unexpected message: " + event.data, "debug");
+  current.onmessage = async (event) => {
+    if (typeof event.data !== "string") return;
+    let message;
+    try { message = JSON.parse(event.data); } catch { return; }
+    if (message.type === "webrtc_error") {
+      errorEl.textContent = message.reason || "Signaling rejected";
+      if (message.reason === "listener_busy") {
+        listenerActive = false;
+        window.setListenerActive(false);
+        startButton.disabled = false;
+        stopButton.disabled = true;
+        setState("Another listener is already active");
+        errorEl.textContent = "Another listener is already connected. Only one listener is supported at a time.";
+        return;
+      }
+      if (message.reason === "listener_session_required" || message.reason === "listener_session_expired") {
+        listenerActive = false;
+        window.setListenerActive(false);
+        startButton.disabled = false;
+        stopButton.disabled = true;
+        setState("Sign-in required");
+        errorEl.textContent = "Your listener session expired. Returning to sign-in…";
+        if (sessionRedirectTimer) clearTimeout(sessionRedirectTimer);
+        sessionRedirectTimer = setTimeout(() => { window.location.replace("/"); }, 600);
       }
       return;
     }
-    playPCM24(event.data);
-  };
-
-  socket.onerror = () => {
-    reconnectInProgress = false;
-    $("renderState").textContent = "RECONNECTING";
-    $("renderState").className = "value offline";
-    setStatus("Connection error — preparing to reconnect...");
-    logAdd("WebSocket error", "error");
-  };
-
-  socket.onclose = (e) => {
-    reconnectInProgress = false;
-    if (ws === socket) ws = null;
-    if (recording) stopRecording();
-    $("renderState").textContent = "DISCONNECTED";
-    $("renderState").className = "value idle";
-    start.disabled = !deviceOnline;
-    stop.disabled = true;
-    record.disabled = true;
-    stopRecord.disabled = true;
-    rebootBtn.disabled = !deviceOnline;
-    forgetWifiBtn.disabled = !deviceOnline;
-    logAdd(
-      "WebSocket closed: code=" + e.code + " reason=" + (e.reason || "(none)"),
-      e.wasClean ? "warn" : "error"
-    );
-    if (manualStop || !listenerActive) {
-      setStatus("Disconnected");
+    if (message.type === "webrtc_listener_ready") {
+      setState("Waiting for ESP32");
       return;
     }
-    resetAudioBuffer();
-    scheduleReconnect();
+    if (message.type === "webrtc_waiting_for_device") {
+      setState("Waiting for ESP32");
+      return;
+    }
+    if (message.type === "webrtc_session_ready") {
+      sessionId = message.session_id;
+      micGainEl.value = "100";
+      micGainValueEl.value = "100%";
+      micGainStatusEl.textContent = "Session default is 100%; waiting for WebRTC audio connection.";
+      reconnectAttempt = 0;
+      errorEl.textContent = "";
+      try { await createPeer(); }
+      catch (error) {
+        errorEl.textContent = `Could not create WebRTC peer: ${error.message}`;
+        setState("Peer setup failed");
+        closePeer();
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.close(WS_RECONNECT_CLOSE_CODE, "WebRTC peer setup failed");
+        }
+      }
+      return;
+    }
+    if (message.type === "webrtc_session_end") {
+      closePeer();
+      sessionId = null;
+      refreshMicGainAvailability();
+      setState("Waiting for ESP32");
+      return;
+    }
+    if (message.type === "webrtc_audio_control_ack") {
+      handleMicGainAck(message);
+      return;
+    }
+    if (message.type === "webrtc_signal" && message.session_id === sessionId) {
+      await handleSignal(message);
+    }
+  };
+  current.onerror = () => { setState("Signaling error"); };
+  current.onclose = () => {
+    if (socket === current) socket = null;
+    sessionId = null;
+    closePeer();
+    if (!manualStop) scheduleReconnect();
   };
 }
 
-/* ============================================================
- * START / STOP
- * ============================================================ */
-start.onclick = async () => {
-  if (listenerActive) return;
+async function createPeer() {
+  closePeer();
+  const peerSessionId = sessionId;
+  peer = new RTCPeerConnection({
+    iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+  });
+  peer.addTransceiver("audio", { direction: "recvonly" });
+  peer.onicecandidate = (event) => {
+    if (sessionId !== peerSessionId || !socket || socket.readyState !== WebSocket.OPEN) return;
+    if (!event.candidate) {
+      localIceComplete = true;
+      if (localDescriptionSent) {
+        send({ type: "webrtc_signal", session_id: peerSessionId, kind: "end-of-candidates" });
+      }
+      return;
+    }
+    const signal = {
+      type: "webrtc_signal",
+      session_id: peerSessionId,
+      kind: "candidate",
+      candidate: event.candidate.candidate
+    };
+    if (localDescriptionSent) {
+      send(signal);
+    } else {
+      if (pendingLocalCandidates.length >= MAX_PENDING_CANDIDATES) pendingLocalCandidates.shift();
+      pendingLocalCandidates.push(signal);
+    }
+  };
+  peer.ontrack = async (event) => {
+    remoteStream = event.streams && event.streams[0]
+      ? event.streams[0]
+      : new MediaStream([event.track]);
+    refreshAudioProcessingStatus();
+    void updateMediaStatus(peer);
+    recordButton.disabled = false;
+    try {
+      if (noiseSuppressionActive) {
+        connectRemoteAudioStream(remoteStream);
+      } else if (mediaElementSource) {
+        connectRemoteAudioStream(remoteStream);
+      } else {
+        audioEl.srcObject = remoteStream;
+      }
+      audioEl.muted = true;
+      await audioEl.play();
+    } catch (error) {
+      restoreDirectAudio(`Processed playback could not start (${error.message}); direct WebRTC audio restored.`);
+    }
+  };
+  peer.onconnectionstatechange = () => {
+    if (!peer) return;
+    refreshMicGainAvailability();
+    setState(`Peer ${peer.connectionState}`);
+    if (peer.connectionState === "failed") {
+      errorEl.textContent = "Direct ICE connection failed. This network may require TURN.";
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.close(WS_RECONNECT_CLOSE_CODE, "ICE failed; reconnect");
+      }
+    }
+  };
+  peer.oniceconnectionstatechange = () => {
+    if (peer && peer.iceConnectionState === "disconnected") {
+      setState("Peer disconnected — checking connection");
+    }
+  };
+  startMediaStats(peer);
+}
+
+async function handleSignal(message) {
+  if (!peer) return;
+  try {
+    if (message.kind === "offer") {
+      await peer.setRemoteDescription({ type: "offer", sdp: message.sdp });
+      const answer = await peer.createAnswer();
+      await peer.setLocalDescription(answer);
+      if (sessionId !== message.session_id || !send({
+        type: "webrtc_signal", session_id: message.session_id,
+        kind: "answer", sdp: peer.localDescription.sdp
+      })) throw new Error("Could not send the WebRTC answer");
+      localDescriptionSent = true;
+      for (const candidate of pendingLocalCandidates) send(candidate);
+      pendingLocalCandidates = [];
+      if (localIceComplete || peer.iceGatheringState === "complete") {
+        send({ type: "webrtc_signal", session_id: message.session_id, kind: "end-of-candidates" });
+      }
+      for (const candidate of pendingCandidates) await peer.addIceCandidate(candidate);
+      pendingCandidates = [];
+    } else if (message.kind === "candidate") {
+      const candidate = new RTCIceCandidate({ candidate: message.candidate, sdpMid: "0", sdpMLineIndex: 0 });
+      if (peer.remoteDescription) await peer.addIceCandidate(candidate);
+      else {
+        if (pendingCandidates.length >= MAX_PENDING_CANDIDATES) pendingCandidates.shift();
+        pendingCandidates.push(candidate);
+      }
+    } else if (message.kind === "end-of-candidates") {
+      if (peer.remoteDescription) await peer.addIceCandidate(null);
+      else {
+        if (pendingCandidates.length >= MAX_PENDING_CANDIDATES) pendingCandidates.shift();
+        pendingCandidates.push(null);
+      }
+    }
+  } catch (error) {
+    errorEl.textContent = `WebRTC signaling failed: ${error.message}`;
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.close(WS_RECONNECT_CLOSE_CODE, "WebRTC signaling failed");
+    }
+  }
+}
+
+function startRecording() {
+  const liveTracks = remoteStream ? remoteStream.getAudioTracks().filter((track) => track.readyState === "live") : [];
+  if (!liveTracks.length) {
+    errorEl.textContent = "No live incoming WebRTC audio track is available to record.";
+    return;
+  }
+  if (typeof MediaRecorder === "undefined") {
+    errorEl.textContent = "This browser does not support local audio recording.";
+    return;
+  }
+  const mimeType = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4"]
+    .find((candidate) => MediaRecorder.isTypeSupported(candidate));
+  recordedChunks = [];
+  recordedBytes = 0;
+  try {
+    const useFilteredOutput = recordSourceEl.value === "filtered";
+    recordingSourceLabel = useFilteredOutput ? (noiseSuppressionActive ? "filtered" : "listener-output") : "raw";
+    if (useFilteredOutput && !processedDestination) {
+      errorEl.textContent = "Filtered output is not ready. Start listening again, or select raw incoming audio.";
+      return;
+    }
+    const recordingStream = useFilteredOutput ? processedDestination.stream : new MediaStream(liveTracks);
+    recorder = new MediaRecorder(recordingStream, mimeType ? { mimeType } : {});
+    recorder.ondataavailable = (event) => {
+      if (event.data && event.data.size) {
+        if (recordedBytes + event.data.size > MAX_RECORDING_BYTES) {
+          errorEl.textContent = "Recording stopped at the local storage limit.";
+          stopRecording();
+          return;
+        }
+        recordedBytes += event.data.size;
+        recordedChunks.push(event.data);
+      }
+    };
+    recorder.onstop = () => {
+      if (!recordedChunks.length) {
+        errorEl.textContent = "No recorded audio data was produced.";
+        return;
+      }
+      const recordingType = recorder.mimeType || mimeType || "application/octet-stream";
+      const blob = new Blob(recordedChunks, { type: recordingType });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      const suffix = recordingType.includes("mp4") ? "m4a" : recordingType.includes("ogg") ? "ogg" : "webm";
+      link.download = `ESP32-audio-${recordingSourceLabel}-${new Date().toISOString().replace(/[:.]/g, "-")}.${suffix}`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      recordedChunks = [];
+      addProjectLog("INFO","Recording saved to this device.");
+    };
+    recorder.start(1000);
+    addProjectLog("INFO","Recording started ("+recordingSourceLabel+").");
+    recordSourceEl.disabled = true;
+    recordButton.disabled = true;
+    stopRecordButton.disabled = false;
+  } catch (error) {
+    errorEl.textContent = `Recording unavailable: ${error.message}`;
+  }
+}
+
+function stopRecording() {
+  if (recorder && recorder.state !== "inactive") {recorder.stop();addProjectLog("INFO","Recording stopped.");}
+  recordSourceEl.disabled = false;
+  recordButton.disabled = !(remoteStream && remoteStream.getAudioTracks().some((track) => track.readyState === "live"));
+  stopRecordButton.disabled = true;
+}
+
+startButton.onclick = async () => {
   manualStop = false;
   listenerActive = true;
-  resetReconnectState();
-  logAdd("Start listening requested", "info");
+  window.setListenerActive(true);
+  errorEl.textContent = "";
+  startButton.disabled = true;
+  stopButton.disabled = false;
   try {
-    audioContext = new (window.AudioContext || window.webkitAudioContext)({
-      sampleRate: SAMPLE_RATE, latencyHint: "interactive"
-    });
-    gainNode = audioContext.createGain();
-    gainNode.gain.value = Number(volume.value);
-    gainNode.connect(audioContext.destination);
-    await audioContext.resume();
-    await createAudioEngine();
-    logAdd("Audio engine ready (" + SAMPLE_RATE + " Hz)", "ok");
-    connectWebSocket();
+    await prepareAudioOutput();
+    if (noiseSuppressionEl.checked) await enableNoiseSuppression();
+    else disableNoiseSuppression();
   } catch (error) {
-    console.error(error);
-    listenerActive = false;
-    manualStop = true;
-    setStatus("Audio initialization failed");
-    logAdd("Audio init failed: " + error.message, "error");
-    if (audioContext) { try { await audioContext.close(); } catch {} }
-    audioContext = null;
-    gainNode = null;
+    noiseSuppressionEl.checked = false;
+    disableNoiseSuppression();
+    errorEl.textContent = `AI noise suppression unavailable; continuing with direct audio. ${error.message}`;
   }
+  connectSocket();
 };
 
-stop.onclick = () => {
+noiseSuppressionEl.addEventListener("change", async () => {
+  if (!audioContext) {
+    setAudioProcessingStatus(noiseSuppressionEl.checked
+      ? "GTCRN will activate when listening starts."
+      : "Noise suppression off · waiting for audio");
+    return;
+  }
+  try {
+    if (noiseSuppressionEl.checked) await enableNoiseSuppression();
+    else disableNoiseSuppression();
+  } catch (error) {
+    noiseSuppressionEl.checked = false;
+    disableNoiseSuppression();
+    errorEl.textContent = `AI noise suppression unavailable; continuing with direct audio. ${error.message}`;
+  }
+});
+
+micGainEl.addEventListener("input", () => {
+  micGainValueEl.value = `${micGainEl.value}%`;
+});
+micGainEl.addEventListener("change", sendMicGain);
+
+stopButton.onclick = () => {
   manualStop = true;
   listenerActive = false;
-  reconnectInProgress = false;
-  resetReconnectState();
-  logAdd("Stop listening requested", "info");
-  if (recording) stopRecording();
-  if (ws) {
-    if (ws.readyState === WebSocket.OPEN) {
-      try { ws.send(JSON.stringify({ type: "listener_stop" })); } catch {}
-    }
-    ws.close();
-    ws = null;
-  }
-  if (audioWorkletNode) {
-    try { audioWorkletNode.port.postMessage({ type: "reset" }); audioWorkletNode.disconnect(); } catch {}
-    audioWorkletNode = null;
-  }
-  audioWorkletReady = false;
-  playbackStarted = false;
-  if (audioContext) { audioContext.close(); audioContext = null; }
-  gainNode = null;
-  level.style.width = "0%";
-  $("streamingState").textContent = "OFF";
-  $("streamingState").className = "value idle";
-  setStatus("Stopped");
-  start.disabled = !deviceOnline;
-  stop.disabled = true;
-  record.disabled = true;
-  stopRecord.disabled = true;
-  rebootBtn.disabled = !deviceOnline;
-  forgetWifiBtn.disabled = !deviceOnline;
+  window.setListenerActive(false);
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  if (recorder && recorder.state !== "inactive") stopRecording();
+  if (socket) socket.close(1000, "Listener stopped");
+  socket = null;
+  sessionId = null;
+  closePeer();
+  disableNoiseSuppression();
+  startButton.disabled = false;
+  stopButton.disabled = true;
+  setState("Stopped");
 };
 
-/* ============================================================
- * REBOOT / FORGET WIFI
- * ============================================================ */
-rebootBtn.onclick = async () => {
-  if (!deviceOnline) { setStatus("ESP32 is offline"); return; }
-  const confirmed = window.confirm("Are you sure you want to reboot the ESP32?\n\nThe microphone stream will stop and the ESP32 will restart.");
-  if (!confirmed) return;
-  setStatus("Sending ESP32 reboot command...");
-  logAdd("Sending reboot request", "info");
-  try {
-    const response = await fetch("/api/esp32/reboot", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: "{}"
-    });
-    const data = await response.json();
-    if (!response.ok || !data.ok) throw new Error(data.error || "Reboot request failed");
-    setStatus(data.source_connected ? "ESP32 reboot command sent." : "ESP32 is not currently connected.");
-    logAdd("Reboot request sent", "warn");
-  } catch (error) {
-    console.error(error);
-    setStatus("Could not send reboot command.");
-    logAdd("Reboot request failed: " + error.message, "error");
-  }
-};
+recordButton.onclick = startRecording;
+stopRecordButton.onclick = stopRecording;
+window.addEventListener("pagehide", () => {
+  manualStop = true;
+  listenerActive = false;
+  window.setListenerActive(false);
+  if (socket) socket.close(1000, "Page closed");
+  closePeer();
+  if (audioContext && audioContext.state !== "closed") void audioContext.close();
+});
 
-forgetWifiBtn.onclick = async () => {
-  if (!deviceOnline) { setStatus("ESP32 is offline"); return; }
-  const confirmed = window.confirm(
-    "Are you sure you want to forget the ESP32 Wi-Fi settings?\n\n" +
-    "The ESP32 will erase its saved Wi-Fi credentials and restart into setup mode.\n\n" +
-    "You will need to connect to the ESP32 setup hotspot to configure Wi-Fi again."
-  );
-  if (!confirmed) return;
-  forgetWifiBtn.disabled = true;
-  rebootBtn.disabled = true;
-  setStatus("Sending Forget Wi-Fi command...");
-  logAdd("Sending forget-wifi request", "info");
-  try {
-    const response = await fetch("/api/esp32/forget-wifi", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: "{}"
-    });
-    const data = await response.json();
-    if (!response.ok || !data.ok) throw new Error(data.error || "Forget Wi-Fi request failed");
-    setStatus(data.source_connected ? "Forget Wi-Fi command sent. ESP32 is restarting into setup mode..." : "ESP32 is not currently connected.");
-    logAdd("Forget-wifi request sent", "warn");
-  } catch (error) {
-    console.error(error);
-    setStatus("Could not send Forget Wi-Fi command.");
-    logAdd("Forget-wifi request failed: " + error.message, "error");
-    forgetWifiBtn.disabled = !deviceOnline;
-    rebootBtn.disabled = !deviceOnline;
-  }
-};
-
-record.onclick = startRecording;
-stopRecord.onclick = stopRecording;
-
-updateVolume();
-refreshDeviceStatus();
 </script>
+<script>
+let esp32Online=false,serverReachable=false,serverListenerConnected=false,uiRecordingWasActive=false,uiRecordingStartedAt=0,uiRecordingElapsed=0,deviceTelemetry=null;
+function setTelemetryText(id,value){const n=document.getElementById(id);if(n)n.textContent=value}
+function formatBytes(value){if(!Number.isFinite(value))return "—";if(value<1024)return value+" B";if(value<1048576)return (value/1024).toFixed(1)+" KB";return (value/1048576).toFixed(2)+" MB"}
+function formatUptime(ms){if(!Number.isFinite(ms))return "—";const s=Math.floor(ms/1000),d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return d?d+"d "+h+"h "+m+"m":h?h+"h "+m+"m":m+"m "+s%60+"s"}
+function renderDeviceTelemetry(){const t=deviceTelemetry;if(!t){["hwSsid","hwRssi","hwWifiRetries","hwHeap","hwMinHeap","hwPsram","hwTotalPsram","uptime","hwBoot","hwResetReason","hwWebRtc","hwInternet","systemFirmware","systemWifi","hwIp","hwHealth","hwCaptureErrors","hwBufferOverflows","hwDspErrors","hwAudioRms"].forEach(id=>setTelemetryText(id,esp32Online?"Waiting for firmware telemetry":"Device offline"));setTelemetryText("hwChip","ESP32-S3");setTelemetryText("hwVersion","—");setTelemetryText("hwRender",serverReachable?"Connected":"Not connected");setTelemetryText("systemConnection",esp32Online?"Connected":"Not connected");const note=document.getElementById("diagnosticsNote");if(note)note.textContent=esp32Online?"Device is connected, but this firmware has not sent diagnostic telemetry yet. Flash the updated Phase 5 firmware.":"ESP32 is offline. Detailed readings appear when it reconnects with telemetry-enabled firmware.";return}
+setTelemetryText("hwChip","ESP32-S3");setTelemetryText("hwVersion",t.firmware||"Phase 5");setTelemetryText("uptime",formatUptime(t.uptime_ms));setTelemetryText("hwBoot",t.reset_reason===undefined?"—":"Boot reason "+t.reset_reason);setTelemetryText("hwResetReason",t.reset_reason===undefined?"—":"Reset reason "+t.reset_reason);setTelemetryText("hwHeap",formatBytes(t.free_heap));setTelemetryText("hwMinHeap",formatBytes(t.min_free_heap));setTelemetryText("hwPsram",formatBytes(t.free_psram));setTelemetryText("hwTotalPsram",formatBytes(t.total_psram));setTelemetryText("hwSsid",t.wifi_ssid|| (t.wifi_connected?"Connected (SSID unavailable)":"Disconnected"));setTelemetryText("settingsWifiStatus",t.wifi_connected?(t.wifi_ssid||"Connected"):"Disconnected");setTelemetryText("hwRssi",Number.isFinite(t.wifi_rssi)&&t.wifi_connected?t.wifi_rssi+" dBm":"—");setTelemetryText("hwWifiRetries",Number.isFinite(t.wifi_retry_count)?String(t.wifi_retry_count):"—");setTelemetryText("hwIp",t.ip||"—");setTelemetryText("hwHealth",t.health_ok?(t.health_fault_latched?"Fault latched":"Healthy"):"Fault / not ready");setTelemetryText("hwCaptureErrors",String(t.audio_capture_errors??"—"));setTelemetryText("hwBufferOverflows",String(t.audio_buffer_overflows??"—"));setTelemetryText("hwDspErrors",String(t.dsp_errors??"—"));setTelemetryText("hwAudioRms",Number.isFinite(t.dsp_vad_rms_db)?t.dsp_vad_rms_db.toFixed(1)+" dB":"—");setTelemetryText("hwInternet",t.wifi_connected?"Connected":"Disconnected");setTelemetryText("hwRender",serverReachable?"Connected":"Not connected");setTelemetryText("hwWebRtc",t.peer_connected?"Connected":(serverListenerConnected?"Negotiating":"Waiting for listener"));setTelemetryText("systemConnection","Connected");setTelemetryText("systemFirmware",t.firmware||"Reported");setTelemetryText("systemWifi",t.wifi_connected?(t.wifi_ssid||"Connected"):"Disconnected");const note=document.getElementById("diagnosticsNote");if(note)note.textContent="Live device telemetry · updated "+new Date().toLocaleTimeString();const meter=document.querySelector("#panel-diagnostics .mini-meter");if(meter){const strength=Number.isFinite(t.wifi_rssi)?Math.max(0,Math.min(4,Math.round((t.wifi_rssi+90)/12))):0;[...meter.children].forEach((bar,i)=>bar.style.opacity=i<strength?"1":".2")} }
+async function refreshEsp32Status(){try{const response=await fetch("/api/webrtc/device-status",{credentials:"same-origin",cache:"no-store"});if(!response.ok)throw new Error("HTTP "+response.status);const data=await response.json();esp32Online=!!data.online;serverListenerConnected=!!data.listener_connected;serverReachable=true;deviceTelemetry=data.telemetry&&typeof data.telemetry==="object"?data.telemetry:null}catch{esp32Online=false;serverListenerConnected=false;serverReachable=false;deviceTelemetry=null}renderDeviceTelemetry();syncListenerDesign()}
+const uiAudio=document.getElementById("audioBtn"),uiAudioText=document.getElementById("audioBtnText"),uiMic=document.getElementById("micOuter"),uiBadge=document.getElementById("listeningBadge"),uiRec=document.getElementById("recBtn"),uiRecText=document.getElementById("recBtnText"),uiVolume=document.getElementById("volume"),uiVolumeValue=document.getElementById("volumeValue"),uiLevel=document.getElementById("level"),uiDb=document.getElementById("dbValue");
+function toggleListening(){(listenerActive?stopButton:startButton).click()}function toggleRecording(){(stopRecordButton.disabled?recordButton:stopRecordButton).click()}
+function clearProjectLogs(){const n=document.getElementById("logBox");if(n)n.replaceChildren()}function copyProjectLogs(){const n=document.getElementById("logBox"),text=[...(n?.querySelectorAll(".project-log-entry")||[])].map(e=>e.textContent).join("\n");if(!text.trim()){toast("There are no logs to export.");return}const blob=new Blob([text],{type:"text/plain;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="esp32-listener-log.txt";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)}
+function toast(message){const n=document.getElementById("toast");n.textContent=message;n.classList.add("show");clearTimeout(n._hideTimer);n._hideTimer=setTimeout(()=>n.classList.remove("show"),2600)}
+function toggleDeviceDropdown(){const d=document.getElementById("deviceDropdown"),b=document.getElementById("deviceBackdrop"),s=document.getElementById("deviceSelector"),open=!d.classList.contains("show");d.classList.toggle("show",open);b.classList.toggle("show",open);s.classList.toggle("open",open)}
+function closeDeviceDropdown(){document.getElementById("deviceDropdown").classList.remove("show");document.getElementById("deviceBackdrop").classList.remove("show");document.getElementById("deviceSelector").classList.remove("open")}
+function addDevice(){closeDeviceDropdown();document.getElementById("addDeviceModal").classList.add("show")}function closeAddDevice(){document.getElementById("addDeviceModal").classList.remove("show")}
+function confirmFactoryReset(){toast("Factory reset is not available for this firmware.")}
+function openSessionModal(){toast("Session timeout is managed by the server.")}function closeSessionModal(){}function saveSessionTimeout(){toast("Session timeout is managed by the server.")}
+function toggleHotspotPassword(){toast("Hotspot credentials are managed by ESP32 firmware.")}function toggleHotspot(){toast("Hotspot settings are managed by ESP32 firmware.")}
+function setQuality(){toast("The ESP32 WebRTC stream uses its configured audio format.")}function updateGain(){toast("Use the microphone gain control when the WebRTC link is connected.")}function setGainPreset(){toast("Use the microphone gain control when the WebRTC link is connected.")}
+document.getElementById("deviceSelector").addEventListener("click",toggleDeviceDropdown);document.getElementById("deviceBackdrop").addEventListener("click",closeDeviceDropdown);document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeDeviceDropdown();closeAddDevice()}});
+document.querySelectorAll(".tab-btn").forEach(t=>t.addEventListener("click",()=>{const k=t.dataset.tab;document.querySelectorAll(".tab-btn").forEach(x=>x.classList.toggle("active",x===t));document.querySelectorAll(".panel").forEach(p=>p.classList.toggle("active",p.id==="panel-"+k))}));
+document.querySelectorAll(".filter-chip").forEach(button=>button.addEventListener("click",()=>applyProjectLogFilter(button.dataset.filter)));
+const visibleGainSlider=document.getElementById("gainSlider");let gainSendTimer=null;visibleGainSlider.addEventListener("input",()=>{micGainEl.value=visibleGainSlider.value;micGainValueEl.value=visibleGainSlider.value+"%";refreshMicGainAvailability();if(gainSendTimer)clearTimeout(gainSendTimer);gainSendTimer=setTimeout(()=>{gainSendTimer=null;sendMicGain()},1500)});visibleGainSlider.addEventListener("change",()=>{if(gainSendTimer)clearTimeout(gainSendTimer);gainSendTimer=null;sendMicGain()});document.querySelectorAll(".gain-preset").forEach(button=>button.addEventListener("click",()=>{visibleGainSlider.value=button.dataset.gain;visibleGainSlider.dispatchEvent(new Event("input",{bubbles:true}));visibleGainSlider.dispatchEvent(new Event("change",{bubbles:true}))}));
+let lastLoggedError="";new MutationObserver(()=>{const message=errorEl.textContent.trim();if(message&&message!==lastLoggedError){lastLoggedError=message;addProjectLog("ERROR",message)}}).observe(errorEl,{childList:true,characterData:true,subtree:true});
+let swipeStart=null;
+document.addEventListener("touchstart",event=>{
+ const touch=event.changedTouches[0];
+ if(event.touches.length!==1||event.target.closest("button,input,textarea,select,a,label,.volume-presets,.add-device-modal.show,.device-dropdown.show")){swipeStart=null;return}
+ swipeStart={x:touch.clientX,y:touch.clientY};
+},{passive:true});
+document.addEventListener("touchend",event=>{
+ if(!swipeStart)return;
+ const touch=event.changedTouches[0],dx=touch.clientX-swipeStart.x,dy=touch.clientY-swipeStart.y;swipeStart=null;
+ if(Math.abs(dx)<65||Math.abs(dx)<Math.abs(dy)*1.25)return;
+ const tabs=[...document.querySelectorAll(".tab-btn")],current=tabs.findIndex(tab=>tab.classList.contains("active")),next=current+(dx<0?1:-1);
+ if(next>=0&&next<tabs.length)tabs[next].click();
+},{passive:true});
+
+
+let pullStart=null,pullDistance=0;const pullStyle=document.createElement("style");pullStyle.textContent="html,body{overscroll-behavior-y:contain}.pull-refresh-indicator{position:fixed;z-index:9999;top:env(safe-area-inset-top,0px);left:50%;transform:translate(-50%,-150%);opacity:0;display:flex;align-items:center;gap:9px;padding:10px 16px;border:1px solid #2b4b77;border-radius:999px;background:#111827;color:#dbeafe;font:600 12px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;box-shadow:0 8px 24px #0008;transition:opacity .12s;pointer-events:none;white-space:nowrap}.pull-refresh-indicator.show{opacity:1}";document.head.appendChild(pullStyle);const pullIndicator=document.createElement("div");pullIndicator.className="pull-refresh-indicator";pullIndicator.setAttribute("role","status");pullIndicator.textContent="↓  Pull down to refresh";document.body.appendChild(pullIndicator);
+document.addEventListener("touchstart",event=>{const touch=event.changedTouches[0];if(event.touches.length!==1||window.scrollY>1||event.target.closest("button,input,textarea,select,a,label,.add-device-modal.show,.device-dropdown.show")){pullStart=null;return}pullStart={x:touch.clientX,y:touch.clientY}},{passive:true});
+document.addEventListener("touchmove",event=>{if(!pullStart)return;const touch=event.touches[0],dx=touch.clientX-pullStart.x,dy=touch.clientY-pullStart.y;if(dy<0||Math.abs(dx)>Math.max(14,dy*.8)||window.scrollY>1){pullStart=null;pullIndicator.classList.remove("show");return}if(dy>8){pullDistance=Math.min(110,dy*.55);pullIndicator.textContent=pullDistance>=72?"↻  Release to refresh":"↓  Pull down to refresh";pullIndicator.style.transform="translate(-50%,"+(Math.min(12,pullDistance-42))+"px)";pullIndicator.classList.add("show");if(event.cancelable)event.preventDefault()}},{passive:false});
+function clearPullIndicator(){pullStart=null;pullDistance=0;pullIndicator.classList.remove("show");pullIndicator.style.transform="translate(-50%,-150%)"}
+document.addEventListener("touchend",event=>{if(!pullStart){clearPullIndicator();return}const touch=event.changedTouches[0],dy=touch.clientY-pullStart.y;if(dy>=132&&window.scrollY<=1){pullIndicator.textContent="↻  Refreshing…";pullIndicator.style.transform="translate(-50%,12px)";setTimeout(()=>window.location.reload(),120);pullStart=null;return}clearPullIndicator()},{passive:true});document.addEventListener("touchcancel",clearPullIndicator,{passive:true});
+const uiNoise=document.querySelector("#panel-settings .switch-row input");
+refreshMicGainAvailability();
+const logStyle=document.createElement("style");logStyle.textContent=".project-log-entry{padding:3px 0;font:11px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;color:#cbd5e1}.project-log-entry[data-level=WARNING]{color:#fbbf24}.project-log-entry[data-level=ERROR]{color:#fca5a5}.project-log-entry[hidden]{display:none}";document.head.appendChild(logStyle);
+const settingsNotes=document.querySelector("#panel-settings .section-title");if(settingsNotes){const note=document.createElement("div");note.className="card flat small";note.textContent="Microphone mode and audio format are set by the ESP32 firmware. Microphone gain can be adjusted while connected.";settingsNotes.after(note)}
+const diagnosticsTitle=document.querySelector("#panel-diagnostics .section-title");if(diagnosticsTitle){const note=document.createElement("div");note.id="diagnosticsNote";note.className="card flat small";note.textContent="Waiting for ESP32 telemetry. Flash the updated Phase 5 firmware to report live Wi-Fi and diagnostics.";diagnosticsTitle.after(note)}
+const settingsPanel=document.getElementById("panel-settings"),wifiTitle=[...settingsPanel.querySelectorAll(".section-title")].find(n=>n.textContent.includes("WI-FI SETTINGS"));if(wifiTitle){let node=wifiTitle.nextElementSibling;while(node&&!node.classList.contains("section-title")){const next=node.nextElementSibling;node.remove();node=next}const hotspotTitle=node;if(hotspotTitle){const hotspotCard=hotspotTitle.nextElementSibling;hotspotTitle.remove();hotspotCard?.remove()}const note=document.createElement("div");note.className="card flat small";note.textContent="Wi-Fi scanning, network changes, and hotspot settings are not exposed by the current ESP32 WebRTC firmware.";wifiTitle.replaceWith(note)}
+const timeoutRow=document.querySelector("#panel-system #sessionTimeoutDisplay")?.closest(".row");if(timeoutRow){timeoutRow.classList.remove("clickable");timeoutRow.removeAttribute("onclick");timeoutRow.querySelector("#sessionTimeoutDisplay").textContent="Managed by server";timeoutRow.querySelector(".chevron")?.remove()}
+const securityTitle=[...document.querySelectorAll("#panel-system .section-title")].find(n=>n.textContent.includes("SECURITY"));if(securityTitle){const card=securityTitle.nextElementSibling;if(card){card.replaceChildren();card.className="card flat small";card.textContent="Sign-in, PIN requirements, and session security are managed by the server.";}}
+const ledTitle=[...document.querySelectorAll("#panel-system .section-title")].find(n=>n.textContent.includes("LED SETTINGS"));if(ledTitle){const ledCard=ledTitle.nextElementSibling;if(ledCard){const note=document.createElement("div");note.className="card flat small";note.textContent="LED controls are not available over the current ESP32 WebRTC firmware connection.";ledCard.after(note)}}const otherSwitches=[...document.querySelectorAll("#panel-settings .switch-row input")].slice(1);if(uiNoise){uiNoise.checked=noiseSuppressionEl.checked;uiNoise.addEventListener("change",()=>{noiseSuppressionEl.checked=uiNoise.checked;noiseSuppressionEl.dispatchEvent(new Event("change"));addProjectLog("INFO",noiseSuppressionEl.checked?"Noise suppression enabled.":"Noise suppression disabled.")})}otherSwitches.forEach((x,i)=>{x.disabled=true;const label=x.closest(".switch-row")?.querySelector(".sw-label");if(label)label.textContent=i===0?"Voice Detection (unavailable)":"Limiter (unavailable)"});
+document.querySelectorAll('input[name="micMode"],input[name="quality"],input[name="timeout"],input[name="ledMode"],#panel-system .switch input').forEach(x=>x.disabled=true);
+const ledGroup=document.querySelector("#panel-system .radio-group");let uiLed=null;if(ledGroup){const row=document.createElement("div");row.className="switch-row";row.innerHTML='<span class="sw-label">Blue RGB LED</span><label class="switch"><input id="blueLedToggle" type="checkbox" disabled><span class="slider-sw"></span></label>';ledGroup.replaceWith(row);uiLed=row.querySelector("input")}
+const quickLabels=[...document.querySelectorAll('#panel-listener .info-pills[style*="margin-bottom"] .info-pill .pl')];
+function syncListenerDesign(){
+ const track=remoteStream?.getAudioTracks()[0],peerConnected=peer?.connectionState==="connected"&&track?.readyState==="live",deviceReady=esp32Online||peerConnected,active=!!listenerActive,recording=!stopRecordButton.disabled;
+ if(recording&&!uiRecordingWasActive){uiRecordingStartedAt=Date.now();uiRecordingElapsed=0}if(!recording&&uiRecordingWasActive){uiRecordingElapsed=Date.now()-uiRecordingStartedAt;uiRecordingStartedAt=0}uiRecordingWasActive=recording;const elapsed=Math.floor((recording?Date.now()-uiRecordingStartedAt:uiRecordingElapsed)/1000),hours=Math.floor(elapsed/3600),minutes=Math.floor((elapsed%3600)/60),seconds=elapsed%60;document.getElementById("duration").textContent=[hours,minutes,seconds].map(n=>String(n).padStart(2,"0")).join(":");
+ uiAudio.disabled=false;uiAudio.classList.toggle("stop",active);uiAudio.classList.toggle("start",!active);uiAudioText.textContent=active?"Stop Listening":"Start Listening";uiMic.classList.toggle("active",active);uiBadge.textContent=active?"Listening":"Not listening";uiBadge.classList.toggle("active",active);
+ uiRec.disabled=recordButton.disabled&&stopRecordButton.disabled;uiRec.classList.toggle("record",!recording);uiRec.classList.toggle("recording",recording);uiRecText.textContent=recording?"Stop Recording":"Start Recording";document.getElementById("recordStatus").textContent=recording?"Recording":(uiRecordingElapsed>0?"Saved":"Not recording");
+ const head=document.getElementById("topStatus"),state=deviceReady?"Connected":(active&&peer?.connectionState!=="failed"?"Connecting":"Not connected");head.textContent=state;head.classList.toggle("online",deviceReady);head.classList.toggle("offline",!deviceReady);const capacityNote=document.getElementById("capacityNote");if(capacityNote){const busy=serverListenerConnected&&!active;capacityNote.textContent=busy?"Live audio is currently in use by another listener. Only one listener can connect at a time; try again when they stop.":"Live audio supports one listener at a time. If someone else is listening, wait until they stop and try again.";capacityNote.classList.toggle("busy",busy)}
+ const media=mediaStatusEl.textContent;uiBadge.title=errorEl.textContent||media;const codec=media.match(/(?:^|;\s*)(opus|pcmu|pcma|g722|ilbc|isac)(?:\/([^;]+))?/i),rate=media.match(/\/(\d+)\s*Hz/i),channels=media.match(/\/(\d+)\s*ch/i),settings=track?.getSettings?.()||{};
+ const rateNode=document.getElementById("pillRate"),codecNode=document.getElementById("pillBits"),channelNode=document.getElementById("pillChannels"),inputNode=document.getElementById("pillInput");
+ rateNode.textContent=peerConnected?(rate?(Number(rate[1])/1000)+" kHz":(audioContext?(audioContext.sampleRate/1000)+" kHz":"Live")):"—";codecNode.textContent=peerConnected?(codec?codec[1].toUpperCase():"WebRTC"):"—";channelNode.textContent=peerConnected?((Number(channels?.[1]||settings.channelCount||1)===1)?"Mono":(channels?.[1]||settings.channelCount)+" ch"):"—";inputNode.textContent=peerConnected?(track.muted?"No signal":"Live"):"Waiting";
+ const db=latestOutputDbfs,pct=Number.isFinite(db)?Math.max(0,Math.min(100,Math.round(100*Math.pow(10,db/20)))):0;uiLevel.style.width=pct+"%";uiDb.textContent=Number.isFinite(db)?db.toFixed(1)+" dBFS":"— dB";const bars=document.getElementById("meterBars");if(bars&&!bars.children.length)for(let i=0;i<28;i++){const b=document.createElement("span");b.className="meter-bar";bars.appendChild(b)}if(bars){const n=Math.round(pct/100*bars.children.length);[...bars.children].forEach((b,i)=>{b.className="meter-bar";if(i<n)b.classList.add(i>bars.children.length*.88?"on-3":i>bars.children.length*.7?"on-2":"on-1")})}
+ uiVolumeValue.textContent=Math.round(Number(uiVolume.value)*100)+"%";document.querySelectorAll(".volume-preset").forEach(b=>b.classList.toggle("active",Math.abs(Number(b.dataset.volume)/100-Number(uiVolume.value))<0.005));
+ const qvalues=[deviceReady?"Connected":(active?"Connecting":"Not connected"),peerConnected?"Connected":(active?(peer?.connectionState||"Connecting"):"Not connected"),serverReachable?"Connected":"Not connected",deviceTelemetry?(deviceTelemetry.wifi_connected?"Connected":"Disconnected"):"No telemetry"];quickLabels.forEach((n,i)=>{n.textContent=qvalues[i];n.style.color=/connected|live/i.test(qvalues[i])?"var(--green)":qvalues[i]==="Connecting"?"var(--amber)":qvalues[i]==="No telemetry"?"var(--text-faint)":"var(--red)"});
+ const menu=document.getElementById("deviceMenuStatus");if(menu)menu.textContent=deviceReady?"Connected":(active?"Connecting":"Not connected");if(uiLed)uiLed.disabled=true;
+}
+uiVolume.addEventListener("input",()=>{uiVolumeValue.textContent=Math.round(Number(uiVolume.value)*100)+"%";if(audioContext?.state==="suspended")void audioContext.resume().then(syncPlaybackGain).catch(()=>{});else if(typeof syncPlaybackGain==="function")syncPlaybackGain();document.querySelectorAll(".volume-preset").forEach(b=>b.classList.toggle("active",Math.abs(Number(b.dataset.volume)/100-Number(uiVolume.value))<0.005))});document.querySelectorAll(".volume-preset").forEach(b=>b.addEventListener("click",()=>{uiVolume.value=Number(b.dataset.volume)/100;uiVolume.dispatchEvent(new Event("input",{bubbles:true}));syncListenerDesign()}));uiMic.addEventListener("click",toggleListening);
+const actionRows=[...document.querySelectorAll("#panel-system .action-row")],restart=actionRows.find(x=>x.textContent.includes("Restart ESP32")),wifi=actionRows.find(x=>x.textContent.includes("Forget Wi-Fi"));if(restart)restart.onclick=()=>toast("Restart control is unavailable through the current WebRTC device protocol.");if(wifi)wifi.onclick=()=>toast("Wi-Fi reset control is unavailable through the current WebRTC device protocol.");actionRows.find(x=>x.textContent.includes("Factory Reset"))?.remove();
+document.querySelector("#panel-system .update-banner")?.remove();document.querySelectorAll("#panel-system .btn-pill").forEach(b=>b.remove());const otaTitle=document.querySelector("#panel-system .section-title");if(otaTitle){const note=document.createElement("div");note.className="card flat small";note.textContent="Firmware updates are not configured on this service.";otaTitle.after(note)}
+document.getElementById("deviceList").innerHTML='<div class="device-item selected"><div class="device-item-logo online"></div><div class="device-item-text"><h4>ESP32 INMP441</h4><p id="deviceMenuStatus">Checking connection…</p></div><span class="device-item-badge">Current</span></div>';
+document.getElementById("restartDeviceButton")?.addEventListener("click",()=>{if(!esp32Online){toast("ESP32 is offline.");return}if(!socket||socket.readyState!==WebSocket.OPEN||!sessionId){toast("Start listening first to establish the authenticated device session.");return}if(!window.confirm("Restart the ESP32 now? The audio connection will stop briefly."))return;if(!send({type:"webrtc_device_control",session_id:sessionId,command:"restart"})){toast("Could not send restart command.");return}toast("Restart command sent.");});
+setInterval(syncListenerDesign,250);setInterval(refreshEsp32Status,3000);refreshEsp32Status();syncListenerDesign();</script>
 </body>
 </html>
+
+
+
+
+
+
+
