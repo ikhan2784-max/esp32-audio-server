@@ -1359,9 +1359,9 @@ function buildHealthCategories() {
         Number.isFinite(outputPeak) ? `Output peak ${Math.floor(outputPeak)} · limiter interventions ${d.dsp_limiter_clipped ?? "n/a"}; percentage is not available.` : "Processed peak telemetry is unavailable."),
       makeHealthItem("Processing time per frame", "Unsupported", "Per-frame DSP execution timing is not instrumented.", false),
       makeHealthItem("DSP CPU load", "Unsupported", "Per-task CPU utilization is not instrumented.", false),
-      makeHealthItem("DSP processing failures", !hasData ? "Not Tested" :
+      makeHealthItem("DSP errors recorded", !hasData ? "Not Tested" :
         healthCounterStatus([d.dsp_errors, d.dsp_input_underflows, d.dsp_output_overflows], "Warning"),
-        hasData ? `DSP errors ${d.dsp_errors ?? "n/a"} · input underflows ${d.dsp_input_underflows ?? "n/a"} · output overflows ${d.dsp_output_overflows ?? "n/a"}.` : "DSP failure counters are not available."),
+        hasData ? `Cumulative runtime counters: DSP errors ${d.dsp_errors ?? "n/a"} · input underflows ${d.dsp_input_underflows ?? "n/a"} · output overflows ${d.dsp_output_overflows ?? "n/a"}. Current DSP task: ${d.dsp_running === true ? "running" : d.dsp_running === false ? "stopped" : "not reported"}. A nonzero count records an earlier error; this telemetry does not include its specific cause.` : "DSP error counters are not available."),
     ] },
     { name: "Wi-Fi & Hotspot", items: [
       healthBool(hasData ? d.wifi_connected : undefined, "Wi-Fi connected/disconnected", "Station Wi-Fi is connected.", "Station Wi-Fi is disconnected.", "Critical"),

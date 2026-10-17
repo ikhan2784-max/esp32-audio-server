@@ -240,6 +240,33 @@ test("late device session-end acknowledgement after Stop keeps signaling online"
     assert.equal(signaling.getStatus().session_active, true);
     assert.equal(device.last("webrtc_session_ready").session_id, replacementSessionId);
     assert.equal(replacement.last("webrtc_error"), undefined);
+    assert.equal(replacement.messages.some((message) =>
+        message.type === "webrtc_diagnostic_event" && message.stage === "session_end"), false);
+});
+
+test("late listener session-end acknowledgement after device disconnect is ignored", () => {
+    const harness = makeHarness();
+    const { signaling, device, listener } = harness;
+    const endedSessionId = joinBoth(harness);
+
+    signaling.handleClose(device);
+    assert.equal(signaling.getStatus().device_connected, false);
+    assert.equal(signaling.getStatus().session_active, false);
+    assert.equal(listener.last("webrtc_session_end").reason, "device_disconnected");
+
+    assert.equal(signaling.handleMessage(listener, {
+        type: "webrtc_diagnostic_event",
+        session_id: endedSessionId,
+        stage: "session_end",
+        status: "info",
+        reason: "device_disconnected",
+    }), true);
+
+    assert.equal(listener.closeCode, null);
+    assert.equal(signaling.getStatus().device_connected, false);
+    assert.equal(signaling.getStatus().session_active, false);
+    assert.equal(listener.messages.some((message) =>
+        message.type === "webrtc_error" && message.reason === "invalid_diagnostic_session"), false);
 });
 
 test("a closed listener reservation is reclaimed during the next listener join", () => {
