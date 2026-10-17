@@ -448,22 +448,29 @@ function createWebRtcSignaling({
             state.sessionId === null && message.request_id === ws.traceRequestId;
         const isStandby = senderIsDevice && message.stage === "power_standby" &&
             state.sessionId === null && state.recentEndedSessionIds.includes(message.session_id);
-        if (!isStart && !isStandby &&
+        // Either authenticated peer may acknowledge webrtc_session_end after
+        // Render has already ended the session. Accept only a session ID that
+        // Render itself recently ended, and never forward it into a newer one.
+        const isLateSessionEnd = (senderIsDevice || senderIsListener) &&
+            message.stage === "session_end" &&
+            isRecentlyEndedSession(state, message.session_id) && message.session_id !== state.sessionId;
+        if (!isStart && !isStandby && !isLateSessionEnd &&
             (state.sessionId === null || message.session_id !== state.sessionId)) {
             fail(ws, "invalid_diagnostic_session");
             return true;
         }
-        if (!controlRateAllowed(ws)) {
+        if (!isLateSessionEnd && !controlRateAllowed(ws)) {
             fail(ws, "control_rate_limited");
             return true;
         }
         const now = Date.now();
-        const session = isStart ? "pending" : state.sessionId;
+        const session = isStart ? "pending" : isLateSessionEnd ? message.session_id : state.sessionId;
         const source = senderIsDevice ? "SNF" : "Listener";
         const reason = message.reason ? message.reason : "none";
-        console.info(`[audio-trace] at=${new Date(now).toISOString()} device=${state.deviceId} session=${session} request=${ws.traceRequestId || "none"} source=Render stage=trace_received reported_source=${source} reported_stage=${message.stage} status=${message.status} reason=${reason}${Number.isSafeInteger(message.device_uptime_ms) ? ` device_uptime_ms=${message.device_uptime_ms}` : ""}${message.stage === "first_opus_packet_sent" ? " media=direct_p2p_not_received_by_Render" : ""}`);
+        console.info(`[audio-trace] at=${new Date(now).toISOString()} device=${state.deviceId} session=${session} request=${ws.traceRequestId || "none"} source=Render stage=trace_received reported_source=${source} reported_stage=${message.stage} status=${message.status} reason=${reason}${isLateSessionEnd ? " disposition=late_terminal_ignored" : ""}${Number.isSafeInteger(message.device_uptime_ms) ? ` device_uptime_ms=${message.device_uptime_ms}` : ""}${message.stage === "first_opus_packet_sent" ? " media=direct_p2p_not_received_by_Render" : ""}`);
         const peer = senderIsDevice ? state.listener : state.device;
-        if (!isStart && !isStandby && peer && peer.readyState === WebSocket.OPEN) {
+        if (!isStart && !isStandby && !isLateSessionEnd &&
+            peer && peer.readyState === WebSocket.OPEN) {
             const forwarded = {
                 type: "webrtc_diagnostic_event",
                 device_id: state.deviceId,

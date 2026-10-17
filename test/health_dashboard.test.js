@@ -31,6 +31,8 @@ test("any measured nonzero counter keeps its configured alert status", () => {
 test("DSP counter alerts are separate from current DSP task state", () => {
     assert.match(html, /healthCounterStatus\(\[d\.dsp_errors, d\.dsp_input_underflows, d\.dsp_output_overflows\], "Warning"\)/);
     assert.match(html, /healthBool\(hasData \? d\.dsp_running : undefined,[\s\S]{0,120}"Critical"\)/);
+    assert.match(html, /DSP errors recorded/);
+    assert.match(html, /Cumulative runtime counters:[\s\S]*A nonzero count records an earlier error/);
 });
 
 test("task health does not call missing task measurements stopped", () => {
