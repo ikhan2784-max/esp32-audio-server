@@ -164,6 +164,31 @@ test("WebRTC status is authenticated, uncached, and reports the single-device si
             uptime_ms: 123456,
             free_internal_heap: 32768,
         });
+
+        const powerSettingRequestPromise = waitForWsMessage(
+            deviceSocket, (message) => message.type === "webrtc_power_settings_request");
+        const powerSettingResponsePromise = fetch(
+            `${baseUrl}/api/devices/ESP32-S3-INMP441/power-settings`, {
+                method: "POST",
+                headers: { ...originHeaders, cookie },
+                body: JSON.stringify({ auto_power_saving_enabled: false }),
+            }
+        );
+        const powerSettingRequest = await powerSettingRequestPromise;
+        assert.match(powerSettingRequest.id, /^[A-Za-z0-9_-]{1,64}$/);
+        assert.equal(powerSettingRequest.auto_power_saving_enabled, false);
+        deviceSocket.send(JSON.stringify({
+            type: "webrtc_power_settings_response",
+            id: powerSettingRequest.id,
+            auto_power_saving_enabled: false,
+            ok: true,
+        }));
+        const powerSettingResponse = await powerSettingResponsePromise;
+        assert.equal(powerSettingResponse.status, 200);
+        const powerSettingBody = await powerSettingResponse.json();
+        assert.equal(powerSettingBody.ok, true);
+        assert.equal(powerSettingBody.device_id, "ESP32-S3-INMP441");
+        assert.equal(powerSettingBody.auto_power_saving_enabled, false);
     } finally {
         if (deviceSocket && deviceSocket.readyState !== WebSocket.CLOSED) deviceSocket.close();
         child.kill();

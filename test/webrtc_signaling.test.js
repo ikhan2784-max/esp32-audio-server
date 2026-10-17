@@ -20,12 +20,13 @@ class MockSocket {
     last(type) { return this.messages.findLast((message) => message.type === type); }
 }
 
-function makeHarness(onHealthCheckResponse = () => {}) {
+function makeHarness(onHealthCheckResponse = () => {}, onPowerSettingsResponse = () => {}) {
     const signaling = createWebRtcSignaling({
         WebSocket,
         sourceToken: "test-only-token",
         isListenerSessionValid: (ws) => ws.sessionValid,
         onHealthCheckResponse,
+        onPowerSettingsResponse,
     });
     return { signaling, device: new MockSocket(), listener: new MockSocket(true) };
 }
@@ -88,6 +89,38 @@ test("routes a bounded authenticated device health snapshot to its request callb
         dsp_ns_level: "off",
         dsp_vad_level: "medium",
         dsp_limiter_level: "low",
+    }]]);
+});
+
+test("routes persisted power-setting requests through the authenticated device connection while idle", () => {
+    const responses = [];
+    const { signaling, device } = makeHarness(() => {}, (...args) => responses.push(args));
+    signaling.handleMessage(device, {
+        type: "webrtc_device_hello",
+        device: "ESP32-S3-INMP441",
+        source_token: "test-only-token",
+    });
+    const deviceId = device.last("webrtc_device_ready").device_id;
+    const requestId = "power_1234567890abcdef";
+
+    assert.equal(signaling.getStatus(deviceId).session_active, false);
+    assert.equal(signaling.requestDevicePowerSettings(deviceId, requestId, false), true);
+    assert.deepEqual(device.last("webrtc_power_settings_request"), {
+        type: "webrtc_power_settings_request",
+        id: requestId,
+        auto_power_saving_enabled: false,
+    });
+    assert.equal(signaling.requestDevicePowerSettings(deviceId, "bad id", true), false);
+
+    assert.equal(signaling.handleMessage(device, {
+        type: "webrtc_power_settings_response",
+        id: requestId,
+        auto_power_saving_enabled: false,
+        ok: true,
+    }), true);
+    assert.deepEqual(responses, [[deviceId, requestId, {
+        auto_power_saving_enabled: false,
+        ok: true,
     }]]);
 });
 

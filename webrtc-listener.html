@@ -59,6 +59,8 @@
     .device-pill.online .status-dot { background:var(--green); }
     .device-pill.offline { color:#ff8987; border-color:#703e42; background:#291417; }
     .device-pill.offline .status-dot { background:var(--red); }
+    .device-pill.reconnecting { color:#ffd47a; border-color:#806321; background:#2a210b; }
+    .device-pill.reconnecting .status-dot { background:#ffc64d; }
     .device-pill.idle, .device-pill.standby { color:#ffd47a; border-color:#806321; background:#2a210b; }
     .device-pill.idle .status-dot, .device-pill.standby .status-dot { background:#ffc64d; }
     .activity-timer { display:inline-flex; align-items:center; justify-content:center; min-height:28px; padding:5px 8px; color:#78ddff; border:1px solid #1c5b79; border-radius:999px; background:#082132; font-size:.6rem; font-weight:800; letter-spacing:.035em; white-space:nowrap; font-variant-numeric:tabular-nums; }
@@ -571,7 +573,7 @@
         <section class="setting-group"><h2>AUDIO QUALITY</h2><div class="choice-list">
           <label class="choice-row"><input id="quality16k" type="radio" name="audioQuality" disabled><span>16 kHz / 16-bit PCM</span><small>Voice profile</small></label>
           <label class="choice-row"><input id="quality48k" type="radio" name="audioQuality" disabled><span>48 kHz / 16-bit PCM</span><small>High-rate profile</small></label>
-        </div><span id="audioProfileStatus" class="helper" role="status" aria-live="polite">Connect to the SNF device to change its saved audio profile.</span></section>
+        </div><span id="audioProfileStatus" class="helper" role="status" aria-live="polite">Audio profile changes require an active audio session and restart the SNF.</span></section>
         <section class="setting-group"><h2>DEVICE GAIN</h2>
           <div class="setting-row"><span>Automatic gain control (AGC)</span><label class="toggle" aria-label="Enable microphone automatic gain control"><input id="autoGain" type="checkbox" disabled><span></span></label></div>
           <p class="helper">AGC is off by default. Turn it on to let the SNF adjust microphone level automatically.</p>
@@ -639,11 +641,11 @@
             <option value="off">Off</option><option value="low" selected>Low</option>
             <option value="medium">Medium</option><option value="high">High</option>
           </select></div>
-          <span id="audioSettingsStatus" role="status" aria-live="polite">Connect to the selected SNF device to change AGC and DSP controls. This build uses one mic.</span>
+          <span id="audioSettingsStatus" role="status" aria-live="polite">Audio controls can be adjusted while idle. Changes are saved in this browser and applied when listening starts. This build uses one mic.</span>
         </section>
         <section class="setting-group"><h2>POWER MANAGEMENT</h2>
-          <div class="setting-row"><span>Automatic power saving</span><label class="toggle" aria-label="Enable automatic microphone standby"><input id="autoPowerSaving" type="checkbox" checked><span></span></label></div>
-          <span id="powerSavingStatus" class="helper" role="status" aria-live="polite">On · microphone and DSP stop after 30 seconds without a listener; Render signaling stays connected. Sleep mode is not used.</span>
+          <div class="setting-row"><span>Automatic power saving</span><label class="toggle" aria-label="Enable automatic CPU frequency scaling while idle"><input id="autoPowerSaving" type="checkbox" checked><span></span></label></div>
+          <span id="powerSavingStatus" class="helper" role="status" aria-live="polite">On · when listening stops, the maximum CPU-frequency lock is released immediately. CPU scaling can reach a 160 MHz minimum; audio capture, DSP, Opus, Wi-Fi and Render signaling remain active. Sleep mode is not used.</span>
         </section>
         <section class="setting-group"><div class="setting-heading-row"><h2>SESSION TIMEOUT</h2><span id="sessionTimeoutTimer" class="session-countdown" aria-label="Time until automatic sign out">Checking…</span></div>
           <label class="gain-heading" for="sessionTimeout"><span>Sign out after inactivity</span></label>
@@ -678,6 +680,7 @@
           <div class="metric"><span>Uptime</span><strong id="infoUptime">—</strong></div><div class="metric"><span>Boot reason</span><strong id="infoBoot">—</strong></div>
           <div class="metric"><span>Last rebooted</span><strong id="infoLastReboot">—</strong></div><div class="metric"><span>Total reboots</span><strong id="infoBootCount">—</strong></div>
           <div class="metric"><span>Brownouts</span><strong id="infoBrownouts">—</strong></div><div class="metric"><span>CPU / temperature</span><strong id="infoCpu">—</strong></div>
+          <div class="metric"><span>CPU scaling mode</span><strong id="infoCpuMode">—</strong></div><div class="metric"><span>Idle CPU minimum</span><strong id="infoCpuIdleMin">—</strong></div>
           <div class="metric wide"><span>Last saved firmware error</span><strong id="infoLastError">—</strong></div>
         </div></section>
         <section class="setting-group information-section"><h2>MEMORY</h2><div class="diagnostic-grid">
@@ -785,13 +788,8 @@ const hpfPresetEl = document.getElementById("hpfPreset");
 const audioSettingsStatusEl = document.getElementById("audioSettingsStatus");
 const autoPowerSavingEl = document.getElementById("autoPowerSaving");
 const powerSavingStatusEl = document.getElementById("powerSavingStatus");
-const AUTO_POWER_SAVING_STORAGE_KEY = "snf-auto-power-saving";
-try {
-  const savedPowerSaving = localStorage.getItem(AUTO_POWER_SAVING_STORAGE_KEY);
-  if (savedPowerSaving === "true" || savedPowerSaving === "false") {
-    autoPowerSavingEl.checked = savedPowerSaving === "true";
-  }
-} catch {}
+let powerSettingPendingDeviceId = null;
+let confirmedPowerSavingEnabled = null;
 const sessionTimeoutEl = document.getElementById("sessionTimeout");
 const sessionTimeoutTimerEl = document.getElementById("sessionTimeoutTimer");
 const autoScrollLogsEl = document.getElementById("autoScrollLogs");
@@ -852,6 +850,7 @@ let pendingAudioProfileHz = null;
 let pendingAudioProfileTimer = null;
 let availableDevices = [];
 let selectedDeviceId = "";
+let audioPreferencesLoadedForDevice = "";
 let knownHotspotRunning = null;
 let hotspotControlPending = false;
 let hotspotControlRequested = null;
@@ -1946,11 +1945,27 @@ function persistDeviceSelection() {
 }
 
 function getDevicePresencePresentation(device) {
-  if (!device || device.device_connected !== true) {
+  if (!device) {
     return {
-      state: device ? "offline" : "unknown",
-      label: device ? "OFFLINE" : "NO DEVICE",
-      description: device ? "disconnected from Render signaling" : "not selected",
+      state: "unknown",
+      label: "NO DEVICE",
+      description: "not selected",
+    };
+  }
+  if (device.device_connected !== true) {
+    const lastSeenMs = Date.parse(device.last_seen || device.telemetry?.received_at || "");
+    const heartbeatAgeMs = Date.now() - lastSeenMs;
+    if (Number.isFinite(lastSeenMs) && heartbeatAgeMs >= 0 && heartbeatAgeMs <= 15000) {
+      return {
+        state: "reconnecting",
+        label: "RECONNECTING",
+        description: `signaling briefly disconnected; last heartbeat ${Math.floor(heartbeatAgeMs / 1000)}s ago`,
+      };
+    }
+    return {
+      state: "offline",
+      label: "OFFLINE",
+      description: "disconnected from Render signaling",
     };
   }
   if (device.session_active === true) {
@@ -1967,13 +1982,15 @@ function getDevicePresencePresentation(device) {
     telemetryAge >= 0 && telemetryAge <= 15000;
   const inStandby = telemetryFresh && telemetry.audio_power_state === "standby";
   const powerSavingEnabled = telemetryFresh && telemetry.auto_power_saving_enabled === true;
+  const measuredCpu = telemetryFresh && Number.isFinite(telemetry.cpu_frequency_mhz)
+    ? `CPU ${telemetry.cpu_frequency_mhz} MHz` : "CPU frequency pending";
   return {
     state: inStandby ? "standby" : "idle",
     label: inStandby ? "ONLINE · STANDBY" : "ONLINE · IDLE",
     description: inStandby
-      ? "online; microphone and audio capture are in power-saving standby and ready for a new listener"
+      ? `online; device standby; ${measuredCpu}`
       : powerSavingEnabled
-        ? "online; no listener is playing, waiting for the microphone idle timeout before power-saving standby"
+        ? `online; idle CPU max lock released; ${measuredCpu}; capture and Render signaling remain active`
         : "online; no listener is playing and ready for a new connection",
   };
 }
@@ -2015,6 +2032,9 @@ function populateDeviceSelect(devices) {
   const preferred = validDevices.find((device) => device.device_id === previousSelection);
   const initial = preferred || validDevices.find((device) => device.device_connected) || validDevices[0];
   selectedDeviceId = initial ? initial.device_id : "";
+  if (selectedDeviceId && selectedDeviceId !== audioPreferencesLoadedForDevice) {
+    loadAudioPreferencesForDevice(selectedDeviceId);
+  }
   if (initial) deviceSelectEl.value = selectedDeviceId;
   deviceSelectEl.disabled = validDevices.length === 0;
   startButton.disabled = validDevices.length === 0 && !listenerActive;
@@ -2213,7 +2233,7 @@ function setDiagnosticsView(view) {
 
 function updateInformationDashboard(device, telemetry, fresh) {
   const telemetryFields = ["infoFirmware", "infoUptime", "infoBoot", "infoLastReboot", "infoBootCount",
-    "infoBrownouts", "infoCpu", "infoLastError", "infoInternalMemory", "infoPsram", "infoFlashTotal",
+    "infoBrownouts", "infoCpu", "infoCpuMode", "infoCpuIdleMin", "infoLastError", "infoInternalMemory", "infoPsram", "infoFlashTotal",
     "infoFlashUsed", "infoFlashFree", "infoFlashPartition", "infoAudioProfile", "infoI2sFormat",
     "infoInputMode", "infoCapture", "infoCaptureErrors", "infoDsp", "infoOpus", "infoAudioTransport",
     "infoTx", "infoWifi", "infoIp", "infoWifiCounts", "infoHotspot"];
@@ -2241,7 +2261,8 @@ function updateInformationDashboard(device, telemetry, fresh) {
       : "Select a configured SNF device to view live connection information.");
     return;
   }
-  setMetric("infoDevice", `${selectedDeviceId || "SNF"} · ${device?.device_connected ? "online" : "offline"}`);
+  const presence = getDevicePresencePresentation(device);
+  setMetric("infoDevice", `${selectedDeviceId || "SNF"} · ${presence.state}`);
   setMetric("infoListeners", Number.isFinite(device?.listener_count) ? String(device.listener_count) : device?.listener_connected ? "1" : "0");
   setMetric("infoConnectionSince", device?.device_connected
     ? formatTimestamp(device.connected_at) : "Offline");
@@ -2266,19 +2287,32 @@ function updateInformationDashboard(device, telemetry, fresh) {
 
   if (!fresh || !telemetry) {
     for (const id of telemetryFields) setMetric(id, "No fresh device telemetry");
-    powerSavingStatusEl.textContent = "Device is online; current power state is waiting for fresh telemetry.";
-    const state = device?.device_connected ? "online" : "offline";
+    const presence = getDevicePresencePresentation(device);
+    powerSavingStatusEl.textContent = presence.state === "reconnecting"
+      ? "Render is waiting for the SNF signaling connection to return; the saved power preference will be shown when it responds."
+      : "Waiting for fresh power-management telemetry from the SNF.";
+    const state = presence.state;
     setMetric("informationUpdated", `Render connection is ${state}; last device heartbeat ${formatTimestamp(lastSeen)}. Firmware information updates when telemetry arrives.`);
     return;
   }
 
   const d = telemetry;
   const powerSavingEnabled = d.auto_power_saving_enabled === true;
-  powerSavingStatusEl.textContent = !powerSavingEnabled
-    ? "Off · capture and DSP stay active when no listener is connected."
-    : d.audio_power_state === "standby"
-      ? "On · standby: microphone, DSP, and Opus are stopped; Render signaling remains connected for wake-up."
-      : "On · active: capture stays ready during a session and enters standby after 30 idle seconds.";
+  if (typeof d.auto_power_saving_enabled === "boolean" &&
+      powerSettingPendingDeviceId !== selectedDeviceId) {
+    confirmedPowerSavingEnabled = d.auto_power_saving_enabled;
+    autoPowerSavingEl.checked = d.auto_power_saving_enabled;
+  }
+  const measuredCpu = Number.isFinite(d.cpu_frequency_mhz)
+    ? `${d.cpu_frequency_mhz} MHz measured` : "CPU frequency awaiting telemetry";
+  const stagedPowerSetting = powerSettingPendingDeviceId === selectedDeviceId;
+  powerSavingStatusEl.textContent = stagedPowerSetting
+    ? `Saving the power-saving choice to ${brandText(selectedDeviceId)}… ${measuredCpu}.`
+    : !powerSavingEnabled
+    ? `Off · saved on the SNF; maximum CPU frequency stays requested while idle. ${measuredCpu}. Capture, DSP, Opus, Wi-Fi and Render signaling stay active.`
+    : d.cpu_power_state === "frequency_lock_released"
+      ? `On · saved on the SNF; idle max-frequency lock released immediately. ${measuredCpu}, 160 MHz minimum. Capture, DSP, Opus, Wi-Fi and Render signaling stay active; sleep is off.`
+      : `On · saved on the SNF; max-frequency lock is held while listening. ${measuredCpu}. On stop, the lock is released immediately; capture, DSP, Opus, Wi-Fi and Render signaling stay active.`;
   const rate = Number.isFinite(d.i2s_sample_rate_hz) ? d.i2s_sample_rate_hz : 0;
   const pcmBits = Number.isFinite(d.pcm_bits) ? d.pcm_bits : 0;
   const slotBits = Number.isFinite(d.i2s_slot_bits) ? d.i2s_slot_bits : 0;
@@ -2291,6 +2325,14 @@ function updateInformationDashboard(device, telemetry, fresh) {
   setMetric("infoBootCount", Number.isFinite(d.boot_count) ? String(Math.max(0, Math.floor(d.boot_count) - 1)) : "Not reported");
   setMetric("infoBrownouts", Number.isFinite(d.brownout_count) ? String(Math.floor(d.brownout_count)) : "Not reported");
   setMetric("infoCpu", `${Number.isFinite(d.cpu_frequency_mhz) ? `${d.cpu_frequency_mhz} MHz` : "CPU not reported"} · ${Number.isFinite(d.temperature_c) ? `${d.temperature_c.toFixed(1)} °C` : "temperature unavailable"}`);
+  setMetric("infoCpuMode", d.cpu_power_state === "maximum_requested"
+    ? "Active · max-frequency lock held"
+    : d.cpu_power_state === "frequency_lock_released"
+      ? "Idle · frequency scaling enabled"
+      : "Mode not reported");
+  setMetric("infoCpuIdleMin", Number.isFinite(d.cpu_idle_min_frequency_mhz)
+    ? `${d.cpu_idle_min_frequency_mhz} MHz minimum · currently ${Number.isFinite(d.cpu_frequency_mhz) ? `${d.cpu_frequency_mhz} MHz` : "unknown"}`
+    : "Idle minimum not reported");
   setMetric("infoLastError", d.last_error ? `${d.last_error_module || "Firmware"}: ${d.last_error}` : "No saved firmware error");
   setMetric("infoInternalMemory", `${formatBytes(d.free_internal_heap ?? d.free_heap)} free · ${formatBytes(d.min_free_internal_heap ?? d.min_free_heap)} minimum`);
   setMetric("infoPsram", `${formatBytes(d.free_psram)} free · ${formatBytes(d.total_psram)} total`);
@@ -2586,6 +2628,7 @@ async function refreshAppStatus() {
     deviceOnlinePill.classList.toggle("online", presence.state === "online");
     deviceOnlinePill.classList.toggle("idle", presence.state === "idle");
     deviceOnlinePill.classList.toggle("standby", presence.state === "standby");
+    deviceOnlinePill.classList.toggle("reconnecting", presence.state === "reconnecting");
     deviceOnlinePill.classList.toggle("offline", presence.state === "offline");
     deviceStatusLabel.textContent = presence.label;
     deviceOnlinePill.setAttribute("aria-label", brandText(selectedDeviceId) + " " + presence.description);
@@ -2604,7 +2647,7 @@ async function refreshAppStatus() {
       ? brandText(selectedDeviceId) + " is " + presence.description + "."
       : "Configure device credentials on the Render service to add SNF boards.";
   } else {
-    deviceOnlinePill.classList.remove("online", "idle", "standby", "offline");
+    deviceOnlinePill.classList.remove("online", "idle", "standby", "reconnecting", "offline");
     deviceOnlinePill.setAttribute("aria-label", "SNF device connection status is unknown");
     deviceStatusLabel.textContent = "UNKNOWN";
     deviceSelectStatusEl.textContent = selectedDeviceId
@@ -2892,16 +2935,68 @@ document.getElementById("exportLogs").addEventListener("click", () => {
 addLog("Listener page ready");
 renderLogs();
 
+const AUDIO_SETTINGS_STORAGE_PREFIX = "snf-audio-settings:";
+
+function audioSettingsStorageKey(deviceId) {
+  return `${AUDIO_SETTINGS_STORAGE_PREFIX}${encodeURIComponent(deviceId)}`;
+}
+
+function saveAudioPreferencesForSelectedDevice() {
+  if (!selectedDeviceId) return;
+  try {
+    const settings = currentAudioSettings();
+    delete settings.auto_power_saving_enabled;
+    localStorage.setItem(audioSettingsStorageKey(selectedDeviceId), JSON.stringify({
+      ...settings,
+      mic_gain_percent: effectiveMicGainPercent(),
+    }));
+  } catch {}
+}
+
+function loadAudioPreferencesForDevice(deviceId) {
+  audioPreferencesLoadedForDevice = deviceId || "";
+  if (!deviceId) return;
+  micGainEl.value = "100";
+  let saved = null;
+  try {
+    const raw = localStorage.getItem(audioSettingsStorageKey(deviceId));
+    if (raw) saved = JSON.parse(raw);
+  } catch {}
+  const settings = {
+    mic_mode: "mic1",
+    auto_gain_enabled: false,
+    auto_power_saving_enabled: confirmedPowerSavingEnabled ?? true,
+    hpf_preset: "voice_clarity",
+    noise_suppression_level: "off",
+    vad_level: "medium",
+    limiter_level: "low",
+  };
+  if (saved && typeof saved === "object" && !Array.isArray(saved)) {
+    if (typeof saved.auto_gain_enabled === "boolean") settings.auto_gain_enabled = saved.auto_gain_enabled;
+    if (["voice_clarity", "quiet_room", "noisy_room"].includes(saved.hpf_preset)) settings.hpf_preset = saved.hpf_preset;
+    if (["off", "low", "medium", "high"].includes(saved.noise_suppression_level)) settings.noise_suppression_level = saved.noise_suppression_level;
+    if (["off", "low", "medium", "high"].includes(saved.vad_level)) settings.vad_level = saved.vad_level;
+    if (["off", "low", "medium", "high"].includes(saved.limiter_level)) settings.limiter_level = saved.limiter_level;
+    if (Number.isInteger(saved.mic_gain_percent) && saved.mic_gain_percent >= 0 && saved.mic_gain_percent <= 200) {
+      micGainEl.value = String(saved.mic_gain_percent);
+    }
+  }
+  applyAudioSettings(settings);
+  appliedAudioSettings = { ...settings };
+  micGainValueEl.value = `${effectiveMicGainPercent()}%`;
+  refreshAudioSettingsAvailability();
+}
+
 function refreshMicGainAvailability() {
   const sessionAvailable = !!sessionId && !!socket && socket.readyState === WebSocket.OPEN;
   const connected = sessionAvailable && !!peer && peer.connectionState === "connected";
-  micGainEl.disabled = !sessionAvailable || autoGainEl.checked;
+  micGainEl.disabled = !selectedDeviceId || autoGainEl.checked;
   if (autoGainEl.checked) {
     micGainStatusEl.textContent = connected
       ? "AGC is on; the SNF adjusts microphone gain automatically."
       : "AGC is on; the SNF will adjust microphone gain automatically when connected.";
   } else if (!connected && sessionAvailable) micGainStatusEl.textContent = "Manual gain is enabled; it will apply when the online audio connection is up.";
-  else if (!sessionAvailable) micGainStatusEl.textContent = "Manual microphone gain is set to 100% (1.0×) by default; start listening to adjust it.";
+  else if (!sessionAvailable) micGainStatusEl.textContent = `Manual gain ${effectiveMicGainPercent()}% is saved in this browser and applies when listening starts.`;
   else micGainStatusEl.textContent = "Manual microphone gain is active at the selected percentage.";
 }
 
@@ -2912,6 +3007,7 @@ function effectiveMicGainPercent() {
 function sendMicGainPercent(gainPercent) {
   micGainValueEl.value = `${gainPercent}%`;
   if (!sessionId || !peer || peer.connectionState !== "connected") {
+    saveAudioPreferencesForSelectedDevice();
     refreshMicGainAvailability();
     return false;
   }
@@ -2976,9 +3072,10 @@ function applyAudioSettings(settings) {
   firmwareVadEl.value = settings.vad_level;
   firmwareLimiterEl.value = settings.limiter_level;
   autoGainEl.checked = Boolean(settings.auto_gain_enabled);
-  if (typeof settings.auto_power_saving_enabled === "boolean") {
+  if (typeof settings.auto_power_saving_enabled === "boolean" &&
+      powerSettingPendingDeviceId !== selectedDeviceId) {
+    confirmedPowerSavingEnabled = settings.auto_power_saving_enabled;
     autoPowerSavingEl.checked = settings.auto_power_saving_enabled;
-    try { localStorage.setItem(AUTO_POWER_SAVING_STORAGE_KEY, String(autoPowerSavingEl.checked)); } catch {}
   }
   hpfPresetEl.value = settings.hpf_preset;
   micGainValueEl.value = `${effectiveMicGainPercent()}%`;
@@ -2987,22 +3084,82 @@ function applyAudioSettings(settings) {
 
 function refreshAudioSettingsAvailability() {
   const available = !!sessionId && !!socket && socket.readyState === WebSocket.OPEN;
-  firmwareNoiseSuppressionEl.disabled = !available;
-  firmwareVadEl.disabled = !available;
-  firmwareLimiterEl.disabled = !available;
-  autoGainEl.disabled = !available;
-  autoPowerSavingEl.disabled = !available;
-  hpfPresetEl.disabled = !available;
+  const hasDevice = Boolean(selectedDeviceId);
+  firmwareNoiseSuppressionEl.disabled = !hasDevice;
+  firmwareVadEl.disabled = !hasDevice;
+  firmwareLimiterEl.disabled = !hasDevice;
+  autoGainEl.disabled = !hasDevice;
+  autoPowerSavingEl.disabled = !hasDevice || powerSettingPendingDeviceId === selectedDeviceId;
+  hpfPresetEl.disabled = !hasDevice;
   updateGtcrnBlendDisplay();
   refreshMicGainAvailability();
-  if (!available) {
-    audioSettingsStatusEl.textContent = "Connect to the selected SNF to change AGC, filter preset, or DSP controls. This build uses one mic.";
+  if (!available && hasDevice) {
+    audioSettingsStatusEl.textContent = `Audio processing settings are saved in this browser and apply when listening starts. Power saving is sent to ${brandText(selectedDeviceId)} now and stored on the device. Full health checks remain available while idle.`;
+  } else if (!hasDevice) {
+    audioSettingsStatusEl.textContent = "Select a configured SNF device to edit its settings.";
   }
   refreshAudioProfileAvailability();
 }
 
+async function savePowerSavingSettingToDevice(enabled) {
+  const deviceId = selectedDeviceId;
+  if (!deviceId) return;
+  if (powerSettingPendingDeviceId !== null) return;
+
+  const reportedValue = selectedDeviceStatus()?.telemetry?.auto_power_saving_enabled;
+  const previous = typeof confirmedPowerSavingEnabled === "boolean"
+    ? confirmedPowerSavingEnabled
+    : typeof reportedValue === "boolean" ? reportedValue : !enabled;
+  powerSettingPendingDeviceId = deviceId;
+  refreshAudioSettingsAvailability();
+  powerSavingStatusEl.textContent = `Saving the power-saving choice to ${brandText(deviceId)}…`;
+  try {
+    const response = await fetch(`/api/devices/${encodeURIComponent(deviceId)}/power-settings`, {
+      method: "POST",
+      cache: "no-store",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ auto_power_saving_enabled: enabled }),
+    });
+    if (response.status === 401) {
+      window.location.assign("/");
+      throw new Error("Listener session expired");
+    }
+    let result = null;
+    try { result = await response.json(); } catch {}
+    if (!response.ok || !result?.ok || result.auto_power_saving_enabled !== enabled) {
+      throw new Error(result?.error || `HTTP ${response.status}`);
+    }
+    confirmedPowerSavingEnabled = enabled;
+    if (selectedDeviceId === deviceId) {
+      autoPowerSavingEl.checked = enabled;
+      appliedAudioSettings.auto_power_saving_enabled = enabled;
+      saveAudioPreferencesForSelectedDevice();
+      powerSavingStatusEl.textContent = enabled
+        ? "On · saved on the SNF. CPU frequency scales down while idle and returns to full speed when listening starts."
+        : "Off · saved on the SNF. Full CPU speed stays requested until you turn power saving on again.";
+      addLog(`Power saving ${enabled ? "enabled" : "disabled"} and saved on device`, "success", "listener", "SNF");
+    }
+    void refreshAppStatus();
+  } catch (error) {
+    if (selectedDeviceId === deviceId) {
+      autoPowerSavingEl.checked = previous;
+      confirmedPowerSavingEnabled = previous;
+      powerSavingStatusEl.textContent = `Could not save the power preference on the SNF: ${error.message}. The previous setting remains selected.`;
+      addLog(`Power saving update failed: ${error.message}`, "warning", "listener", "SNF");
+    }
+  } finally {
+    if (powerSettingPendingDeviceId === deviceId) powerSettingPendingDeviceId = null;
+    refreshAudioSettingsAvailability();
+  }
+}
+
 function sendAudioSettings() {
+  saveAudioPreferencesForSelectedDevice();
   if (!sessionId || !socket || socket.readyState !== WebSocket.OPEN) {
+    if (selectedDeviceId) {
+      audioSettingsStatusEl.textContent = `Settings saved for ${brandText(selectedDeviceId)} in this browser; they will apply when listening starts.`;
+    }
     refreshAudioSettingsAvailability();
     return;
   }
@@ -3042,9 +3199,10 @@ function handleAudioSettingsAck(message) {
       !["off", "low", "medium", "high"].includes(accepted.limiter_level)) return;
   appliedAudioSettings = accepted;
   applyAudioSettings(accepted);
+  saveAudioPreferencesForSelectedDevice();
   powerSavingStatusEl.textContent = accepted.auto_power_saving_enabled
-    ? "On · SNF will stop capture and DSP 30 seconds after the listener session ends; Render signaling remains connected."
-    : "Off · capture and DSP remain active without a listener.";
+    ? "On · when listening stops, the SNF releases the maximum CPU-frequency lock immediately; capture, DSP, Opus, Wi-Fi and Render signaling remain active."
+    : "Off · the maximum CPU-frequency lock remains requested while idle; capture, DSP, Opus, Wi-Fi and Render signaling remain active.";
   const hpfLabel = accepted.hpf_preset.replaceAll("_", " ");
   audioSettingsStatusEl.textContent = `Single mic · AGC ${accepted.auto_gain_enabled ? "on" : "off"} · ${hpfLabel} · gate ${accepted.noise_suppression_level} · VAD ${accepted.vad_level} · limiter ${accepted.limiter_level}.`;
   const desiredGain = effectiveMicGainPercent();
@@ -4115,16 +4273,9 @@ function connectSocket() {
       traceSessionId = sessionId;
       recordE2ETrace("session_ready", "pass", `Render assigned session · request=${message.request_id || diagnosticRequestId}`, "Render");
       syncDeviceActionAvailability();
-      appliedAudioSettings = {
-        mic_mode: "mic1", auto_gain_enabled: false,
-        auto_power_saving_enabled: autoPowerSavingEl.checked,
-        hpf_preset: "voice_clarity", noise_suppression_level: "off",
-        vad_level: "medium", limiter_level: "low"
-      };
-      applyAudioSettings(appliedAudioSettings);
+      appliedAudioSettings = { ...currentAudioSettings() };
       refreshAudioSettingsAvailability();
-      audioSettingsStatusEl.textContent = `Connected to ${brandText(selectedDeviceId)}; audio controls will be applied when the online audio link connects.`;
-      micGainEl.value = "100";
+      audioSettingsStatusEl.textContent = `Connected to ${brandText(selectedDeviceId)}; saved audio settings will be applied when the online audio link connects.`;
       micGainValueEl.value = `${effectiveMicGainPercent()}%`;
       micGainAppliedSessionId = null;
       micGainAppliedPercent = null;
@@ -4645,6 +4796,9 @@ deviceSelectEl.addEventListener("change", () => {
   if (!nextDeviceId || nextDeviceId === selectedDeviceId) return;
   const wasListening = listenerActive;
   selectedDeviceId = nextDeviceId;
+  confirmedPowerSavingEnabled = null;
+  autoPowerSavingEl.checked = true;
+  loadAudioPreferencesForDevice(selectedDeviceId);
   lastStatusDeviceId = null;
   lastSignalingState = null;
   persistDeviceSelection();
@@ -4704,6 +4858,7 @@ for (const [id, control] of Object.entries(aiEnhancers)) {
 
 micGainEl.addEventListener("input", () => {
   micGainValueEl.value = `${micGainEl.value}%`;
+  saveAudioPreferencesForSelectedDevice();
 });
 micGainEl.addEventListener("change", sendMicGain);
 autoGainEl.addEventListener("change", () => {
@@ -4714,11 +4869,7 @@ autoGainEl.addEventListener("change", () => {
   sendAudioSettings();
 });
 autoPowerSavingEl.addEventListener("change", () => {
-  try { localStorage.setItem(AUTO_POWER_SAVING_STORAGE_KEY, String(autoPowerSavingEl.checked)); } catch {}
-  powerSavingStatusEl.textContent = autoPowerSavingEl.checked
-    ? "On · setting will apply when the SNF audio link connects."
-    : "Off · setting will apply when the SNF audio link connects.";
-  sendAudioSettings();
+  void savePowerSavingSettingToDevice(autoPowerSavingEl.checked);
 });
 document.getElementById("quality16k").addEventListener("change", (event) => {
   if (event.currentTarget.checked) sendAudioProfile(16000);
@@ -4729,6 +4880,7 @@ document.getElementById("quality48k").addEventListener("change", (event) => {
 firmwareNoiseSuppressionEl.addEventListener("change", sendAudioSettings);
 firmwareVadEl.addEventListener("change", sendAudioSettings);
 firmwareLimiterEl.addEventListener("change", sendAudioSettings);
+hpfPresetEl.addEventListener("change", sendAudioSettings);
 
 playVolumeEl.addEventListener("input", () => {
   playbackVolumePercent = Math.max(0, Math.min(300, Number(playVolumeEl.value)));

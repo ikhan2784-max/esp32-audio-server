@@ -34,6 +34,7 @@ const TELEMETRY_NUMBER_RANGES = Object.freeze({
     brownout_count: [0, Number.MAX_SAFE_INTEGER],
     last_error_boot_count: [0, Number.MAX_SAFE_INTEGER],
     cpu_frequency_mhz: [1, 400],
+    cpu_idle_min_frequency_mhz: [40, 400],
     temperature_c: [-20, 120],
     uptime_ms: [0, Number.MAX_SAFE_INTEGER],
     free_heap: [0, Number.MAX_SAFE_INTEGER],
@@ -108,7 +109,7 @@ const TELEMETRY_STRING_LIMITS = Object.freeze({
     build_id: 64, i2s_input_mode: 16, audio_profile: 32, pcm_format: 32,
     dsp_hpf_preset: 24, dsp_ns_level: 8, dsp_vad_level: 8, dsp_limiter_level: 8,
     reset_reason_name: 32, last_error_module: 32, last_error: 192,
-    audio_power_state: 16,
+    audio_power_state: 16, cpu_power_state: 32,
 });
 
 function createWebRtcSignaling({
@@ -120,6 +121,7 @@ function createWebRtcSignaling({
     isConnectionAlive = (ws) => Boolean(ws && ws.readyState === WebSocket.OPEN &&
         (!Number.isFinite(ws.lastPongAt) || Date.now() - ws.lastPongAt <= DEFAULT_CONNECTION_FRESH_MS)),
     onHealthCheckResponse = () => {},
+    onPowerSettingsResponse = () => {},
 }) {
     const credentials = deviceRegistry || createDeviceCredentialRegistry({ sourceToken });
     const states = new Map(credentials.list().map((deviceId) => [deviceId, {
@@ -764,6 +766,41 @@ function createWebRtcSignaling({
         return send(state.device, { type: "webrtc_health_request", id: requestId });
     }
 
+    function handleDevicePowerSettingsResponse(ws, message) {
+        if (message.type !== "webrtc_power_settings_response") return false;
+        const state = stateFor(ws);
+        if (!state || ws !== state.device || ws.role !== "webrtc_device" ||
+            ws.authenticated !== true || typeof message.id !== "string" ||
+            !/^[A-Za-z0-9_-]{1,64}$/.test(message.id) ||
+            typeof message.auto_power_saving_enabled !== "boolean" ||
+            typeof message.ok !== "boolean") {
+            fail(ws, "invalid_power_settings_response_sender");
+            return true;
+        }
+        try {
+            onPowerSettingsResponse(state.deviceId, message.id, {
+                ok: message.ok,
+                auto_power_saving_enabled: message.auto_power_saving_enabled,
+            });
+        } catch {}
+        return true;
+    }
+
+    function requestDevicePowerSettings(deviceId, requestId, enabled) {
+        if (!isValidDeviceId(deviceId) || typeof requestId !== "string" ||
+            !/^[A-Za-z0-9_-]{1,64}$/.test(requestId) || typeof enabled !== "boolean") return false;
+        const state = states.get(deviceId);
+        if (!state || !state.device || state.device.readyState !== WebSocket.OPEN ||
+            state.device.role !== "webrtc_device" || state.device.authenticated !== true) {
+            return false;
+        }
+        return send(state.device, {
+            type: "webrtc_power_settings_request",
+            id: requestId,
+            auto_power_saving_enabled: enabled,
+        });
+    }
+
     function handleDeviceControl(ws, message) {
         if (message.type !== "webrtc_device_control") return false;
         const state = stateFor(ws);
@@ -859,6 +896,7 @@ function createWebRtcSignaling({
             handleAudioControl(ws, message) || handleAudioControlAck(ws, message) ||
             handleAudioSettings(ws, message) || handleAudioSettingsAck(ws, message) ||
             handleDeviceHealthResponse(ws, message) ||
+            handleDevicePowerSettingsResponse(ws, message) ||
             handleDeviceTelemetry(ws, message) ||
             handleDeviceControl(ws, message) ||
             handleDeviceControlAck(ws, message);
@@ -939,7 +977,10 @@ function createWebRtcSignaling({
         }));
     }
 
-    return { handleMessage, handleBinary, handleClose, getStatus, getStatuses, requestDeviceHealth };
+    return {
+        handleMessage, handleBinary, handleClose, getStatus, getStatuses,
+        requestDeviceHealth, requestDevicePowerSettings,
+    };
 }
 
 module.exports = { createWebRtcSignaling, MAX_SDP_CHARS, MAX_CANDIDATE_CHARS };

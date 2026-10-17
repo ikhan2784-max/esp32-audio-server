@@ -123,6 +123,10 @@ const DEVICE_HEALTH_REQUEST_TIMEOUT_MS = 6000;
 const MAX_PENDING_DEVICE_HEALTH_REQUESTS = 4;
 const DEVICE_HEALTH_REQUEST_COOLDOWN_MS = 2000;
 const deviceHealthRequestAt = new Map();
+const devicePowerSettingsRequests = new Map();
+const DEVICE_POWER_SETTINGS_REQUEST_TIMEOUT_MS = 6000;
+const MAX_PENDING_DEVICE_POWER_SETTINGS_REQUESTS = 4;
+const devicePowerSettingsRequestAt = new Map();
 
 function completeDeviceHealthRequest(deviceId, requestId, data) {
     const pending = deviceHealthRequests.get(requestId);
@@ -130,6 +134,14 @@ function completeDeviceHealthRequest(deviceId, requestId, data) {
     clearTimeout(pending.timeout);
     deviceHealthRequests.delete(requestId);
     pending.resolve({ data, checked_at: new Date().toISOString() });
+}
+
+function completeDevicePowerSettingsRequest(deviceId, requestId, result) {
+    const pending = devicePowerSettingsRequests.get(requestId);
+    if (!pending || pending.deviceId !== deviceId) return;
+    clearTimeout(pending.timeout);
+    devicePowerSettingsRequests.delete(requestId);
+    pending.resolve(result);
 }
 
 let lastAudioSequence = null;
@@ -173,6 +185,7 @@ const webrtcSignaling = createWebRtcSignaling({
     isListenerAuthorizedForDevice: (ws) => ws.sessionAuthenticated &&
         typeof ws.sessionValid === "function" && ws.sessionValid(),
     onHealthCheckResponse: completeDeviceHealthRequest,
+    onPowerSettingsResponse: completeDevicePowerSettingsRequest,
 });
 
 const listeners = new Set();
@@ -453,6 +466,66 @@ app.post("/api/devices/:deviceId/health-check", requireHttps, requireSameOrigin,
         request_id: requestId,
         checked_at: result.checked_at,
         data: result.data,
+    });
+});
+
+app.post("/api/devices/:deviceId/power-settings", requireHttps, requireSameOrigin, async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    if (!isAuthenticatedRequest(req)) {
+        return res.status(401).json({ ok: false, error: "Unauthorized" });
+    }
+    const deviceId = req.params.deviceId;
+    const enabled = req.body && req.body.auto_power_saving_enabled;
+    if (!isValidDeviceId(deviceId)) {
+        return res.status(400).json({ ok: false, error: "Invalid device ID" });
+    }
+    if (typeof enabled !== "boolean") {
+        return res.status(400).json({ ok: false, error: "auto_power_saving_enabled must be boolean" });
+    }
+    const current = webrtcSignaling.getStatus(deviceId);
+    if (!current || current.device_connected !== true) {
+        return res.status(503).json({ ok: false, error: "Device is offline" });
+    }
+    if (devicePowerSettingsRequests.size >= MAX_PENDING_DEVICE_POWER_SETTINGS_REQUESTS) {
+        return res.status(429).json({ ok: false, error: "Device settings request capacity reached" });
+    }
+    const now = Date.now();
+    if (now - (devicePowerSettingsRequestAt.get(deviceId) || 0) < 500) {
+        return res.status(429).json({ ok: false, error: "Please wait before changing power saving again" });
+    }
+    devicePowerSettingsRequestAt.set(deviceId, now);
+
+    const requestId = crypto.randomUUID().replace(/-/g, "");
+    let resolvePending;
+    const responsePromise = new Promise((resolve) => { resolvePending = resolve; });
+    const timeout = setTimeout(() => {
+        devicePowerSettingsRequests.delete(requestId);
+        resolvePending(null);
+    }, DEVICE_POWER_SETTINGS_REQUEST_TIMEOUT_MS);
+    devicePowerSettingsRequests.set(requestId, { deviceId, timeout, resolve: resolvePending });
+
+    if (!webrtcSignaling.requestDevicePowerSettings(deviceId, requestId, enabled)) {
+        clearTimeout(timeout);
+        devicePowerSettingsRequests.delete(requestId);
+        return res.status(503).json({ ok: false, error: "Power setting could not be sent to the device" });
+    }
+
+    const result = await responsePromise;
+    if (!result) {
+        return res.status(504).json({ ok: false, error: "Device did not confirm the power setting" });
+    }
+    if (!result.ok || result.auto_power_saving_enabled !== enabled) {
+        return res.status(409).json({
+            ok: false,
+            error: "Device could not apply and save the power setting",
+            auto_power_saving_enabled: result.auto_power_saving_enabled,
+        });
+    }
+    return res.json({
+        ok: true,
+        device_id: deviceId,
+        request_id: requestId,
+        auto_power_saving_enabled: result.auto_power_saving_enabled,
     });
 });
 
